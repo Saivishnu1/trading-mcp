@@ -1,12 +1,14 @@
 services:
   - type: web
     name: zerodha-mcp
-    runtime: docker
+    env: docker
     dockerfilePath: ./Dockerfile
-    # Render auto-injects PORT; our server reads it via os.environ.get("PORT", "8000")
+    dockerContext: .
+    plan: free
+    healthCheckPath: /sse
     envVars:
       - key: ZERODHA_USER_ID
-        sync: false          # set manually in Render dashboard
+        sync: false
       - key: ZERODHA_PASSWORD
         sync: false
       - key: ZERODHA_TOTP_SECRET
