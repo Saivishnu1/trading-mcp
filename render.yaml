@@ -5,7 +5,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
-    healthCheckPath: /sse
+    healthCheckPath: /health
     envVars:
       - key: ZERODHA_USER_ID
         sync: false

@@ -6,6 +6,8 @@
   },
   "deploy": {
     "startCommand": "/app/.venv/bin/zerodha-mcp",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5
   }

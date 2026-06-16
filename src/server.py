@@ -47,7 +47,20 @@ portfolio.register(mcp)
 market.register(mcp)
 instruments.register(mcp)
 
-app = mcp.sse_app()
+_sse_app = mcp.sse_app()
+
+
+async def app(scope, receive, send):
+    """ASGI wrapper: serves GET /health for platform health checks,
+    forwards everything else to the MCP SSE app."""
+    if scope["type"] == "http" and scope["path"] == "/health":
+        body = b'{"status":"ok"}'
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [[b"content-type", b"application/json"],
+                                [b"content-length", str(len(body)).encode()]]})
+        await send({"type": "http.response.body", "body": body})
+        return
+    await _sse_app(scope, receive, send)
 
 
 def main() -> None:
