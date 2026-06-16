@@ -47,11 +47,16 @@ portfolio.register(mcp)
 market.register(mcp)
 instruments.register(mcp)
 
+app = mcp.sse_app()
+
 
 def main() -> None:
+    import uvicorn
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
-    mcp.run(transport="sse", host=host, port=port)
+    # Pass the app object directly — avoids uvicorn's string-import path
+    # which breaks when PYTHONPATH isn't set identically to the build env.
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":

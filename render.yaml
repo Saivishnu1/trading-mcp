@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: zerodha-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Render auto-injects PORT; our server reads it via os.environ.get("PORT", "8000")
+    envVars:
+      - key: ZERODHA_USER_ID
+        sync: false          # set manually in Render dashboard
+      - key: ZERODHA_PASSWORD
+        sync: false
+      - key: ZERODHA_TOTP_SECRET
+        sync: false
+      - key: BROKER_BACKEND
+        value: zerodha_web
+      - key: SESSION_FILE
+        value: /tmp/.session.json
+      - key: LOG_LEVEL
+        value: INFO
