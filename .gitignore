@@ -1,0 +1,11 @@
+.env
+.token
+.session.json
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+*.egg-info/
+.uv/
+.uv-cache/
