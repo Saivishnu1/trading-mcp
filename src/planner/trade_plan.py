@@ -1,0 +1,182 @@
+"""
+Trade Planner — Phase 5.
+
+Converts market analysis into an executable trade plan.
+Read-only: generates plans and sizing only. Does NOT place orders
+or call any Zerodha order API.
+
+Reuses existing module functions — no indicators are recalculated here:
+  generate_trade_setup()    → signal, entry, stoploss, target
+  recommend_strategy()      → strategy, regime, secondary
+  calculate_risk_reward()   → risk, reward, rr
+  calculate_position_size() → quantity from capital + risk %
+  options service           → pcr, max_pain (index symbols only)
+"""
+
+from __future__ import annotations
+
+import logging
+
+from src.analysis.regime import (
+    calculate_position_size,
+    calculate_risk_reward,
+    generate_trade_setup,
+    recommend_strategy,
+)
+from src.options import analytics
+from src.options.service import get_options_service
+
+logger = logging.getLogger(__name__)
+
+_NEUTRAL_SIGNALS = {"NEUTRAL"}
+_DIRECTIONAL_SIGNALS = {"BUY", "SELL", "NEUTRAL_BULLISH", "NEUTRAL_BEARISH"}
+
+
+def _options_context(symbol: str) -> dict:
+    """PCR and max pain — index options only; silently empty for equities."""
+    try:
+        svc = get_options_service()
+        chain = svc.get_option_chain(symbol)
+        records = chain.get("records", {})
+        expiry = (records.get("expiryDates") or [None])[0]
+        if expiry is None:
+            return {}
+        pcr = analytics.calculate_pcr(chain, expiry)
+        mp = analytics.calculate_max_pain(chain, expiry)
+        return {
+            "pcr": pcr.get("pcr_oi"),
+            "pcr_interpretation": pcr.get("interpretation"),
+            "max_pain": mp.get("max_pain"),
+        }
+    except Exception as exc:
+        logger.debug("options context unavailable for %s: %s", symbol, exc)
+        return {}
+
+
+def _build_summary(
+    signal: str,
+    entry: float,
+    stoploss: float,
+    target: float,
+    rr: float | None,
+    strategy: str,
+) -> str:
+    rr_str = f"{rr:.1f}" if rr is not None else "N/A"
+    if signal == "BUY":
+        return (
+            f"Enter above {entry} with stoploss at {stoploss}. "
+            f"Target {target}. Risk/reward is {rr_str}. "
+            f"{strategy} is the preferred strategy."
+        )
+    if signal == "SELL":
+        return (
+            f"Enter below {entry} with stoploss at {stoploss}. "
+            f"Target {target}. Risk/reward is {rr_str}. "
+            f"{strategy} is the preferred strategy."
+        )
+    if signal == "NEUTRAL_BULLISH":
+        return (
+            f"Cautious bullish plan. Enter above {entry} with stoploss at {stoploss}. "
+            f"Target {target}. Risk/reward is {rr_str}. "
+            f"Reduce position size — conviction is moderate. {strategy} preferred."
+        )
+    if signal == "NEUTRAL_BEARISH":
+        return (
+            f"Cautious bearish plan. Enter below {entry} with stoploss at {stoploss}. "
+            f"Target {target}. Risk/reward is {rr_str}. "
+            f"Reduce position size — conviction is moderate. {strategy} preferred."
+        )
+    return "No trade recommended. Market lacks sufficient directional conviction."
+
+
+def create_trade_plan(
+    symbol: str = "NIFTY",
+    capital: float = 100_000,
+    risk_percent: float = 1.0,
+) -> dict:
+    """
+    Build a complete, read-only trade plan for *symbol*.
+
+    Does NOT place orders or interact with the Zerodha order API.
+    All figures are for planning and sizing purposes only.
+    """
+    sym = symbol.upper()
+
+    # --- setup (signal, entry, stoploss, target) ---
+    setup = generate_trade_setup(symbol)
+    if "error" in setup:
+        return {"symbol": sym, "error": setup["error"]}
+
+    signal: str = setup["signal"]
+    confidence: int = setup["confidence"]
+    entry: float = setup["entry"]
+    stoploss: float = setup["stoploss"]
+    target: float = setup["target"]
+
+    # --- NEUTRAL: no trade ---
+    if signal in _NEUTRAL_SIGNALS:
+        opts_ctx = _options_context(symbol)
+        return {
+            "symbol": sym,
+            "signal": signal,
+            "trade_allowed": False,
+            "reason": "Market lacks sufficient directional conviction. No trade recommended.",
+            "market_context": {
+                "regime": None,
+                **opts_ctx,
+            },
+            "summary": "No trade recommended. Market lacks sufficient directional conviction.",
+        }
+
+    # --- strategy (also carries regime via updated recommend_strategy) ---
+    strat = recommend_strategy(symbol)
+    if "error" in strat:
+        return {"symbol": sym, "error": strat["error"]}
+
+    regime: str = strat.get("regime", "")
+    recommended_strategy: str = strat.get("recommended", strat.get("strategy", ""))
+    secondary_strategy: str | None = strat.get("secondary")
+    strategy_reason: str = strat.get("reason", "")
+
+    # --- risk/reward ---
+    rr_result = calculate_risk_reward(entry, stoploss, target)
+    rr_val: float | None = rr_result.get("rr")
+
+    # --- position sizing ---
+    pos_result = calculate_position_size(capital, risk_percent, entry, stoploss)
+
+    # --- options context (pcr, max_pain — index only) ---
+    opts_ctx = _options_context(symbol)
+
+    summary = _build_summary(signal, entry, stoploss, target, rr_val, recommended_strategy)
+
+    return {
+        "symbol": sym,
+        "trade_allowed": True,
+        "signal": signal,
+        "confidence": confidence,
+        "entry": entry,
+        "stoploss": stoploss,
+        "target": target,
+        "risk_reward": {
+            "risk": rr_result.get("risk"),
+            "reward": rr_result.get("reward"),
+            "rr": rr_val,
+        },
+        "position": {
+            "capital": pos_result.get("capital"),
+            "risk_percent": pos_result.get("risk_percent"),
+            "risk_amount": pos_result.get("risk_amount"),
+            "position_size": pos_result.get("position_size"),
+        },
+        "strategy": {
+            "recommended": recommended_strategy,
+            "secondary": secondary_strategy,
+            "reason": strategy_reason,
+        },
+        "market_context": {
+            "regime": regime,
+            **opts_ctx,
+        },
+        "summary": summary,
+    }

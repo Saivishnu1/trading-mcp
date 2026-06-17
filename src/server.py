@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -81,6 +81,7 @@ options.register(mcp)
 technicals.register(mcp)
 analysis.register(mcp)
 dashboard.register(mcp)
+trade_planner.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
