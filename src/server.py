@@ -47,23 +47,24 @@ portfolio.register(mcp)
 market.register(mcp)
 instruments.register(mcp)
 
-from starlette.applications import Starlette
-from starlette.routing import Mount, Route
-from starlette.responses import JSONResponse
-
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
 
 
-async def _health(_request):
-    return JSONResponse({"status": "ok"})
-
-
-app = Starlette(routes=[
-    Route("/health", _health),
-    Mount("/mcp", app=_http_app),
-    Mount("/", app=_sse_app),
-])
+async def app(scope, receive, send):
+    if scope["type"] == "http":
+        path = scope.get("path", "")
+        if path == "/health":
+            body = b'{"status":"ok"}'
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()]]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        if path == "/mcp" or path.startswith("/mcp/"):
+            await _http_app(scope, receive, send)
+            return
+    await _sse_app(scope, receive, send)
 
 
 def main() -> None:
