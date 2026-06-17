@@ -2,6 +2,7 @@ import os
 import logging
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
 from src.tools import auth, portfolio, market, instruments
@@ -13,8 +14,13 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 _session_file = os.environ.get("SESSION_FILE", ".session.json")
 get_broker().load_session(_session_file)
 
+_allowed_host = os.environ.get("PUBLIC_HOST", "zerodha-mcp-production.up.railway.app")
+
 mcp = FastMCP(
     name="Zerodha Personal MCP",
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=[_allowed_host, f"{_allowed_host}:443", "localhost", "localhost:8000"],
+    ),
     instructions=(
         "Zerodha personal-account MCP server — no paid Kite Connect subscription needed.\n\n"
         "AUTHENTICATION (required for portfolio tools):\n"
