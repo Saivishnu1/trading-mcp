@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 9 (Automated Testing)
+Current Phase: 10 (next)
 
 Current Tool Count: 37
 
@@ -94,6 +94,8 @@ When generating tests:
 
 * Match implementation exactly.
 * Inspect code before writing assertions.
+* Phase 9 is complete — do NOT regenerate existing test files.
+* Run `uv run pytest tests/ -v` to validate; never skip it.
 
 ---
 
@@ -105,6 +107,8 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
+* 270 unit + regression tests across 9 test files (pytest, no live network calls).
+* Coverage: analysis 88%, strategy 92%, planner 86%, review 84%, dashboard 85%.
 
 ---
 

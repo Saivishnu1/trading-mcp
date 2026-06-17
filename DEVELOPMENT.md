@@ -699,6 +699,60 @@ service fix was sufficient.
 
 ---
 
+## Phase 9 — Automated Testing & Regression Protection
+
+**Tag:** `phase-9-automated-testing`
+**Tests:** 270 passed, 0 failed
+**Run:** `uv run pytest tests/ -v`
+
+### Test files
+
+| File | Scope |
+|---|---|
+| `tests/conftest.py` | Shared fixtures, tech snapshots, chain_data, patch helpers |
+| `tests/test_options.py` | `options/analytics.py` pure math + `OptionsService._strip_exchange_prefix` |
+| `tests/test_technicals.py` | `technical/indicators.py` — RSI, EMA, MACD, ADX, ATR |
+| `tests/test_analysis.py` | Regime detection, trade setup, strategy recommendation |
+| `tests/test_planner.py` | Trade quality classification, `create_trade_plan` integration |
+| `tests/test_strategy_builder.py` | Payoff math, leg selection, all 7 strategies |
+| `tests/test_review.py` | `_evaluate` mapping, invalidation conditions, `review_trade` integration |
+| `tests/test_dashboard.py` | `_build_summary` pure tests, `build_dashboard` error isolation |
+| `tests/test_regressions.py` | 7 named regression guards (see below) |
+
+### Coverage
+
+| Module | Coverage |
+|---|---|
+| `src/analysis/regime.py` | 88% |
+| `src/strategy/builder.py` | 92% |
+| `src/planner/trade_plan.py` | 86% |
+| `src/review/reviewer.py` | 84% |
+| `src/dashboard/service.py` | 85% |
+| `src/technical/indicators.py` | 92% |
+| `src/options/analytics.py` | 100% |
+
+### Regression guards
+
+| # | Class | Bug protected |
+|---|---|---|
+| 1 | `TestReg1SymbolNormalization` | `NSE:RELIANCE` prefix passed verbatim to jugaad → 0 rows |
+| 2 | `TestReg2BuyRangeBoundConflict` | BUY + RANGE_BOUND returned Iron Condor, not Bull Call Spread |
+| 3 | `TestReg3SellRangeBoundConflict` | SELL + RANGE_BOUND returned Iron Condor, not Bear Put Spread |
+| 4 | `TestReg4LegacySchema` | `generate_trade_setup` dropped `entry`/`stoploss`/`target` scalar fields |
+| 5 | `TestReg5ZoneSchema` | Zone fields (`entry_above` etc.) dropped in some signal paths |
+| 6 | `TestReg6TradeQualityFilter` | RR < 1 returned `trade_allowed=True` |
+| 7 | `TestReg7EquityOptionChain` | `build_option_strategy("NSE:RELIANCE")` returned `premium_data_available=False` |
+
+### Mock strategy
+
+All tests use `monkeypatch` — no live NSE/Yahoo Finance/Zerodha calls:
+
+- Patch `src.analysis.regime._analyze_technicals` → controls the entire analysis chain deterministically
+- Patch `get_options_service` → returns a class that raises `RuntimeError` (silently handled by `_options_context`)
+- `_fetch_via_jugaad` tested by injecting a `FakeNSELive` via `OptionsService.__new__`
+
+---
+
 ## Git Tags
 
 | Tag | Commit | Description |
@@ -711,7 +765,8 @@ service fix was sufficient.
 | `phase-5.2-risk-reward-optimization` | `cc910c9` | Regime-aware ATR multipliers — RR 1.2–2.0 |
 | `phase-6-option-strategy-builder-complete` | `f216db5` | build_option_strategy — strikes + payoffs |
 | `phase-7-trade-review-engine-complete` | `d3b4f82` | review_trade — HOLD/REDUCE/EXIT + thesis |
-| `phase-8-equity-option-chain-support` | *(current)* | get_equity_option_chain — real strikes/premiums for NSE equities |
+| `phase-8-equity-option-chain-support` | `<prev>` | get_equity_option_chain — real strikes/premiums for NSE equities |
+| `phase-9-automated-testing` | *(current)* | 270 tests, 80%+ coverage on all business-logic modules |
 
 ---
 

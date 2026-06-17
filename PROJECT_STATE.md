@@ -20,10 +20,10 @@ Status:
 
 ## Current State
 
-Current Phase: 9 (Automated Testing)
+Current Phase: 10 (next)
 
 Latest Tag:
-phase-8-equity-option-chain-support
+phase-9-automated-testing
 
 Tool Count:
 37
@@ -59,7 +59,7 @@ Production deployed on Railway
 
 ✅ Phase 8 — Equity Option Chain Support
 
-🚧 Phase 9 — Automated Testing (In Progress)
+✅ Phase 9 — Automated Testing
 
 ⬜ Phase 10 - Reliability & Observability
 
@@ -97,6 +97,15 @@ Total: 37
 
 ## Recent Changes
 
+Phase 9:
+
+* 270 tests across 9 files — 0 failures
+* Coverage: analysis 88%, strategy 92%, planner 86%, review 84%, dashboard 85%, indicators 92%, options analytics 100%
+* 7 named regression guards protecting historical bugs
+* pytest + pytest-cov added to dev deps; pythonpath configured
+* Scratch scripts (test_jugaad*, test_phase8*) deleted; .coverage gitignored
+* Tagged: phase-9-automated-testing
+
 Phase 8:
 
 * Added get_equity_option_chain
@@ -108,21 +117,7 @@ Phase 8:
 
 ## Current Open Work
 
-Phase 9
-
-Remaining:
-
-* tests/conftest.py
-* tests/test_analysis.py
-* tests/test_planner.py
-* tests/test_strategy_builder.py
-* tests/test_review.py
-* tests/test_dashboard.py
-* tests/test_regressions.py
-* pytest execution
-* failure fixes
-* coverage verification
-* phase-9 tag
+Phase 10 — Reliability & Observability (not started)
 
 ---
 
@@ -166,7 +161,4 @@ Both must remain available.
 
 ## Next Immediate Task
 
-Finish Phase 9 automated testing.
-
-After Phase 9:
-Proceed to Phase 10 deployment hardening and production readiness checks.
+Phase 10 — Reliability & Observability.
