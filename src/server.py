@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -62,6 +62,9 @@ mcp = FastMCP(
         "  recommend_strategy('NIFTY')               — options strategy suggestion\n"
         "  calculate_risk_reward(100, 95, 110)       — risk/reward ratio\n"
         "  calculate_position_size(100000, 1, 100, 95) — sizing by capital risk\n\n"
+        "DASHBOARD tools (single-call daily briefing, no auth needed):\n"
+        "  get_nifty_dashboard()      — full NIFTY snapshot: options + technicals + regime + setup\n"
+        "  get_banknifty_dashboard()  — full BANKNIFTY snapshot\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -77,6 +80,7 @@ instruments.register(mcp)
 options.register(mcp)
 technicals.register(mcp)
 analysis.register(mcp)
+dashboard.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
