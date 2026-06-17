@@ -61,10 +61,12 @@ async def app(scope, receive, send):
                                     [b"content-length", str(len(body)).encode()]]})
             await send({"type": "http.response.body", "body": body})
             return
-        if path == "/mcp" or path.startswith("/mcp/"):
-            await _http_app(scope, receive, send)
+        if path == "/sse" or path.startswith("/messages"):
+            await _sse_app(scope, receive, send)
             return
-    await _sse_app(scope, receive, send)
+    # /mcp requests AND lifespan events go to http_app so it can
+    # initialize its session manager task group during startup.
+    await _http_app(scope, receive, send)
 
 
 def main() -> None:
