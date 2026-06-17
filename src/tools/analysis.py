@@ -6,26 +6,24 @@ from src.analysis import regime
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
-    def detect_market_regime(symbol: str, interval: str = "day") -> dict:
+    def detect_market_regime(symbol: str) -> dict:
         """Detect the current market regime for a symbol.
 
-        Combines EMA(20), EMA(50), ADX(14), and ATR(14) using the same
-        market-data path as the technical tools. No authentication required.
+        Reuses the same daily technical snapshot logic as the technical tools
+        and classifies the symbol into a deterministic market regime.
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
-            interval: Candle size. Defaults to 'day'. Accepts the same aliases
-                      as get_historical_data().
         """
-        return regime.detect_market_regime(symbol, interval)
+        return regime.detect_market_regime(symbol)
 
     @mcp.tool()
     def generate_trade_setup(symbol: str) -> dict:
         """Generate a deterministic trade setup for a symbol.
 
         Uses the bundled technical analysis plus detected market regime to
-        output BUY, SELL, or NEUTRAL with entry, stoploss, target, and
-        reasoning. No authentication required.
+        output BUY, SELL, NEUTRAL, NEUTRAL_BULLISH, or NEUTRAL_BEARISH
+        with deterministic entry zones, targets, and reasoning.
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
@@ -34,10 +32,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def recommend_strategy(symbol: str) -> dict:
-        """Recommend an options strategy based on regime, RSI, and ADX.
+        """Recommend an options strategy based on the detected market regime.
 
-        Maps trending, range-bound, and breakout conditions to common options
-        structures such as spreads, condors, straddles, and strangles.
+        Maps trending, neutral, range-bound, and breakout conditions to
+        common options structures such as spreads, condors, and straddles.
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
