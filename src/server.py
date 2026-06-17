@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -65,6 +65,15 @@ mcp = FastMCP(
         "DASHBOARD tools (single-call daily briefing, no auth needed):\n"
         "  get_nifty_dashboard()      — full NIFTY snapshot: options + technicals + regime + setup\n"
         "  get_banknifty_dashboard()  — full BANKNIFTY snapshot\n\n"
+        "TRADE PLANNER tools (read-only execution planning, no auth needed):\n"
+        "  create_trade_plan('NIFTY', capital=100000, risk_percent=1)\n"
+        "    — entry/stoploss/target + position size + trade quality + strategy\n\n"
+        "OPTION STRATEGY BUILDER tools (concrete strikes + payoffs, no auth needed):\n"
+        "  build_option_strategy('NIFTY', expiry='23-Jun-2026')\n"
+        "    — legs, premiums, max loss, max profit, breakeven from live chain\n\n"
+        "TRADE REVIEW tools (thesis evaluation, no auth needed):\n"
+        "  review_trade('NSE:INFY', direction='LONG', entry_price=1400, holding_days=3)\n"
+        "    — HOLD / REDUCE / EXIT + thesis status + invalidation conditions\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -83,6 +92,7 @@ analysis.register(mcp)
 dashboard.register(mcp)
 trade_planner.register(mcp)
 strategy_builder.register(mcp)
+trade_review.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()

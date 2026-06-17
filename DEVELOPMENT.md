@@ -379,7 +379,236 @@ involvement — the same inputs always produce the same string.
 
 ---
 
-## Complete Tool Registry (33 tools)
+## Phase 4.1 — Strategy Alignment
+
+**Commit:** `9f72904`
+**Tag:** `phase-4.1-strategy-alignment`
+**Tools added:** 0 (modified `recommend_strategy` output) → **Total: 33**
+
+### Problem
+
+`recommend_strategy()` used only regime + RSI + ADX. It ignored the trade setup
+signal entirely, producing contradictions like Signal: BUY / Strategy: Iron Condor
+whenever `RANGE_BOUND` was detected — regardless of directional conviction.
+
+### Fix
+
+`recommend_strategy()` now calls `generate_trade_setup()` internally and applies
+a signal-first priority order: **Signal > Regime > RSI > ADX**.
+
+Conflict resolution rules:
+
+| Signal | Regime | Primary | Secondary |
+|---|---|---|---|
+| BUY | RANGE_BOUND | Bull Call Spread | Iron Condor |
+| SELL | RANGE_BOUND | Bear Put Spread | Iron Condor |
+| NEUTRAL | RANGE_BOUND | Iron Condor | — |
+| NEUTRAL_BULLISH | any | Bull Call Spread | — |
+| NEUTRAL_BEARISH | any | Bear Put Spread | — |
+
+### Output schema additions
+
+```json
+{
+  "recommended": "Bull Call Spread",
+  "secondary":   "Iron Condor",
+  "signal":      "BUY",
+  "regime":      "RANGE_BOUND",
+  "reason":      "BUY signal overrides range-bound conditions..."
+}
+```
+
+`"strategy"` key kept as backward-compatible alias for Dashboard consumers.
+
+---
+
+## Phase 5 — Trade Planner
+
+**Commit:** `b0f099c`
+**Tag:** `phase-5-trade-planner-complete`
+**Tools added:** 1 → **Total: 34**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/planner/__init__.py` | Package init |
+| `src/planner/trade_plan.py` | Core logic — reuses all existing analysis functions |
+| `src/tools/trade_planner.py` | 1 MCP tool registration |
+
+### Design decisions
+
+**Full reuse chain** — no calculations are duplicated:
+
+```
+create_trade_plan()
+  ├── generate_trade_setup()    signal / entry / stoploss / target
+  ├── recommend_strategy()      strategy + regime (signal-aware from 4.1)
+  ├── calculate_risk_reward()   risk / reward / rr
+  ├── calculate_position_size() quantity from capital + risk %
+  └── _options_context()        pcr / max_pain (index only, silent on failure)
+```
+
+**Read-only** — does not place orders or call the Zerodha order API.
+
+**Signal rules** — NEUTRAL returns `trade_allowed: false`.
+NEUTRAL_BULLISH / NEUTRAL_BEARISH return cautious plans with reduced sizing guidance.
+
+### Tools (1)
+
+| Tool | Description |
+|---|---|
+| `create_trade_plan` | Entry / stoploss / target / position size / strategy for any symbol |
+
+---
+
+## Phase 5.1 — Trade Quality Filter
+
+**Commit:** `e0cb0b2`
+**Tag:** `phase-5.1-trade-quality-filter`
+**Tools added:** 0 (modified `create_trade_plan` output) → **Total: 34**
+
+### Problem
+
+Trade planner returned actionable plans regardless of risk/reward quality.
+
+### Fix
+
+Added `trade_quality` field to `create_trade_plan()` output:
+
+| RR | Quality |
+|---|---|
+| < 1.0 | LOW_QUALITY |
+| 1.0–1.5 | MODERATE |
+| 1.5–2.0 | GOOD |
+| ≥ 2.0 | HIGH_QUALITY |
+
+`trade_allowed` is set to `false` when quality is `LOW_QUALITY`.
+Summary text is tier-aware and explains the quality assessment.
+
+---
+
+## Phase 5.2 — Risk/Reward Optimization
+
+**Commit:** `cc910c9`
+**Tag:** `phase-5.2-risk-reward-optimization`
+**Tools added:** 0 (modified `generate_trade_setup` formulas) → **Total: 34**
+
+### Root cause
+
+Original ATR formula produced structural RR ≈ 0.71 for all setups:
+- entry = price + 0.25×ATR, stoploss = price − 1.5×ATR, target = price + 1.5×ATR
+- risk = 1.75×ATR, reward = 1.25×ATR → RR = 0.71 → always LOW_QUALITY
+
+### Fix
+
+Regime-aware target multipliers in `generate_trade_setup()`:
+
+| Regime | Target ATR | Risk | Reward | RR |
+|---|---|---|---|---|
+| BULL_TREND / BEAR_TREND / BREAKOUT_POTENTIAL | 2.75× | 1.25× | 2.50× | 2.0 |
+| NEUTRAL_BULLISH / NEUTRAL_BEARISH | 2.25× | 1.25× | 2.00× | 1.6 |
+| RANGE_BOUND | 1.75× | 1.25× | 1.50× | 1.2 |
+
+Stop tightened from 1.5×ATR to 1.0×ATR. Entry buffer unchanged at 0.25×ATR.
+
+---
+
+## Phase 6 — Option Strategy Builder
+
+**Commit:** `f216db5`
+**Tag:** `phase-6-option-strategy-builder-complete`
+**Tools added:** 1 → **Total: 35**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/strategy/__init__.py` | Package init |
+| `src/strategy/builder.py` | Strike selection, payoff math, summary |
+| `src/tools/strategy_builder.py` | 1 MCP tool registration |
+
+### Design decisions
+
+**Strike selection** — auto-detects strike interval from chain; selects ATM/ITM
+strikes for directional legs, OI-based S/R for Iron Condor shorts (ATM±interval fallback).
+
+**Real premiums** — uses `lastPrice` from the NSE option chain for all payoff
+calculations when available. Sets `is_estimate: false` only when all leg premiums
+are non-zero.
+
+**Equity degradation** — `OptionsService.get_option_chain()` raises `RuntimeError`
+for equity symbols (soft-blocked by NSE). The builder catches this and returns
+`premium_data_available: false` with null payoffs and a clear summary.
+
+**Payoff structures** — all 7 strategies implemented:
+
+| Strategy | Max Loss | Max Profit | Breakeven |
+|---|---|---|---|
+| Bull Call Spread | net debit | spread − debit | buy strike + debit |
+| Bear Put Spread | net debit | spread − debit | buy strike − debit |
+| Long Call | premium | unlimited | strike + premium |
+| Long Put | premium | strike − premium | strike − premium |
+| Long Straddle | total premium | unlimited | strike ± total |
+| Long Strangle | total premium | unlimited | each wing ± total |
+| Iron Condor | max spread − credit | net credit | short legs ± credit |
+
+### Tools (1)
+
+| Tool | Description |
+|---|---|
+| `build_option_strategy` | Legs / premiums / max loss / max profit / breakeven from live NSE chain |
+
+---
+
+## Phase 7 — Trade Review Engine
+
+**Commit:** *(this commit)*
+**Tag:** `phase-7-trade-review-engine-complete`
+**Tools added:** 1 → **Total: 36**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/review/__init__.py` | Package init |
+| `src/review/reviewer.py` | Thesis evaluation, invalidation conditions, reasoning |
+| `src/tools/trade_review.py` | 1 MCP tool registration |
+
+### Design decisions
+
+**Thesis status** — deterministic mapping from (direction, current signal):
+
+| Direction | Signal | Thesis | Action |
+|---|---|---|---|
+| LONG | BUY | VALID | HOLD |
+| LONG | NEUTRAL_BULLISH | WEAKENING | HOLD |
+| LONG | NEUTRAL | WEAKENING | REDUCE |
+| LONG | NEUTRAL_BEARISH / SELL | INVALIDATED | EXIT |
+| SHORT | SELL | VALID | HOLD |
+| SHORT | NEUTRAL_BEARISH | WEAKENING | HOLD |
+| SHORT | NEUTRAL | WEAKENING | REDUCE |
+| SHORT | NEUTRAL_BULLISH / BUY | INVALIDATED | EXIT |
+
+**Invalidation conditions** — generated from live EMA20, EMA50, RSI values.
+No LLM-generated opinions — same inputs always produce the same conditions.
+
+**Optional P&L** — when `entry_price` is provided, `current_pnl_percent` is
+calculated from the current price vs direction (LONG = (price − entry)/entry,
+SHORT = (entry − price)/entry).
+
+**Full reuse** — calls `detect_market_regime`, `generate_trade_setup`,
+`recommend_strategy`, and `create_trade_plan`. No indicator math duplicated.
+
+### Tools (1)
+
+| Tool | Description |
+|---|---|
+| `review_trade` | HOLD / REDUCE / EXIT + thesis status + invalidation conditions |
+
+---
+
+## Complete Tool Registry (36 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -407,6 +636,15 @@ involvement — the same inputs always produce the same string.
 ### Dashboard (2) — no auth
 `get_nifty_dashboard`, `get_banknifty_dashboard`
 
+### Trade Planner (1) — no auth
+`create_trade_plan`
+
+### Option Strategy Builder (1) — no auth
+`build_option_strategy`
+
+### Trade Review (1) — no auth
+`review_trade`
+
 ---
 
 ## Git Tags
@@ -415,6 +653,12 @@ involvement — the same inputs always produce the same string.
 |---|---|---|
 | `phase-3-analysis-complete` | `a3907e3` | Analysis + schema reconciliation complete |
 | `phase-4-dashboard-complete` | `6c30ce6` | Dashboard complete — final Phase 4 state |
+| `phase-4.1-strategy-alignment` | `9f72904` | Signal-priority conflict resolution in recommend_strategy |
+| `phase-5-trade-planner-complete` | `b0f099c` | create_trade_plan — full read-only trade plan |
+| `phase-5.1-trade-quality-filter` | `e0cb0b2` | trade_quality classification by RR ratio |
+| `phase-5.2-risk-reward-optimization` | `cc910c9` | Regime-aware ATR multipliers — RR 1.2–2.0 |
+| `phase-6-option-strategy-builder-complete` | `f216db5` | build_option_strategy — strikes + payoffs |
+| `phase-7-trade-review-engine-complete` | *(current)* | review_trade — HOLD/REDUCE/EXIT + thesis |
 
 ---
 
@@ -428,3 +672,6 @@ involvement — the same inputs always produce the same string.
 | No numpy requirement | All math uses Python built-ins and `round()` |
 | Backward compatibility | Legacy scalar fields (`entry`/`stoploss`/`target`) always present alongside zone fields |
 | Error isolation in dashboard | Each section catches independently; partial responses returned |
+| Signal-strategy conflicts | Signal takes priority over regime in recommend_strategy (Phase 4.1) |
+| Structurally poor RR | Regime-aware ATR multipliers in generate_trade_setup (Phase 5.2) |
+| Equity option chains | OptionsService raises RuntimeError for equities; builder degrades gracefully |
