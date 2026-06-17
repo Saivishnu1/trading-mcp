@@ -22,6 +22,10 @@ from __future__ import annotations
 import logging
 
 from src.analysis import regime as regime_mod
+from src.intelligence.events import get_upcoming_events, nearest_high_impact_days
+from src.intelligence.risk import get_market_risk_score
+from src.intelligence.vix import get_india_vix
+from src.intelligence.global_pulse import get_global_pulse
 from src.options import analytics
 from src.options.service import get_options_service
 from src.technical import indicators
@@ -139,6 +143,29 @@ def _analysis_section(symbol: str) -> tuple[dict, dict, dict]:
 # Summary generator
 # ---------------------------------------------------------------------------
 
+def _intelligence_section(symbol: str) -> dict:
+    """Aggregate intelligence signals into a slim dashboard-friendly dict."""
+    risk = get_market_risk_score(symbol)
+    vix  = get_india_vix()
+    glob = get_global_pulse()
+    evts = get_upcoming_events(days_ahead=7)
+
+    return {
+        "vix": {
+            "level":          vix.get("level"),
+            "caution_level":  vix.get("caution_level"),
+            "interpretation": vix.get("interpretation"),
+        } if "error" not in vix else {"error": vix["error"]},
+        "global_sentiment": glob.get("overall_sentiment") if "error" not in glob else None,
+        "upcoming_events":  evts.get("events", [])[:3],   # top 3 nearest
+        "risk_score": {
+            "score":          risk.get("score"),
+            "rating":         risk.get("rating"),
+            "recommendation": risk.get("recommendation"),
+        } if "error" not in risk else {"error": risk.get("error", "unavailable")},
+    }
+
+
 def _build_summary(
     symbol: str,
     spot: float | None,
@@ -146,6 +173,7 @@ def _build_summary(
     opts: dict,
     analysis: dict,
     signal: str | None,
+    intelligence: dict | None = None,
 ) -> str:
     """Deterministic one-paragraph summary from key fields."""
     sym = symbol.upper()
@@ -212,10 +240,25 @@ def _build_summary(
     }
     bias_clause = bias_map.get(signal or "", "Bias is undetermined")
 
+    # Event warning (appended when HIGH-impact event is within 3 days)
+    event_warning = ""
+    if intelligence:
+        upcoming = intelligence.get("upcoming_events", [])
+        days = nearest_high_impact_days(upcoming)
+        if days is not None and days <= 3:
+            first_high = next(
+                (e for e in upcoming if e.get("impact") == "HIGH"), None
+            )
+            if first_high:
+                event_warning = (
+                    f" Note: {first_high['description']} in {days} day(s) —"
+                    " consider defined-risk structures."
+                )
+
     return (
         f"{sym} is {ma_clause}, with {opt_clause}. "
         f"{mom_clause} and {trend_clause}. "
-        f"{bias_clause}."
+        f"{bias_clause}.{event_warning}"
     )
 
 
@@ -259,7 +302,14 @@ def build_dashboard(symbol: str) -> dict:
         trade_setup.get("signal") if "error" not in trade_setup else None
     )
 
-    summary = _build_summary(symbol, spot, tech, opts, analysis, signal)
+    # Intelligence (isolated — failure must not break the rest)
+    intelligence: dict | None = None
+    try:
+        intelligence = _intelligence_section(symbol)
+    except Exception as exc:
+        logger.warning("intelligence section failed for %s: %s", symbol, exc)
+
+    summary = _build_summary(symbol, spot, tech, opts, analysis, signal, intelligence)
 
     return {
         "symbol": symbol.upper(),
@@ -269,5 +319,6 @@ def build_dashboard(symbol: str) -> dict:
         "analysis": analysis,
         "trade_setup": trade_setup,
         "strategy": strategy,
+        "intelligence": intelligence,
         "summary": summary,
     }

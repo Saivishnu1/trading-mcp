@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -75,6 +75,11 @@ mcp = FastMCP(
         "TRADE REVIEW tools (thesis evaluation, no auth needed):\n"
         "  review_trade('NSE:INFY', direction='LONG', entry_price=1400, holding_days=3)\n"
         "    — HOLD / REDUCE / EXIT + thesis status + invalidation conditions\n\n"
+        "MARKET INTELLIGENCE tools (macro context, no auth needed):\n"
+        "  get_india_vix()                          — VIX level, 52w percentile, caution level\n"
+        "  get_global_pulse()                       — crude, gold, DXY, S&P500, US10Y + sentiment\n"
+        "  get_upcoming_events(days_ahead=7)        — RBI MPC, FOMC, CPI, GDP, NFP schedule\n"
+        "  get_market_risk_score(symbol='NIFTY')    — composite 0-100 risk score\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -94,6 +99,7 @@ dashboard.register(mcp)
 trade_planner.register(mcp)
 strategy_builder.register(mcp)
 trade_review.register(mcp)
+intelligence.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()

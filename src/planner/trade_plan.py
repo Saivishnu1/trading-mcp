@@ -26,6 +26,17 @@ from src.analysis.regime import (
 from src.options import analytics
 from src.options.service import get_options_service
 
+def _risk_score_context(symbol: str) -> dict | None:
+    """Fetch market risk score for visibility only. Never affects trade logic."""
+    try:
+        from src.intelligence.risk import get_market_risk_score
+        rs = get_market_risk_score(symbol)
+        if "error" not in rs:
+            return {"score": rs.get("score"), "rating": rs.get("rating")}
+    except Exception:
+        pass
+    return None
+
 logger = logging.getLogger(__name__)
 
 _NEUTRAL_SIGNALS = {"NEUTRAL"}
@@ -148,6 +159,12 @@ def create_trade_plan(
     stoploss: float = setup["stoploss"]
     target: float = setup["target"]
 
+    # --- risk score (visibility only — never affects trade logic) ---
+    try:
+        risk_score = _risk_score_context(symbol)
+    except Exception:
+        risk_score = None
+
     # --- NEUTRAL: no trade ---
     if signal in _NEUTRAL_SIGNALS:
         opts_ctx = _options_context(symbol)
@@ -160,6 +177,7 @@ def create_trade_plan(
                 "regime": None,
                 **opts_ctx,
             },
+            "risk_score": risk_score,
             "summary": "No trade recommended. Market lacks sufficient directional conviction.",
         }
 
@@ -216,5 +234,6 @@ def create_trade_plan(
             "regime": regime,
             **opts_ctx,
         },
+        "risk_score": risk_score,
         "summary": summary,
     }
