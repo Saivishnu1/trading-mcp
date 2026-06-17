@@ -20,6 +20,7 @@ dependencies = [
 
 [project.scripts]
 zerodha-mcp = "src.server:main"
+zerodha-mcp-stdio = "src.server:main_stdio"
 
 [build-system]
 requires = ["hatchling"]

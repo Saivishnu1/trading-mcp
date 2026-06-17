@@ -47,29 +47,34 @@ portfolio.register(mcp)
 market.register(mcp)
 instruments.register(mcp)
 
+from starlette.applications import Starlette
+from starlette.routing import Mount, Route
+from starlette.responses import JSONResponse
+
 _sse_app = mcp.sse_app()
+_http_app = mcp.streamable_http_app()
 
 
-async def app(scope, receive, send):
-    """ASGI wrapper: serves GET /health for platform health checks,
-    forwards everything else to the MCP SSE app."""
-    if scope["type"] == "http" and scope["path"] == "/health":
-        body = b'{"status":"ok"}'
-        await send({"type": "http.response.start", "status": 200,
-                    "headers": [[b"content-type", b"application/json"],
-                                [b"content-length", str(len(body)).encode()]]})
-        await send({"type": "http.response.body", "body": body})
-        return
-    await _sse_app(scope, receive, send)
+async def _health(_request):
+    return JSONResponse({"status": "ok"})
+
+
+app = Starlette(routes=[
+    Route("/health", _health),
+    Mount("/mcp", app=_http_app),
+    Mount("/", app=_sse_app),
+])
 
 
 def main() -> None:
     import uvicorn
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
-    # Pass the app object directly — avoids uvicorn's string-import path
-    # which breaks when PYTHONPATH isn't set identically to the build env.
     uvicorn.run(app, host=host, port=port)
+
+
+def main_stdio() -> None:
+    mcp.run("stdio")
 
 
 if __name__ == "__main__":
