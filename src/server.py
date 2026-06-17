@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -89,6 +89,19 @@ mcp = FastMCP(
         "  get_news_sentiment('INFY')        — aggregate sentiment score and counts\n"
         "  get_earnings_calendar('INFY')     — next earnings date, EPS estimate, dividends, splits\n"
         "  get_event_risk('INFY')            — composite 0-100 event risk: earnings + news + market\n\n"
+        "TRADE JOURNAL tools (persistent SQLite journal, no auth needed):\n"
+        "  log_trade('INFY', 'LONG', 1540.0, stoploss=1490, target=1640)\n"
+        "    — record a new trade; returns trade_id (format TRD-xxxxxxxx)\n"
+        "    — pass regime/signal/risk_score from prior analysis calls in the session\n"
+        "    — analysis_snapshot: dict of any extra context to preserve at entry\n"
+        "    — trade_type: 'EQUITY' (default) | 'OPTIONS' | 'FUTURES' | 'INDEX'\n"
+        "    — created_by: 'MANUAL' (default) | 'CLAUDE' | 'AUTOMATED'\n"
+        "  close_trade('TRD-xxxxxxxx', 1635.0, exit_reason='TARGET_HIT')\n"
+        "    — finalise position; calculates pnl, pnl_percent, holding_days\n"
+        "    — exit_reason: TARGET_HIT | STOPLOSS_HIT | MANUAL | THESIS_INVALIDATED | EXPIRED | CANCELLED\n"
+        "  get_open_trades([symbol])         — list open positions (filter by symbol optional)\n"
+        "  get_trade_history([symbol, days, status, limit])\n"
+        "    — query history + summary: win_rate, total_pnl, avg_holding_days, best/worst trade\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -111,6 +124,7 @@ trade_review.register(mcp)
 intelligence.register(mcp)
 portfolio_intelligence.register(mcp)
 catalyst.register(mcp)
+journal.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()

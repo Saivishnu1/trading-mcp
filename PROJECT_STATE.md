@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 11B (complete)
+Current Phase: 12 (complete)
 
 Latest Tag:
-phase-11b-catalyst-intelligence
+phase-12-trade-journal
 
 Tool Count:
-48
+52
 
 Test Count:
-551 (19 test files, 0 failures)
+661 (22 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -70,7 +70,9 @@ Production deployed on Railway
 
 ✅ Phase 11B — Catalyst Intelligence (News, Earnings & Event Risk)
 
-⬜ Phase 12 — next
+✅ Phase 12 — Trade Journal Foundation
+
+⬜ Phase 13 — next
 
 ---
 
@@ -102,11 +104,30 @@ Portfolio Intelligence: 3
 
 Catalyst Intelligence: 4
 
-Total: 48
+Trade Journal: 4
+
+Total: 52
 
 ---
 
 ## Recent Changes
+
+Phase 12:
+
+* 4 new tools: log_trade, close_trade, get_open_trades, get_trade_history
+* New src/journal/ package: db.py (connection factory, schema), service.py (CRUD + P&L)
+* SQLite storage via JOURNAL_DB env var (default: journal.db); no external services
+* Schema v1: 30 columns including trade_type (EQUITY default), created_by (MANUAL default), analysis_snapshot (JSON)
+* Trade IDs: TRD-xxxxxxxx (8 hex chars from uuid4) — short enough to copy, unique for personal use
+* P&L calculation: (exit-entry)*qty for LONG, (entry-exit)*qty for SHORT; pnl_percent relative to entry
+* risk_reward auto-calculated from stoploss + target if not provided explicitly
+* Tags and analysis_snapshot stored as JSON, returned as Python objects
+* WAL mode + threading.Lock for safe concurrent writes; check_same_thread=False
+* Error isolation: all service functions return {"error": "..."} — no exceptions propagate to MCP
+* Testability: reset_connection() seam allows in-memory SQLite injection per test
+* 110 new tests across 3 files; JR-1 through JR-5 regression guards
+* No changes to existing 48 tools or any existing test file
+* Tagged: phase-12-trade-journal
 
 Phase 11B:
 
