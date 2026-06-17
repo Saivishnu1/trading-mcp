@@ -53,6 +53,30 @@ def _options_context(symbol: str) -> dict:
         return {}
 
 
+def _trade_quality(rr: float | None) -> str:
+    if rr is None or rr < 1.0:
+        return "LOW_QUALITY"
+    if rr < 1.5:
+        return "MODERATE"
+    if rr < 2.0:
+        return "GOOD"
+    return "HIGH_QUALITY"
+
+
+def _quality_clause(quality: str, rr: float | None) -> str:
+    rr_str = f"{rr:.2f}" if rr is not None else "N/A"
+    if quality == "LOW_QUALITY":
+        return (
+            f"current risk/reward is only {rr_str}. "
+            "Consider waiting for a better entry or using an options spread structure."
+        )
+    if quality == "MODERATE":
+        return f"risk/reward is {rr_str}. Trade is acceptable but risk/reward remains average."
+    if quality == "GOOD":
+        return f"risk/reward is {rr_str}. Trade offers favorable risk/reward and aligns with the current market bias."
+    return f"risk/reward is {rr_str}. High-conviction setup with strong risk/reward characteristics."
+
+
 def _build_summary(
     signal: str,
     entry: float,
@@ -60,30 +84,41 @@ def _build_summary(
     target: float,
     rr: float | None,
     strategy: str,
+    quality: str,
 ) -> str:
     rr_str = f"{rr:.1f}" if rr is not None else "N/A"
+    q_clause = _quality_clause(quality, rr)
+
     if signal == "BUY":
+        if quality == "LOW_QUALITY":
+            return f"Bullish setup detected, but {q_clause}"
         return (
             f"Enter above {entry} with stoploss at {stoploss}. "
-            f"Target {target}. Risk/reward is {rr_str}. "
+            f"Target {target}. {q_clause} "
             f"{strategy} is the preferred strategy."
         )
     if signal == "SELL":
+        if quality == "LOW_QUALITY":
+            return f"Bearish setup detected, but {q_clause}"
         return (
             f"Enter below {entry} with stoploss at {stoploss}. "
-            f"Target {target}. Risk/reward is {rr_str}. "
+            f"Target {target}. {q_clause} "
             f"{strategy} is the preferred strategy."
         )
     if signal == "NEUTRAL_BULLISH":
+        if quality == "LOW_QUALITY":
+            return f"Cautious bullish bias, but {q_clause}"
         return (
             f"Cautious bullish plan. Enter above {entry} with stoploss at {stoploss}. "
-            f"Target {target}. Risk/reward is {rr_str}. "
+            f"Target {target}. {q_clause} "
             f"Reduce position size — conviction is moderate. {strategy} preferred."
         )
     if signal == "NEUTRAL_BEARISH":
+        if quality == "LOW_QUALITY":
+            return f"Cautious bearish bias, but {q_clause}"
         return (
             f"Cautious bearish plan. Enter below {entry} with stoploss at {stoploss}. "
-            f"Target {target}. Risk/reward is {rr_str}. "
+            f"Target {target}. {q_clause} "
             f"Reduce position size — conviction is moderate. {strategy} preferred."
         )
     return "No trade recommended. Market lacks sufficient directional conviction."
@@ -148,12 +183,15 @@ def create_trade_plan(
     # --- options context (pcr, max_pain — index only) ---
     opts_ctx = _options_context(symbol)
 
-    summary = _build_summary(signal, entry, stoploss, target, rr_val, recommended_strategy)
+    quality = _trade_quality(rr_val)
+    trade_allowed = quality != "LOW_QUALITY"
+    summary = _build_summary(signal, entry, stoploss, target, rr_val, recommended_strategy, quality)
 
     return {
         "symbol": sym,
-        "trade_allowed": True,
+        "trade_allowed": trade_allowed,
         "signal": signal,
+        "trade_quality": quality,
         "confidence": confidence,
         "entry": entry,
         "stoploss": stoploss,
