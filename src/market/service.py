@@ -116,20 +116,42 @@ def _nse_to_normalized(raw: dict, instrument: str) -> dict:
 def _yf_quote(yf_sym: str, instrument: str) -> dict:
     import yfinance as yf  # type: ignore[import]
     ticker = yf.Ticker(yf_sym)
-    fi = ticker.fast_info
-    return {
-        "instrument": instrument,
-        "last_price": getattr(fi, "last_price", None),
-        "open": getattr(fi, "open", None),
-        "high": getattr(fi, "day_high", None),
-        "low": getattr(fi, "day_low", None),
-        "close": None,
-        "previous_close": getattr(fi, "previous_close", None),
-        "change": None,
-        "change_percent": None,
-        "volume": getattr(fi, "last_volume", None),
-        "source": "yfinance",
-    }
+    try:
+        fi = ticker.fast_info
+        return {
+            "instrument": instrument,
+            "last_price": getattr(fi, "last_price", None),
+            "open": getattr(fi, "open", None),
+            "high": getattr(fi, "day_high", None),
+            "low": getattr(fi, "day_low", None),
+            "close": None,
+            "previous_close": getattr(fi, "previous_close", None),
+            "change": None,
+            "change_percent": None,
+            "volume": getattr(fi, "last_volume", None),
+            "source": "yfinance",
+        }
+    except (KeyError, Exception):
+        # fast_info can fail when Yahoo Finance changes response schema;
+        # fall back to history() which is more stable
+        df = ticker.history(period="2d")
+        if df.empty:
+            return {"instrument": instrument, "last_price": None, "source": "yfinance"}
+        row = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) > 1 else None
+        return {
+            "instrument": instrument,
+            "last_price": round(float(row["Close"]), 4),
+            "open": round(float(row["Open"]), 4),
+            "high": round(float(row["High"]), 4),
+            "low": round(float(row["Low"]), 4),
+            "close": round(float(row["Close"]), 4),
+            "previous_close": round(float(prev["Close"]), 4) if prev is not None else None,
+            "change": None,
+            "change_percent": None,
+            "volume": int(row["Volume"]),
+            "source": "yfinance",
+        }
 
 
 def _serialize(obj: object) -> object:
