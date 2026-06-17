@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -84,6 +84,11 @@ mcp = FastMCP(
         "  get_portfolio_risk_report()       — per-position risk scores + portfolio risk + recommendations\n"
         "  get_portfolio_regime_analysis()   — regime distribution + directional bias across holdings\n"
         "  get_portfolio_exposure_breakdown() — long/short exposure, concentration, diversification\n\n"
+        "CATALYST INTELLIGENCE tools (news, earnings, event risk, no auth needed):\n"
+        "  get_symbol_news('INFY', count=10) — recent headlines + per-article sentiment\n"
+        "  get_news_sentiment('INFY')        — aggregate sentiment score and counts\n"
+        "  get_earnings_calendar('INFY')     — next earnings date, EPS estimate, dividends, splits\n"
+        "  get_event_risk('INFY')            — composite 0-100 event risk: earnings + news + market\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -105,6 +110,7 @@ strategy_builder.register(mcp)
 trade_review.register(mcp)
 intelligence.register(mcp)
 portfolio_intelligence.register(mcp)
+catalyst.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()

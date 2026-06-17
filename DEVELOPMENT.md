@@ -10,8 +10,9 @@
 
 A personal Model Context Protocol (MCP) server that connects Claude to a Zerodha
 trading account **without** requiring a paid Kite Connect subscription. Built across
-ten phases, from a bare authentication stub to a 41-tool trading intelligence platform
-with market regime analysis, risk scoring, and macro context awareness.
+eleven phases, from a bare authentication stub to a 48-tool trading intelligence platform
+with market regime analysis, risk scoring, macro context awareness, portfolio intelligence,
+and company-level catalyst tracking (news, earnings, event risk).
 
 ---
 
@@ -19,18 +20,24 @@ with market regime analysis, risk scoring, and macro context awareness.
 
 ```
 src/
-├── broker/          Zerodha session management (zerodha_web + jugaad fallback)
-├── market/          yfinance-backed OHLCV and quote service
-├── options/         NSE option chain fetch (jugaad-data NSELive) + analytics
-├── technical/       Pure-Python indicator math (RSI, EMA, MACD, ADX, ATR)
-├── analysis/        Market regime detection, trade setup, strategy recommendation
-├── planner/         Trade plan composition — entry/sizing/quality from analysis
-├── strategy/        Option strategy builder — strikes, premiums, payoffs
-├── review/          Trade reviewer — HOLD/REDUCE/EXIT thesis evaluation
-├── dashboard/       Aggregator — assembles all sections into one snapshot
-├── intelligence/    Market Intelligence Engine — VIX, global pulse, events, risk score
-├── tools/           MCP tool registrations (one file per domain)
-└── server.py        FastMCP server + ASGI app + /health endpoint
+├── broker/                  Zerodha session management (zerodha_web + jugaad fallback)
+├── market/                  yfinance-backed OHLCV and quote service
+├── options/                 NSE option chain fetch (jugaad-data NSELive) + analytics
+├── technical/               Pure-Python indicator math (RSI, EMA, MACD, ADX, ATR)
+├── analysis/                Market regime detection, trade setup, strategy recommendation
+├── planner/                 Trade plan composition — entry/sizing/quality from analysis
+├── strategy/                Option strategy builder — strikes, premiums, payoffs
+├── review/                  Trade reviewer — HOLD/REDUCE/EXIT thesis evaluation
+├── dashboard/               Aggregator — assembles all sections into one snapshot
+├── intelligence/            Market Intelligence Engine — VIX, global pulse, events, risk score
+├── portfolio_intelligence/  Portfolio-level risk, regime distribution, exposure breakdown
+├── catalyst/                Catalyst Intelligence — news, earnings, event risk (Phase 11B)
+│   ├── constants.py         _to_yf_ticker(), keyword sets, CATALYST_PRIORITY
+│   ├── news.py              get_symbol_news(), _aggregate_sentiment()
+│   ├── earnings.py          get_earnings_calendar(), proximity scoring, corporate actions
+│   └── event_risk.py        get_event_risk(), confidence model, dual catalyst fields
+├── tools/                   MCP tool registrations (one file per domain)
+└── server.py                FastMCP server + ASGI app + /health endpoint
 ```
 
 **Transport:** Streamable HTTP at `/mcp` (for claude.ai web connectors) + SSE at `/sse`
@@ -784,7 +791,145 @@ position sizing, or any other trade logic.
 
 ---
 
-## Complete Tool Registry (44 tools)
+## Phase 11B — Catalyst Intelligence
+
+**Tag:** `phase-11b-catalyst-intelligence`
+**Tools added:** 4 → **Total: 48**
+**Tests added:** 124 (4 new files) → **Total: 551**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/catalyst/__init__.py` | Package init |
+| `src/catalyst/constants.py` | `_to_yf_ticker()`, keyword sets, `CATALYST_PRIORITY` |
+| `src/catalyst/news.py` | `get_symbol_news()`, `_aggregate_sentiment()` |
+| `src/catalyst/earnings.py` | `get_earnings_calendar()`, proximity scoring, corporate actions |
+| `src/catalyst/event_risk.py` | `get_event_risk()`, confidence model, dual catalyst fields |
+| `src/tools/catalyst.py` | 4 MCP tool registrations |
+| `tests/test_catalyst_news.py` | 41 tests — symbol resolution, sentiment, news fetch |
+| `tests/test_catalyst_earnings.py` | 38 tests — proximity, calendar parsing, actions parsing |
+| `tests/test_catalyst_event_risk.py` | 28 tests — score formula, confidence model, catalysts |
+| `tests/test_catalyst_regressions.py` | 17 tests — ER-1 through ER-5 regression guards |
+
+### Design decisions
+
+**Data source** — `yfinance.Ticker.news` (headlines), `.calendar` (earnings date + estimates),
+`.actions` (dividends + splits). No API key required. Direct `yf.Ticker()` calls via a
+patchable `_get_ticker()` factory in each module — tests patch this without touching the
+existing market service.
+
+**Symbol resolution** — `_to_yf_ticker()` in `constants.py` handles all forms:
+
+| Input | Output |
+|---|---|
+| `INFY` | `INFY.NS` |
+| `NSE:INFY` | `INFY.NS` |
+| `INFY.NS` | `INFY.NS` (idempotent) |
+| `NIFTY` | `^NSEI` |
+| `BANKNIFTY` | `^NSEBANK` |
+
+**Keyword sentiment** — pure Python, no ML, no external service. Keywords defined in
+`constants.py` as `frozenset`. Per-article: positive hit count vs negative hit count
+→ POSITIVE / NEGATIVE / NEUTRAL. Aggregate: `score = (pos − neg) / total` → −1.0 to +1.0.
+
+**Sentiment → risk score mapping (for event_risk):**
+
+| Sentiment | Score |
+|---|---|
+| VERY_POSITIVE (score > 0.3) | 10 |
+| POSITIVE (0.1–0.3) | 25 |
+| NEUTRAL (−0.1 to +0.1) | 45 |
+| NEGATIVE (−0.3 to −0.1) | 65 |
+| VERY_NEGATIVE (score < −0.3) | 90 |
+| No articles | 45 (neutral) |
+
+**Earnings proximity scoring:**
+
+| Days until earnings | Risk label | Score |
+|---|---|---|
+| ≤ 1 | IMMINENT | 100 |
+| ≤ 3 | VERY_HIGH | 80 |
+| ≤ 7 | HIGH | 60 |
+| ≤ 14 | MEDIUM | 30 |
+| > 14 or None | LOW | 10 |
+
+**Event risk composite (40/30/30):**
+
+```
+get_event_risk(symbol)
+  ├── get_earnings_calendar(symbol)    40% — earnings proximity score
+  ├── get_symbol_news(symbol)          30% — news sentiment → risk score
+  │   └── _aggregate_sentiment()            (cached — no second yfinance fetch)
+  └── get_market_risk_score(symbol)    30% — Phase 10 composite (VIX/events/PCR/regime)
+```
+
+**Confidence model** — reflects data availability:
+
+| Sources available | Confidence |
+|---|---|
+| News + Earnings + Market | 1.0 |
+| Any two sources | 0.8 |
+| Market only | 0.5 |
+| None | 0.3 |
+
+**Dual catalyst fields:**
+
+- `nearest_catalyst` — soonest catalyst by date within 30 days
+- `highest_impact_catalyst` — highest-priority catalyst by `CATALYST_PRIORITY`:
+  `EARNINGS=100`, `SPLIT=70`, `DIVIDEND=40`
+
+These are not always the same: a dividend in 3 days and earnings in 20 days → nearest
+is the dividend, highest impact is earnings.
+
+**Property-access isolation** — `get_earnings_calendar()` accesses `ticker.calendar`
+and `ticker.actions` in the outer try/except so yfinance exceptions surface as an
+`"error"` key. Parse transformations are isolated in `_parse_calendar()` /
+`_parse_actions()` which accept raw objects (not the ticker itself) — this separation
+is what enables ER-1 and ER-4 regression guards to work correctly.
+
+**Cache TTLs:**
+
+| Module | TTL |
+|---|---|
+| `news.py` | 1800 s (30 min) |
+| `earnings.py` | 3600 s (1 hour) |
+| `event_risk.py` | 300 s (5 min) |
+
+**Index symbols** — `get_earnings_calendar("NIFTY")` returns `earnings_proximity_risk: "N/A"`
+and a `note` field. `get_symbol_news("NIFTY")` returns market-wide news (useful as macro filter).
+
+### Regression guards (ER-1 through ER-5)
+
+| # | Class | Scenario protected |
+|---|---|---|
+| ER-1 | `TestER1YfinanceRaises` | yfinance raises → `{"error": "..."}` from news/earnings; event_risk stays valid |
+| ER-2 | `TestER2EmptyNewsList` | Empty news → `count: 0`, `headlines: []`, sentiment is NEUTRAL |
+| ER-3 | `TestER3NoCalendarData` | `Ticker.calendar` returns None → `next_earnings_date: null`, `earnings_proximity_risk: "LOW"` |
+| ER-4 | `TestER4AllFetchesFail` | News + earnings both fail → event_risk uses market score only, `confidence: 0.5` |
+| ER-5 | `TestER5SymbolNormalization` | `INFY`, `NSE:INFY`, `INFY.NS` all resolve to `INFY.NS` — idempotent, no duplication |
+
+### Coverage
+
+| Module | Coverage |
+|---|---|
+| `src/catalyst/constants.py` | 100% |
+| `src/catalyst/news.py` | 92% |
+| `src/catalyst/earnings.py` | 83% |
+| `src/catalyst/event_risk.py` | 91% |
+
+### Tools (4)
+
+| Tool | Auth | Description |
+|---|---|---|
+| `get_symbol_news` | — | Recent headlines with per-article sentiment (POSITIVE/NEGATIVE/NEUTRAL) |
+| `get_news_sentiment` | — | Aggregate sentiment score + counts from cached news (no second fetch) |
+| `get_earnings_calendar` | — | Next earnings date, EPS estimate, upcoming dividends + splits |
+| `get_event_risk` | — | Composite 0–100 event risk: earnings proximity + news + market risk |
+
+---
+
+## Complete Tool Registry (48 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -826,6 +971,9 @@ position sizing, or any other trade logic.
 
 ### Portfolio Intelligence (3) — require active session
 `get_portfolio_risk_report`, `get_portfolio_regime_analysis`, `get_portfolio_exposure_breakdown`
+
+### Catalyst Intelligence (4) — no auth
+`get_symbol_news`, `get_news_sentiment`, `get_earnings_calendar`, `get_event_risk`
 
 ---
 
@@ -978,7 +1126,8 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-8-equity-option-chain-support` | `<prev>` | get_equity_option_chain — real strikes/premiums for NSE equities |
 | `phase-9-automated-testing` | *(prev)* | 270 tests, 80%+ coverage on all business-logic modules |
 | `phase-10-market-intelligence` | `215c52f` | Market Intelligence Engine — VIX, global pulse, events, risk score; 41 tools, 361 tests |
-| `phase-11a-portfolio-intelligence` | *(current)* | Portfolio Intelligence — risk report, regime analysis, exposure breakdown; 44 tools, 427 tests |
+| `phase-11a-portfolio-intelligence` | *(prev)* | Portfolio Intelligence — risk report, regime analysis, exposure breakdown; 44 tools, 427 tests |
+| `phase-11b-catalyst-intelligence` | *(current)* | Catalyst Intelligence — news, earnings, event risk; 48 tools, 551 tests |
 
 ---
 

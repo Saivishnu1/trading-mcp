@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 11A (complete)
+Current Phase: 11B (complete)
 
 Latest Tag:
-phase-11a-portfolio-intelligence
+phase-11b-catalyst-intelligence
 
 Tool Count:
-44
+48
 
 Test Count:
-427 (15 test files, 0 failures)
+551 (19 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -68,7 +68,9 @@ Production deployed on Railway
 
 ✅ Phase 11A — Portfolio Intelligence
 
-⬜ Phase 11B - next
+✅ Phase 11B — Catalyst Intelligence (News, Earnings & Event Risk)
+
+⬜ Phase 12 — next
 
 ---
 
@@ -98,11 +100,30 @@ Market Intelligence: 4
 
 Portfolio Intelligence: 3
 
-Total: 44
+Catalyst Intelligence: 4
+
+Total: 48
 
 ---
 
 ## Recent Changes
+
+Phase 11B:
+
+* 4 new tools: get_symbol_news, get_news_sentiment, get_earnings_calendar, get_event_risk
+* New src/catalyst/ package: constants.py, news.py, earnings.py, event_risk.py
+* Symbol resolution: _to_yf_ticker() handles bare/prefixed/suffixed/index aliases — idempotent
+* Keyword-based sentiment: no ML, no API key — _POSITIVE/_NEGATIVE keyword sets in constants.py
+* Earnings proximity: 5-tier scoring (IMMINENT/VERY_HIGH/HIGH/MEDIUM/LOW) with 0-100 score
+* Event risk composite: earnings 40% + news 30% + market risk 30% (reuses Phase 10)
+* Confidence model: 1.0 (all sources) / 0.8 (2 sources) / 0.5 (market only) / 0.3 (none)
+* Dual catalyst fields: nearest_catalyst (by date) + highest_impact_catalyst (by priority)
+* Catalyst priority: EARNINGS=100, SPLIT=70, DIVIDEND=40
+* Error isolation: property-access exceptions surface as "error" key; no propagation
+* Cache TTL: news 1800s, earnings 3600s, event_risk 300s (all thread-safe)
+* 124 new tests across 4 files; ER-1 through ER-5 regression guards
+* No changes to existing 44 tools or any existing test file
+* Tagged: phase-11b-catalyst-intelligence
 
 Phase 11A:
 
@@ -141,7 +162,7 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 11A complete and tagged.
+None. Phase 11B complete and tagged.
 
 ---
 
