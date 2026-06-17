@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -80,6 +80,10 @@ mcp = FastMCP(
         "  get_global_pulse()                       — crude, gold, DXY, S&P500, US10Y + sentiment\n"
         "  get_upcoming_events(days_ahead=7)        — RBI MPC, FOMC, CPI, GDP, NFP schedule\n"
         "  get_market_risk_score(symbol='NIFTY')    — composite 0-100 risk score\n\n"
+        "PORTFOLIO INTELLIGENCE tools (require active session):\n"
+        "  get_portfolio_risk_report()       — per-position risk scores + portfolio risk + recommendations\n"
+        "  get_portfolio_regime_analysis()   — regime distribution + directional bias across holdings\n"
+        "  get_portfolio_exposure_breakdown() — long/short exposure, concentration, diversification\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -100,6 +104,7 @@ trade_planner.register(mcp)
 strategy_builder.register(mcp)
 trade_review.register(mcp)
 intelligence.register(mcp)
+portfolio_intelligence.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()

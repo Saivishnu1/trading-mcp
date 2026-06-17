@@ -784,7 +784,7 @@ position sizing, or any other trade logic.
 
 ---
 
-## Complete Tool Registry (41 tools)
+## Complete Tool Registry (44 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -823,6 +823,9 @@ position sizing, or any other trade logic.
 
 ### Market Intelligence (4) — no auth
 `get_india_vix`, `get_global_pulse`, `get_upcoming_events`, `get_market_risk_score`
+
+### Portfolio Intelligence (3) — require active session
+`get_portfolio_risk_report`, `get_portfolio_regime_analysis`, `get_portfolio_exposure_breakdown`
 
 ---
 
@@ -880,6 +883,86 @@ All tests use `monkeypatch` — no live NSE/Yahoo Finance/Zerodha calls:
 
 ---
 
+## Phase 11A — Portfolio Intelligence
+
+**Commit:** *(current)*
+**Tag:** `phase-11a-portfolio-intelligence`
+**Tools added:** 3 → **Total: 44**
+**Tests added:** 66 (2 new files) → **Total: 427**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/portfolio_intelligence/__init__.py` | Package init |
+| `src/portfolio_intelligence/service.py` | All aggregation logic — no duplicated indicators |
+| `src/tools/portfolio_intelligence.py` | 3 MCP tool registrations |
+| `tests/test_portfolio_intelligence.py` | Unit + integration tests |
+| `tests/test_portfolio_intelligence_regressions.py` | PR-1 through PR-5 regression guards |
+
+### Design decisions
+
+**Reuse chain — no new logic:**
+
+```
+get_portfolio_risk_report()
+  ├── get_broker().holdings()           demat positions (always LONG)
+  ├── get_broker().positions()["net"]   intraday/carry-forward overlay
+  ├── review_trade(sym, dir, entry)     action + thesis_status + regime + signal
+  └── get_market_risk_score(sym)        composite 0–100 risk per symbol
+
+get_portfolio_exposure_breakdown()
+  └── _get_all_positions()              raw broker data only — no analysis calls
+```
+
+**Position unification:** Holdings (demat) take priority. Net positions are added only for symbols not already in holdings. If a symbol appears in both, the holding entry is used (longer-term view; intraday overlay ignored). Deduplication is by `tradingsymbol`.
+
+**Direction mapping:** Holdings → always `LONG`. Net position → `LONG` if qty > 0, `SHORT` if qty < 0. `review_trade` receives the correct direction for each.
+
+**Portfolio risk score:** Value-weighted average of per-position `get_market_risk_score()` results. Weight = `current_value` (qty × last_price). Falls back to simple average when all values are zero, and to neutral 50 when no scores are available.
+
+**Diversification score (HHI-based):**
+
+```
+score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_value
+```
+
+| Positions | Result |
+|---|---|
+| 1 (fully concentrated) | 0 |
+| 2 equal | 50 |
+| 10 equal | 90 |
+
+**Concentration risk:** Flags any single position > 30% of total portfolio value.
+
+**Error isolation:** Per-position: `review_trade` and `get_market_risk_score` each wrapped in try/except. Failed symbols appear with `review_action: null`, `risk_score: null` — they do not suppress other positions. Broker calls wrapped at the top: failure returns `{"error": "..."}` from all three tools, no unhandled exception.
+
+### Regression guards (PR-1 through PR-5)
+
+| # | Class | Scenario protected |
+|---|---|---|
+| PR-1 | `TestPR1EmptyPortfolio` | Empty holdings + positions → valid structured response with zero counts |
+| PR-2 | `TestPR2BrokerAuthFailure` | Broker raises (no session) → `{"error": "..."}` from all three tools, no exception |
+| PR-3 | `TestPR3PerSymbolAnalysisFailure` | One symbol's review_trade raises → other positions still analyzed and returned |
+| PR-4 | `TestPR4AllAnalysisFailed` | All per-symbol calls fail → exposure keys still valid; risk score falls back to neutral 50 |
+| PR-5 | `TestPR5SymbolDeduplication` | Same symbol in holdings AND net positions → appears once, holding data used |
+
+### Coverage
+
+| Module | Coverage |
+|---|---|
+| `src/portfolio_intelligence/service.py` | 97% |
+
+### Tools (3)
+
+| Tool | Auth | Description |
+|---|---|---|
+| `get_portfolio_risk_report` | ✓ | Per-position risk scores + portfolio risk + diversification + recommendations |
+| `get_portfolio_regime_analysis` | ✓ | Regime distribution + directional bias across all holdings |
+| `get_portfolio_exposure_breakdown` | ✓ | Long/short exposure, largest position, concentration metrics (fast, no analysis) |
+
+---
+
 ## Git Tags
 
 | Tag | Commit | Description |
@@ -895,6 +978,7 @@ All tests use `monkeypatch` — no live NSE/Yahoo Finance/Zerodha calls:
 | `phase-8-equity-option-chain-support` | `<prev>` | get_equity_option_chain — real strikes/premiums for NSE equities |
 | `phase-9-automated-testing` | *(prev)* | 270 tests, 80%+ coverage on all business-logic modules |
 | `phase-10-market-intelligence` | `215c52f` | Market Intelligence Engine — VIX, global pulse, events, risk score; 41 tools, 361 tests |
+| `phase-11a-portfolio-intelligence` | *(current)* | Portfolio Intelligence — risk report, regime analysis, exposure breakdown; 44 tools, 427 tests |
 
 ---
 

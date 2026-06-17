@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 10 (complete)
+Current Phase: 11A (complete)
 
 Latest Tag:
-phase-10-market-intelligence
+phase-11a-portfolio-intelligence
 
 Tool Count:
-41
+44
 
 Test Count:
-361 (13 test files, 0 failures)
+427 (15 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -66,7 +66,9 @@ Production deployed on Railway
 
 ✅ Phase 10 — Market Intelligence Engine
 
-⬜ Phase 11 - Portfolio Risk Dashboard (recommended next)
+✅ Phase 11A — Portfolio Intelligence
+
+⬜ Phase 11B - next
 
 ---
 
@@ -94,11 +96,26 @@ Trade Review: 1
 
 Market Intelligence: 4
 
-Total: 41
+Portfolio Intelligence: 3
+
+Total: 44
 
 ---
 
 ## Recent Changes
+
+Phase 11A:
+
+* 3 new tools: get_portfolio_risk_report, get_portfolio_regime_analysis, get_portfolio_exposure_breakdown
+* New src/portfolio_intelligence/ package: service.py
+* Reuses review_trade, get_market_risk_score — no duplicated logic
+* Per-position analysis: risk_score, regime, review_action, thesis_status
+* Portfolio aggregation: value-weighted risk score, HHI diversification, concentration risk
+* Dashboard-style error isolation: broker failure → error dict; per-symbol failure → nulls, others continue
+* Symbol deduplication: holdings take priority over net positions for same symbol
+* 66 new tests across 2 files; PR-1 through PR-5 regression guards
+* Coverage: portfolio_intelligence/service.py 97%
+* Tagged: phase-11a-portfolio-intelligence
 
 Phase 10:
 
@@ -124,7 +141,7 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 10 complete and tagged.
+None. Phase 11A complete and tagged.
 
 ---
 
