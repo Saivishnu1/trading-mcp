@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments
+from src.tools import auth, portfolio, market, instruments, options
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -40,6 +40,14 @@ mcp = FastMCP(
         "  search_instruments('Infosys')              — symbol/name search\n"
         "  get_instruments('NSE')                     — full NSE equity list\n"
         "  invalidate_instruments_cache()             — refresh the local list\n\n"
+        "OPTIONS tools (NSE index options, no auth needed):\n"
+        "  get_expiries('NIFTY')                      — available expiry dates\n"
+        "  get_nifty_option_chain([expiry])           — NIFTY chain (CE/PE OI, IV, LTP)\n"
+        "  get_banknifty_option_chain([expiry])       — BANKNIFTY chain\n"
+        "  calculate_pcr('NIFTY')                     — put-call ratio + sentiment\n"
+        "  get_oi_analysis('NIFTY')                   — top OI strikes\n"
+        "  identify_support_resistance_from_oi('NIFTY') — S/R from OI\n"
+        "  calculate_max_pain('NIFTY')                — max pain strike\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -52,6 +60,7 @@ auth.register(mcp)
 portfolio.register(mcp)
 market.register(mcp)
 instruments.register(mcp)
+options.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
