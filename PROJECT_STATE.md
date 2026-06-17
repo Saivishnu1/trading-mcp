@@ -20,13 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 10 (next)
+Current Phase: 10 (complete)
 
 Latest Tag:
-phase-9-automated-testing
+phase-10-market-intelligence
 
 Tool Count:
-37
+41
+
+Test Count:
+361 (13 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -61,11 +64,9 @@ Production deployed on Railway
 
 ✅ Phase 9 — Automated Testing
 
-⬜ Phase 10 - Reliability & Observability
+✅ Phase 10 — Market Intelligence Engine
 
-⬜ Phase 11 - Production Features
-
-⬜ Phase 12 - Deployment Hardening & Release
+⬜ Phase 11 - Portfolio Risk Dashboard (recommended next)
 
 ---
 
@@ -91,11 +92,25 @@ Option Strategy Builder: 1
 
 Trade Review: 1
 
-Total: 37
+Market Intelligence: 4
+
+Total: 41
 
 ---
 
 ## Recent Changes
+
+Phase 10:
+
+* 4 new tools: get_india_vix, get_global_pulse, get_upcoming_events, get_market_risk_score
+* New src/intelligence/ package: vix.py, global_pulse.py, events.py, risk.py
+* Dashboard now includes isolated intelligence section (VIX, global sentiment, events, risk score)
+* _build_summary appends event-warning when HIGH-impact event within 3 days
+* create_trade_plan exposes risk_score (visibility only — no logic change)
+* 91 new tests across 5 files; IR-1 through IR-5 regression guards
+* Coverage: events 97%, vix 98%, global_pulse 91%, risk 92%
+* Static events schedule covers RBI MPC, FOMC, India CPI/GDP, US NFP through 2027-03-31
+* Tagged: phase-10-market-intelligence
 
 Phase 9:
 
@@ -103,21 +118,13 @@ Phase 9:
 * Coverage: analysis 88%, strategy 92%, planner 86%, review 84%, dashboard 85%, indicators 92%, options analytics 100%
 * 7 named regression guards protecting historical bugs
 * pytest + pytest-cov added to dev deps; pythonpath configured
-* Scratch scripts (test_jugaad*, test_phase8*) deleted; .coverage gitignored
 * Tagged: phase-9-automated-testing
-
-Phase 8:
-
-* Added get_equity_option_chain
-* Fixed NSE:RELIANCE prefix bug
-* Equity option chains now return real strikes and premiums
-* build_option_strategy works for NSE equities
 
 ---
 
 ## Current Open Work
 
-Phase 10 — Reliability & Observability (not started)
+None. Phase 10 complete and tagged.
 
 ---
 
@@ -130,6 +137,7 @@ Phase 10 — Reliability & Observability (not started)
 * No TA-Lib
 * No NumPy dependency
 * Railway deployment target
+* Events calendar requires manual update when approaching 2027-03-31
 
 ---
 
@@ -157,8 +165,20 @@ recommend_strategy:
 
 Both must remain available.
 
+Dashboard response keys added in Phase 10 (`intelligence`) are additive — existing
+consumers that don't read it are unaffected.
+
+create_trade_plan `risk_score` key is additive — never remove, never use it to gate
+`trade_allowed`.
+
 ---
 
-## Next Immediate Task
+## Technical Debt (priority order)
 
-Phase 10 — Reliability & Observability.
+1. market/service.py at 33% coverage — data transformation path untested
+2. options/service.py at 60% coverage — jugaad fallback path untested
+3. `regime` variable assigned but unused in dashboard `_build_summary`
+4. TTL cache boilerplate duplicated across 5 modules — candidate for src/utils/cache.py
+5. Options chain fetching duplicated in 3 places (dashboard, planner, risk)
+6. events.py: schedule expiry should surface as a response key, not just a log warning
+7. tools/technicals.py at 22% — `_load_closes` symbol mapping untested

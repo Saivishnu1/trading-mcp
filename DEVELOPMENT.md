@@ -9,9 +9,9 @@
 ## Project Overview
 
 A personal Model Context Protocol (MCP) server that connects Claude to a Zerodha
-trading account **without** requiring a paid Kite Connect subscription. Built in four
-phases across a single day, going from a bare authentication stub to a 33-tool
-trading intelligence platform.
+trading account **without** requiring a paid Kite Connect subscription. Built across
+ten phases, from a bare authentication stub to a 41-tool trading intelligence platform
+with market regime analysis, risk scoring, and macro context awareness.
 
 ---
 
@@ -24,7 +24,11 @@ src/
 ├── options/         NSE option chain fetch (jugaad-data NSELive) + analytics
 ├── technical/       Pure-Python indicator math (RSI, EMA, MACD, ADX, ATR)
 ├── analysis/        Market regime detection, trade setup, strategy recommendation
-├── dashboard/       Aggregator — assembles all intelligence into one snapshot
+├── planner/         Trade plan composition — entry/sizing/quality from analysis
+├── strategy/        Option strategy builder — strikes, premiums, payoffs
+├── review/          Trade reviewer — HOLD/REDUCE/EXIT thesis evaluation
+├── dashboard/       Aggregator — assembles all sections into one snapshot
+├── intelligence/    Market Intelligence Engine — VIX, global pulse, events, risk score
 ├── tools/           MCP tool registrations (one file per domain)
 └── server.py        FastMCP server + ASGI app + /health endpoint
 ```
@@ -660,7 +664,127 @@ service fix was sufficient.
 
 ---
 
-## Complete Tool Registry (37 tools)
+## Phase 10 — Market Intelligence Engine
+
+**Commit:** `215c52f`
+**Tag:** `phase-10-market-intelligence`
+**Tools added:** 4 → **Total: 41**
+**Tests added:** 91 (5 new files) → **Total: 361**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/intelligence/__init__.py` | Package init |
+| `src/intelligence/vix.py` | India VIX fetch, 52-week percentile, interpretation |
+| `src/intelligence/global_pulse.py` | Crude, gold, DXY, S&P 500, US 10Y — sentiment |
+| `src/intelligence/events.py` | Static economic calendar through 2027-03-31 |
+| `src/intelligence/risk.py` | Composite 0–100 risk score from 4 components |
+| `src/tools/intelligence.py` | 4 MCP tool registrations |
+| `tests/test_intelligence_vix.py` | VIX unit + cache tests |
+| `tests/test_intelligence_global.py` | Global pulse unit + cache tests |
+| `tests/test_intelligence_events.py` | Events calendar unit + env-var override tests |
+| `tests/test_intelligence_risk.py` | Risk score unit + integration tests |
+| `tests/test_intelligence_regressions.py` | 5 named regression guards (IR-1 through IR-5) |
+
+### Design decisions
+
+**India VIX** — fetches `^INDIAVIX` via the existing `get_market().get_historical()` path
+(yfinance-backed). Computes 52-week percentile by ranking today's level against the prior
+252 trading days (today excluded from reference set). Interpretation buckets:
+
+| VIX | Interpretation | Caution |
+|---|---|---|
+| < 12 | Complacency — historically precedes corrections | LOW |
+| 12–15 | Calm — low fear, normal conditions | LOW |
+| 15–20 | Mild uncertainty — some hedging activity | MODERATE |
+| 20–25 | Elevated fear — market stress, increase caution | HIGH |
+| > 25 | Extreme fear — major event or systemic stress | EXTREME |
+
+**Global pulse** — 5 assets fetched individually via `get_historical` (2 candles each):
+`CL=F` (crude), `GC=F` (gold), `DX-Y.NYB` (DXY), `^GSPC` (S&P 500), `^TNX` (US 10Y yield).
+`overall_sentiment` is computed by a vote-based score: S&P 500 carries double weight;
+RISK_OFF when ≥ 2 risk-off votes, RISK_ON when ≥ 2 risk-on votes, else NEUTRAL.
+
+**Events calendar** — static `_STATIC` list embedded in `events.py` covering RBI MPC,
+US FOMC, India CPI/GDP, and US NFP through 2027-03-31. An `UPCOMING_EVENTS_JSON`
+env-var allows ad-hoc additions without code changes. `SCHEDULE_VALID_UNTIL` constant
+triggers a log WARNING when within 30 days of expiry.
+
+**Risk score composition** — four components, each scored 0–100:
+
+| Component | Weight | Source |
+|---|---|---|
+| VIX caution level | 35% | `caution_level` from `get_india_vix()` |
+| Event proximity | 30% | Days until nearest HIGH-impact event |
+| PCR interpretation | 20% | Substring match against `analytics._pcr_sentiment()` strings |
+| Market regime | 15% | `detect_market_regime()` mapped through `_REGIME_SCORES` |
+
+Score is clamped to [0, 100]. Rating: LOW (<30), MODERATE (30–60), HIGH (60–80), EXTREME (≥80).
+PCR component uses substring match against the exact interpretation strings from
+`analytics.py` — not raw PCR thresholds — so the semantics remain consistent regardless
+of future PCR threshold changes.
+
+**Caching** — module-level TTL pattern (same as `options/service.py`):
+
+| Module | TTL |
+|---|---|
+| `vix.py` | 300 s (5 min) |
+| `global_pulse.py` | 300 s (5 min) |
+| `events.py` | 3600 s (1 hour) |
+| `risk.py` | 60 s (1 min) |
+
+**Dashboard integration** — `build_dashboard()` calls `_intelligence_section()` in its
+own try/except. Failure there does not break options, technicals, or analysis sections.
+`_build_summary()` appends an event-warning sentence when a HIGH-impact event is within
+3 days. The new `"intelligence"` key is always present in the dashboard response
+(either a dict or `null` on failure).
+
+**Trade planner integration** — `create_trade_plan()` exposes `risk_score` in its output
+for visibility. It is wrapped in a try/except; it never affects `trade_allowed`,
+position sizing, or any other trade logic.
+
+### PCR interpretation → risk score mapping
+
+```python
+("bullish — elevated put writing", 10)   # pcr > 1.3
+("mildly bullish",                 25)   # pcr > 1.0
+("neutral to mildly bearish",      55)   # pcr > 0.7
+("bearish — elevated call writing", 85)  # pcr <= 0.7
+("insufficient data",              50)   # fallback
+```
+
+### Regression guards (IR-1 through IR-5)
+
+| # | Class | Scenario protected |
+|---|---|---|
+| IR-1 | `TestIR1DashboardIntelligenceFailure` | Dashboard builds and returns `intelligence: null` when intelligence section raises |
+| IR-2 | `TestIR2TradePlanRiskScoreFailure` | `create_trade_plan` succeeds when `_risk_score_context` raises; returns `risk_score: null` |
+| IR-3 | `TestIR3SummaryBackwardCompat` | `_build_summary` works without `intelligence` arg; event warning only appended when event within 3 days |
+| IR-4 | `TestIR4RiskScoreEmptyEvents` | Risk score returns valid 0–100 result with empty events list |
+| IR-5 | `TestIR5RiskScorePcrUnavailable` | PCR component returns neutral 50 when options service raises; overall score still valid |
+
+### Coverage
+
+| Module | Coverage |
+|---|---|
+| `src/intelligence/events.py` | 97% |
+| `src/intelligence/vix.py` | 98% |
+| `src/intelligence/global_pulse.py` | 91% |
+| `src/intelligence/risk.py` | 92% |
+
+### Tools (4)
+
+| Tool | Description |
+|---|---|
+| `get_india_vix` | VIX level, 52-week high/low, percentile rank, caution level, interpretation |
+| `get_global_pulse` | Crude oil, gold, DXY, S&P 500, US 10Y — change %, India impact, overall sentiment |
+| `get_upcoming_events` | RBI MPC, FOMC, India CPI/GDP, US NFP within N days |
+| `get_market_risk_score` | Composite 0–100 risk score with factors, rating, recommendation |
+
+---
+
+## Complete Tool Registry (41 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -696,6 +820,9 @@ service fix was sufficient.
 
 ### Trade Review (1) — no auth
 `review_trade`
+
+### Market Intelligence (4) — no auth
+`get_india_vix`, `get_global_pulse`, `get_upcoming_events`, `get_market_risk_score`
 
 ---
 
@@ -766,7 +893,8 @@ All tests use `monkeypatch` — no live NSE/Yahoo Finance/Zerodha calls:
 | `phase-6-option-strategy-builder-complete` | `f216db5` | build_option_strategy — strikes + payoffs |
 | `phase-7-trade-review-engine-complete` | `d3b4f82` | review_trade — HOLD/REDUCE/EXIT + thesis |
 | `phase-8-equity-option-chain-support` | `<prev>` | get_equity_option_chain — real strikes/premiums for NSE equities |
-| `phase-9-automated-testing` | *(current)* | 270 tests, 80%+ coverage on all business-logic modules |
+| `phase-9-automated-testing` | *(prev)* | 270 tests, 80%+ coverage on all business-logic modules |
+| `phase-10-market-intelligence` | `215c52f` | Market Intelligence Engine — VIX, global pulse, events, risk score; 41 tools, 361 tests |
 
 ---
 
@@ -783,3 +911,6 @@ All tests use `monkeypatch` — no live NSE/Yahoo Finance/Zerodha calls:
 | Signal-strategy conflicts | Signal takes priority over regime in recommend_strategy (Phase 4.1) |
 | Structurally poor RR | Regime-aware ATR multipliers in generate_trade_setup (Phase 5.2) |
 | Equity option chains | Strip exchange prefix (NSE:RELIANCE→RELIANCE) before calling jugaad equities_option_chain |
+| Dashboard intelligence failure isolation | `_intelligence_section()` wrapped in try/except; `null` returned on failure without breaking other sections |
+| PCR interpretation in risk score | Substring match against exact analytics.py strings — not raw PCR values — keeps semantics consistent if thresholds change |
+| Static events schedule expiry | `SCHEDULE_VALID_UNTIL = 2027-03-31` triggers log WARNING 30 days before — update `_STATIC` in `events.py` by that date |
