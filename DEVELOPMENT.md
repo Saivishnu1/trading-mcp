@@ -10,9 +10,10 @@
 
 A personal Model Context Protocol (MCP) server that connects Claude to a Zerodha
 trading account **without** requiring a paid Kite Connect subscription. Built across
-twelve phases, from a bare authentication stub to a 52-tool trading intelligence platform
+thirteen phases, from a bare authentication stub to a 55-tool trading intelligence platform
 with market regime analysis, risk scoring, macro context awareness, portfolio intelligence,
-company-level catalyst tracking (news, earnings, event risk), and a persistent trade journal.
+company-level catalyst tracking (news, earnings, event risk), a persistent trade journal,
+and a portfolio-aware trade recommendation engine.
 
 ---
 
@@ -39,6 +40,8 @@ src/
 ├── journal/                 Trade Journal — SQLite-backed persistent log (Phase 12)
 │   ├── db.py                Connection factory, schema init, reset_connection() test seam
 │   └── service.py           log_trade, close_trade, get_open_trades, get_trade_history
+├── recommendations/         Trade Recommendation Engine (Phase 13)
+│   └── engine.py            recommend_trade, review_open_trades, get_daily_brief
 ├── tools/                   MCP tool registrations (one file per domain)
 └── server.py                FastMCP server + ASGI app + /health endpoint
 ```
@@ -1094,7 +1097,93 @@ is idempotent (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`).
 
 ---
 
-## Complete Tool Registry (52 tools)
+## Phase 13 — Trade Recommendation Engine
+
+**Tag:** `phase-13-trade-recommendation`
+**Tools added:** 3 → **Total: 55**
+**Tests added:** 84 (2 new files) → **Total: 745**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/recommendations/__init__.py` | Package init |
+| `src/recommendations/engine.py` | All recommendation logic |
+| `src/tools/recommendations.py` | MCP tool registration |
+| `tests/test_recommendations_engine.py` | 60 unit tests: TestRecommendTrade, TestReviewOpenTrades, TestGetDailyBrief |
+| `tests/test_recommendations_regressions.py` | 24 regression guards: RR-1 through RR-5 + extras |
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `src/server.py` | Added `recommendations` import + `.register(mcp)` + instruction block |
+| `CLAUDE.md` | Phase 13 complete, 55 tools, 745 tests |
+| `PROJECT_STATE.md` | Phase 13 entry, tool count, tag, recent changes |
+| `DEVELOPMENT.md` | This section |
+
+### Tools
+
+| Tool | Auth | Description |
+|---|---|---|
+| `recommend_trade(symbol, capital, risk_percent)` | — | Portfolio-aware ENTER/WAIT/AVOID with direction, sizing, event risk, VIX context |
+| `review_open_trades()` | — | Live review of all open journal positions: HOLD/REDUCE/EXIT per position |
+| `get_daily_brief()` | — | Morning briefing: VIX + global sentiment + risk score + position review + alerts |
+
+### Design decisions
+
+**Module composition (reuse only):**
+- `recommend_trade` calls `create_trade_plan` (signal + sizing), `get_event_risk` (catalyst gating),
+  `get_india_vix` (volatility gating), `get_open_trades` (duplicate exposure check)
+- `review_open_trades` calls `get_open_trades` + `review_trade` per position
+- `get_daily_brief` calls `review_open_trades`, `get_india_vix`, `get_market_risk_score`,
+  `get_global_pulse`, `get_upcoming_events`
+- Zero new indicator code; zero new data sources
+
+**Gating logic:**
+- Event risk ≥80 → `trade_allowed=False`, recommendation=AVOID
+- Event risk 60–79 → size ×0.70, caution added, recommendation=WAIT (if no other block)
+- VIX EXTREME → `trade_allowed=False`, recommendation=AVOID
+- VIX HIGH → caution only (no size reduction)
+- Duplicate exposure (same symbol + same direction in journal) → size ×0.50, recommendation=WAIT
+- Size factors stack multiplicatively; floor at 1 (never zero quantity)
+
+**Monkeypatch-friendly import pattern:**
+All external function imports use module-level alias names (`_get_open_trades`, `_create_trade_plan`,
+etc.) so `monkeypatch.setattr(rec_engine, "_fn", mock)` reaches the call site at runtime.
+`get_daily_brief` calls `review_open_trades()` as a local name — patched via
+`monkeypatch.setattr(rec_engine, "review_open_trades", mock)`.
+
+**Error isolation:**
+- `recommend_trade`: `_get_event_risk` and `_get_india_vix` failures → field set to `None`, call continues
+- `review_open_trades`: per-position `_review_trade` failure → position `error` field set, others continue
+- `get_daily_brief`: each `market_context` sub-call in its own `try/except` → field set to `None` or `[]`
+- Top-level `try/except` on all three functions: unexpected errors return `{"error": str(exc)}`
+
+**`stoploss_breached` / `target_reached` direction-aware:**
+- LONG: breached when `current_price <= stoploss`; reached when `current_price >= target`
+- SHORT: breached when `current_price >= stoploss`; reached when `current_price <= target`
+- `None` stoploss/target → never breached/reached (guarded by `bool(stoploss and ...)`)
+
+### Regression guards
+
+| # | Class | Protection |
+|---|---|---|
+| RR-1 | `TestRR1PlanImmutability` | `recommend_trade` must not mutate the plan dict |
+| RR-2 | `TestRR2SizeFactorFloor` | `_apply_size_factors` always returns ≥1, never 0 |
+| RR-3 | `TestRR3DailyBriefGracefulDegradation` | All market_context calls failing → no top-level error |
+| RR-4 | `TestRR4ReviewActionKey` | Uses `"action"` key, not `"review_action"` |
+| RR-5 | `TestRR5TradeplanErrorPropagation` | Error from `create_trade_plan` propagated as `{"error": ...}` |
+
+### Git tag
+
+```
+phase-13-trade-recommendation
+```
+
+---
+
+## Complete Tool Registry (55 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -1142,6 +1231,9 @@ is idempotent (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`).
 
 ### Trade Journal (4) — no auth
 `log_trade`, `close_trade`, `get_open_trades`, `get_trade_history`
+
+### Trade Recommendations (3) — no auth
+`recommend_trade`, `review_open_trades`, `get_daily_brief`
 
 ---
 
@@ -1297,6 +1389,7 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-11a-portfolio-intelligence` | *(prev)* | Portfolio Intelligence — risk report, regime analysis, exposure breakdown; 44 tools, 427 tests |
 | `phase-11b-catalyst-intelligence` | `e157948` | Catalyst Intelligence — news, earnings, event risk; 48 tools, 551 tests |
 | `phase-12-trade-journal` | `83f22cb` | Trade Journal Foundation — SQLite journal, P&L, summary; 52 tools, 661 tests |
+| `phase-13-trade-recommendation` | *(pending)* | Trade Recommendation Engine — recommend_trade, review_open_trades, get_daily_brief; 55 tools, 745 tests |
 
 ---
 

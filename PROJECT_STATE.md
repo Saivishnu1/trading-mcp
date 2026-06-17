@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 12 (complete)
+Current Phase: 13 (complete)
 
 Latest Tag:
-phase-12-trade-journal
+phase-13-trade-recommendation
 
 Tool Count:
-52
+55
 
 Test Count:
-661 (22 test files, 0 failures)
+745 (24 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -72,7 +72,9 @@ Production deployed on Railway
 
 ✅ Phase 12 — Trade Journal Foundation
 
-⬜ Phase 13 — next
+✅ Phase 13 — Trade Recommendation Engine
+
+⬜ Phase 14 — next
 
 ---
 
@@ -106,11 +108,31 @@ Catalyst Intelligence: 4
 
 Trade Journal: 4
 
-Total: 52
+Trade Recommendations: 3
+
+Total: 55
 
 ---
 
 ## Recent Changes
+
+Phase 13:
+
+* 3 new tools: recommend_trade, review_open_trades, get_daily_brief
+* New src/recommendations/ package: engine.py (all logic), src/tools/recommendations.py (MCP registration)
+* recommend_trade: portfolio-aware ENTER/WAIT/AVOID; reuses create_trade_plan, get_event_risk, get_india_vix, get_open_trades
+* Event risk ≥80 → trade_allowed=False (AVOID); 60–79 → size ×0.70 + caution (WAIT)
+* VIX EXTREME → trade_allowed=False; HIGH → caution only
+* Duplicate exposure (same symbol+direction already open) → size ×0.50 + WAIT
+* Size factors stack multiplicatively; floor at 1
+* review_open_trades: per-position HOLD/REDUCE/EXIT via review_trade; stoploss_breached, target_reached, current_pnl, summary
+* get_daily_brief: morning briefing; market_context (VIX, risk score, global pulse, upcoming events); alerts for EXIT/stoploss/HIGH events
+* All market_context sub-calls isolated in try/except — no partial failure surfaces as error
+* All imports use module-alias pattern for monkeypatch compatibility across module boundaries
+* get_daily_brief calls review_open_trades() as local name → patchable via rec_engine attribute
+* 84 new tests across 2 files; RR-1 through RR-5 regression guards
+* Zero changes to existing 52 tools or any existing test file
+* Tagged: phase-13-trade-recommendation
 
 Phase 12:
 
@@ -183,7 +205,7 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 11B complete and tagged.
+None. Phase 13 complete and tagged.
 
 ---
 

@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -89,6 +89,16 @@ mcp = FastMCP(
         "  get_news_sentiment('INFY')        — aggregate sentiment score and counts\n"
         "  get_earnings_calendar('INFY')     — next earnings date, EPS estimate, dividends, splits\n"
         "  get_event_risk('INFY')            — composite 0-100 event risk: earnings + news + market\n\n"
+        "TRADE RECOMMENDATIONS tools (portfolio-aware, no auth needed):\n"
+        "  recommend_trade('INFY', capital=100000, risk_percent=1)\n"
+        "    — ENTER / WAIT / AVOID with direction, sizing, event risk, VIX context\n"
+        "    — warns on duplicate journal exposure; blocks on extreme event risk or VIX\n"
+        "    — position_size adjusted for HIGH event risk (−30%) and duplicate exposure (−50%)\n"
+        "  review_open_trades()\n"
+        "    — live review of all open journal positions: HOLD / REDUCE / EXIT\n"
+        "    — current_price, current_pnl, stoploss_breached, target_reached per position\n"
+        "  get_daily_brief()\n"
+        "    — morning briefing: VIX + global sentiment + risk score + position review + alerts\n\n"
         "TRADE JOURNAL tools (persistent SQLite journal, no auth needed):\n"
         "  log_trade('INFY', 'LONG', 1540.0, stoploss=1490, target=1640)\n"
         "    — record a new trade; returns trade_id (format TRD-xxxxxxxx)\n"
@@ -125,6 +135,7 @@ intelligence.register(mcp)
 portfolio_intelligence.register(mcp)
 catalyst.register(mcp)
 journal.register(mcp)
+recommendations.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
