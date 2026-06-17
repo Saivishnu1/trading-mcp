@@ -294,44 +294,94 @@ def recommend_strategy(symbol: str) -> dict:
     if "error" in regime:
         return regime
 
+    setup = generate_trade_setup(symbol)
+    if "error" in setup:
+        return setup
+
     regime_name = regime["regime"]
     rsi = regime["rsi"]
     adx = regime["adx"]
+    signal = setup["signal"]
 
-    if regime_name == "BULL_TREND":
-        if rsi >= 60:
+    secondary: str | None = None
+
+    # Priority order: Signal > Regime > RSI > ADX
+    # Conflict resolution: directional signal overrides range-bound regime.
+    if signal == "BUY":
+        if regime_name == "RANGE_BOUND":
+            strategy = "Bull Call Spread"
+            secondary = "Iron Condor"
+            reason = (
+                f"BUY signal (bullish score {setup['confidence']}) overrides range-bound conditions "
+                f"(ADX {adx}). Bull Call Spread captures directional upside with defined risk; "
+                "Iron Condor remains viable if price stays pinned."
+            )
+        elif regime_name == "BULL_TREND" and rsi >= 60:
             strategy = "Long Call"
-            reason = f"Bull trend with RSI at {rsi} and ADX at {adx} supports a directional upside view."
+            reason = f"Bull trend confirmed by ADX at {adx} with RSI at {rsi} supports a directional upside trade."
         else:
             strategy = "Bull Call Spread"
-            reason = f"Bull trend is present, and a spread keeps upside exposure defined with ADX at {adx}."
-    elif regime_name == "NEUTRAL_BULLISH":
-        strategy = "Bull Call Spread"
-        reason = "Bias is mildly bullish, so a defined-risk bullish spread fits better than an outright long option."
-    elif regime_name == "RANGE_BOUND":
-        strategy = "Iron Condor"
-        reason = f"ADX at {adx} points to low trend strength, which suits a range-selling structure."
-    elif regime_name == "NEUTRAL_BEARISH":
-        strategy = "Bear Put Spread"
-        reason = "Bias is mildly bearish, so a defined-risk bearish spread is the cleaner fit."
-    elif regime_name == "BEAR_TREND":
-        if rsi <= 40:
+            reason = (
+                f"BUY signal with {regime_name} regime — a defined-risk spread captures upside "
+                f"while limiting premium outlay at ADX {adx}."
+            )
+    elif signal == "SELL":
+        if regime_name == "RANGE_BOUND":
+            strategy = "Bear Put Spread"
+            secondary = "Iron Condor"
+            reason = (
+                f"SELL signal (bearish score {setup['confidence']}) overrides range-bound conditions "
+                f"(ADX {adx}). Bear Put Spread captures directional downside with defined risk; "
+                "Iron Condor remains viable if price stays pinned."
+            )
+        elif regime_name == "BEAR_TREND" and rsi <= 40:
             strategy = "Long Put"
-            reason = f"Bear trend with RSI at {rsi} and ADX at {adx} supports a directional downside trade."
+            reason = f"Bear trend confirmed by ADX at {adx} with RSI at {rsi} supports a directional downside trade."
         else:
             strategy = "Bear Put Spread"
-            reason = "Bear trend is present, and a spread controls premium outlay while downside bias remains intact."
+            reason = (
+                f"SELL signal with {regime_name} regime — a defined-risk spread captures downside "
+                f"while controlling premium outlay at ADX {adx}."
+            )
+    elif signal == "NEUTRAL_BULLISH":
+        strategy = "Bull Call Spread"
+        reason = (
+            f"Mild bullish conviction ({regime_name}) favours a defined-risk spread over an outright long option."
+        )
+    elif signal == "NEUTRAL_BEARISH":
+        strategy = "Bear Put Spread"
+        reason = (
+            f"Mild bearish conviction ({regime_name}) favours a defined-risk spread over an outright long put."
+        )
     else:
-        if adx >= 23:
-            strategy = "Long Straddle"
-            reason = "Trend strength is building and price may expand sharply, making a long volatility structure attractive."
+        # NEUTRAL signal — regime drives the choice
+        if regime_name == "RANGE_BOUND":
+            strategy = "Iron Condor"
+            reason = f"No directional conviction and ADX at {adx} confirms low trend strength — ideal for a range-selling structure."
+        elif regime_name == "BREAKOUT_POTENTIAL":
+            if adx >= 23:
+                strategy = "Long Straddle"
+                reason = "Trend strength is building with no clear direction — a long straddle captures the potential expansion."
+            else:
+                strategy = "Long Strangle"
+                reason = "Breakout potential with lower ADX — a strangle reduces premium cost while waiting for direction."
+        elif regime_name in ("BULL_TREND", "NEUTRAL_BULLISH"):
+            strategy = "Bull Call Spread"
+            reason = f"Regime is {regime_name} despite neutral signal — a mildly bullish spread is the lower-risk fit."
+        elif regime_name in ("BEAR_TREND", "NEUTRAL_BEARISH"):
+            strategy = "Bear Put Spread"
+            reason = f"Regime is {regime_name} despite neutral signal — a mildly bearish spread is the lower-risk fit."
         else:
-            strategy = "Long Strangle"
-            reason = "Breakout potential exists, and a strangle offers lower premium cost while waiting for expansion."
+            strategy = "Iron Condor"
+            reason = f"No clear directional bias — ADX at {adx} suggests range conditions are appropriate."
 
     return {
         "symbol": symbol.upper(),
         "regime": regime_name,
+        "signal": signal,
+        # "strategy" kept for dashboard backward compatibility (reads strat_result.get("strategy"))
         "strategy": strategy,
+        "recommended": strategy,
+        "secondary": secondary,
         "reason": reason,
     }
