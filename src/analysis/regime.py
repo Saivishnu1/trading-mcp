@@ -250,10 +250,23 @@ def generate_trade_setup(symbol: str) -> dict:
         confidence = max(bullish, bearish)
         reasoning.append("Bullish and bearish evidence is balanced.")
 
+    # Regime-aware target multipliers (from entry, measured from price).
+    # Entry buffer: 0.25×ATR. Stop distance: 1.00×ATR.
+    # risk = 1.25×ATR for all directional setups.
+    # Target chosen so RR >= 1.2 in the weakest regime (RANGE_BOUND).
+    _target_atr = {
+        "BULL_TREND":         2.75,  # reward 2.50×ATR → RR 2.0
+        "BEAR_TREND":         2.75,  # reward 2.50×ATR → RR 2.0
+        "BREAKOUT_POTENTIAL": 2.75,  # reward 2.50×ATR → RR 2.0
+        "NEUTRAL_BULLISH":    2.25,  # reward 2.00×ATR → RR 1.6
+        "NEUTRAL_BEARISH":    2.25,  # reward 2.00×ATR → RR 1.6
+        "RANGE_BOUND":        1.75,  # reward 1.50×ATR → RR 1.2
+    }.get(regime_name, 2.25)
+
     entry_above = _round(price + (atr * 0.25))
     entry_below = _round(price - (atr * 0.25))
-    bull_target = _round(price + (atr * 1.5))
-    bear_target = _round(price - (atr * 1.5))
+    bull_target = _round(price + (atr * _target_atr))
+    bear_target = _round(price - (atr * _target_atr))
 
     # Legacy scalar fields — derived from zone fields so both schemas stay in sync.
     # BUY / NEUTRAL_BULLISH: enter on breakout above, target up, stop below.
@@ -261,11 +274,11 @@ def generate_trade_setup(symbol: str) -> dict:
     # NEUTRAL: symmetric zone around price.
     if signal in {"BUY", "NEUTRAL_BULLISH"}:
         entry_scalar = entry_above
-        stoploss_scalar = _round(price - (atr * 1.5))
+        stoploss_scalar = _round(price - (atr * 1.0))
         target_scalar = bull_target
     elif signal in {"SELL", "NEUTRAL_BEARISH"}:
         entry_scalar = entry_below
-        stoploss_scalar = _round(price + (atr * 1.5))
+        stoploss_scalar = _round(price + (atr * 1.0))
         target_scalar = bear_target
     else:  # NEUTRAL
         entry_scalar = _round(price)
