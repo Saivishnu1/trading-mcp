@@ -12,9 +12,10 @@ def register(mcp: FastMCP) -> None:
 
     def _fetch(symbol: str, expiry: Optional[str]) -> tuple[dict, Optional[str]]:
         svc = get_options_service()
-        chain = svc.get_option_chain(symbol.upper())
-        available = chain.get("records", {}).get("expiryDates", [])
+        metadata = svc.get_option_chain(symbol.upper())
+        available = metadata.get("records", {}).get("expiryDates", [])
         resolved = expiry if expiry in available else (available[0] if available else None)
+        chain = svc.get_option_chain(symbol.upper(), resolved)
         return chain, resolved
 
     def _format_chain(chain: dict, symbol: str, expiry: Optional[str], atm_range: int) -> dict:
@@ -22,9 +23,6 @@ def register(mcp: FastMCP) -> None:
         spot = records.get("underlyingValue")
         expiry_dates = records.get("expiryDates", [])
         data: list[dict] = records.get("data", [])
-
-        if expiry:
-            data = [d for d in data if d.get("expiryDate") == expiry]
 
         if atm_range > 0 and spot:
             all_sp = sorted({d.get("strikePrice", 0) for d in data})

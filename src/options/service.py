@@ -14,6 +14,7 @@ Results are cached for 60 seconds. No authentication required.
 import logging
 import threading
 import time
+from typing import Optional
 
 import httpx
 
@@ -45,7 +46,7 @@ class OptionsService:
             follow_redirects=True,
             timeout=20.0,
         )
-        self._cache: dict[str, tuple[dict, float]] = {}
+        self._cache: dict[tuple[str, Optional[str]], tuple[dict, float]] = {}
         self._lock = threading.Lock()
         self._cookies_ready = False
         self._nse_live = None  # jugaad_data.nse.NSELive, imported lazily
@@ -64,14 +65,24 @@ class OptionsService:
                 self._nse_live = False  # sentinel: tried and failed
         return self._nse_live if self._nse_live is not False else None
 
-    def _fetch_via_jugaad(self, symbol: str) -> dict | None:
+    def _is_index_symbol(self, symbol: str) -> bool:
+        return symbol.upper() in _SUPPORTED
+
+    def _fetch_via_jugaad(self, symbol: str, expiry: Optional[str] = None) -> dict | None:
         nse = self._get_nse_live()
         if nse is None:
             return None
         try:
-            return nse.index_option_chain(symbol)
+            if self._is_index_symbol(symbol):
+                return nse.index_option_chain(symbol, expiry=expiry)
+            return nse.equities_option_chain(symbol, expiry=expiry)
         except Exception as exc:
-            logger.debug("NSELive.index_option_chain(%s) failed: %s", symbol, exc)
+            logger.debug(
+                "NSELive option chain fetch failed for %s expiry=%s: %s",
+                symbol,
+                expiry,
+                exc,
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -90,23 +101,27 @@ class OptionsService:
         except Exception as exc:
             logger.warning("NSE cookie prime failed: %s", exc)
 
-    def _fetch_via_httpx(self, symbol: str) -> dict | None:
+    def _fetch_via_httpx(self, symbol: str, expiry: Optional[str] = None) -> dict | None:
         self._prime_cookies()
         try:
-            r = self._client.get(
-                f"/api/option-chain-v3?type=Indices&symbol={symbol}"
-            )
+            option_type = "Indices" if self._is_index_symbol(symbol) else "Equity"
+            params = {"type": option_type, "symbol": symbol}
+            if expiry:
+                params["expiry"] = expiry
+            r = self._client.get("/api/option-chain-v3", params=params)
             r.raise_for_status()
             data = r.json()
             if not data.get("records", {}).get("data"):
                 logger.warning(
-                    "NSE v3 endpoint returned no data for %s "
-                    "(likely IP soft-block).", symbol
+                    "NSE v3 endpoint returned no data for %s expiry=%s "
+                    "(likely IP soft-block).",
+                    symbol,
+                    expiry,
                 )
                 return None
             return data
         except Exception as exc:
-            logger.debug("httpx v3 fetch for %s failed: %s", symbol, exc)
+            logger.debug("httpx v3 fetch for %s expiry=%s failed: %s", symbol, expiry, exc)
             return None
 
     # ------------------------------------------------------------------
@@ -129,40 +144,40 @@ class OptionsService:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_option_chain(self, symbol: str) -> dict:
+    def get_option_chain(self, symbol: str, expiry: Optional[str] = None) -> dict:
         """Return the normalised NSE option chain for *symbol*.
 
         Tries jugaad-data NSELive first, then the direct v3 endpoint.
         Cached for 60 seconds. Thread-safe.
         """
         symbol = symbol.upper()
-        if symbol not in _SUPPORTED:
-            raise ValueError(
-                f"Unsupported symbol '{symbol}'. "
-                f"Supported: {', '.join(sorted(_SUPPORTED))}"
-            )
+        cache_key = (symbol, expiry)
 
         with self._lock:
-            cached = self._cache.get(symbol)
+            cached = self._cache.get(cache_key)
             if cached and (time.monotonic() - cached[1]) < _CACHE_TTL:
-                logger.debug("Option chain cache hit for %s", symbol)
+                logger.debug("Option chain cache hit for %s expiry=%s", symbol, expiry)
                 return cached[0]
 
-        data = self._fetch_via_jugaad(symbol)
+        data = self._fetch_via_jugaad(symbol, expiry)
         if not data or not data.get("records", {}).get("data"):
-            logger.info("jugaad path empty for %s; trying direct httpx v3", symbol)
-            data = self._fetch_via_httpx(symbol)
+            logger.info(
+                "jugaad path empty for %s expiry=%s; trying direct httpx v3",
+                symbol,
+                expiry,
+            )
+            data = self._fetch_via_httpx(symbol, expiry)
 
         if not data or not data.get("records", {}).get("data"):
             raise RuntimeError(
-                f"Could not fetch option chain for {symbol} from any source "
+                f"Could not fetch option chain for {symbol} expiry={expiry or 'default'} from any source "
                 "(NSELive empty and NSE API soft-blocked). Try again shortly."
             )
 
         data = self._normalize(data)
 
         with self._lock:
-            self._cache[symbol] = (data, time.monotonic())
+            self._cache[cache_key] = (data, time.monotonic())
 
         return data
 
@@ -174,7 +189,12 @@ class OptionsService:
     def invalidate_cache(self, symbol: str | None = None) -> None:
         with self._lock:
             if symbol:
-                self._cache.pop(symbol.upper(), None)
+                symbol = symbol.upper()
+                self._cache = {
+                    key: value
+                    for key, value in self._cache.items()
+                    if key[0] != symbol
+                }
             else:
                 self._cache.clear()
 
