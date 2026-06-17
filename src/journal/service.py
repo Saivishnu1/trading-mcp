@@ -140,6 +140,9 @@ def log_trade(
     created_by: str = "MANUAL",
     tags: list[str] | None = None,
     notes: str | None = None,
+    risk_amount: float | None = None,
+    capital_at_risk: float | None = None,
+    portfolio_heat_at_entry: float | None = None,
 ) -> dict:
     try:
         direction = direction.upper().strip()
@@ -173,20 +176,26 @@ def log_trade(
                     entry_price, quantity, entry_date, entry_time,
                     rationale, stoploss, target, risk_reward,
                     regime, signal, risk_score, analysis_snapshot,
-                    created_by, status, tags, notes, created_at, updated_at
+                    created_by, status, tags, notes,
+                    risk_amount, capital_at_risk, portfolio_heat_at_entry,
+                    created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
-                    ?, 'OPEN', ?, ?, ?, ?
+                    ?, 'OPEN', ?, ?,
+                    ?, ?, ?,
+                    ?, ?
                 )""",
                 (
                     trade_id, symbol, trade_type, direction, strategy,
                     entry_price, quantity, today, now,
                     rationale, stoploss, target, rr,
                     regime, signal, risk_score, snapshot_json,
-                    created_by, tags_json, notes, now, now,
+                    created_by, tags_json, notes,
+                    risk_amount, capital_at_risk, portfolio_heat_at_entry,
+                    now, now,
                 ),
             )
             conn.commit()

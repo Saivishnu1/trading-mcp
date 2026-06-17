@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: 13 (complete) — Phase 14 next
+Current Phase: 14 (complete) — Phase 15 next
 
-Current Tool Count: 55
+Current Tool Count: 58
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
@@ -107,8 +107,9 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 745 unit + regression tests across 24 test files (pytest, no live network calls).
-* Coverage: analysis 90%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 91–98%, portfolio_intelligence 97%, catalyst 80%+, journal 90%+, recommendations 88%+.
+* 852 unit + regression tests across 26 test files (pytest, no live network calls).
+* Coverage: analysis 90%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 91–98%, portfolio_intelligence 97%, catalyst 80%+, journal 90%+, recommendations 88%+, sizer 90%+.
+* `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` are schema v2 immutable entry-time snapshots — never recalculate or modify after trade creation.
 
 ---
 

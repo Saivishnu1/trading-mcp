@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 13 (complete)
+Current Phase: 14 (complete)
 
 Latest Tag:
-phase-13-trade-recommendation
+phase-14-position-sizing
 
 Tool Count:
-55
+58
 
 Test Count:
-745 (24 test files, 0 failures)
+852 (26 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -74,7 +74,9 @@ Production deployed on Railway
 
 ✅ Phase 13 — Trade Recommendation Engine
 
-⬜ Phase 14 — next
+✅ Phase 14 — Position Sizing Engine
+
+⬜ Phase 15 — next
 
 ---
 
@@ -110,11 +112,35 @@ Trade Journal: 4
 
 Trade Recommendations: 3
 
-Total: 55
+Position Sizing: 3
+
+Total: 58
 
 ---
 
 ## Recent Changes
+
+Phase 14:
+
+* 3 new tools: size_equity_trade, size_options_trade, size_from_recommendation
+* New src/sizer/ package: engine.py (all logic), src/tools/sizer.py (MCP registration)
+* size_equity_trade: quantity = max(1, floor(risk_budget / stoploss_distance)); direction-aware for LONG/SHORT
+* size_options_trade: lots = max(1, floor(risk_budget / (premium_distance × lot_size))); caution when capital_at_risk > 5%
+* size_from_recommendation: calls recommend_trade() → uses its position_size as base; applies ONLY portfolio heat on top (Phase 13 factors already applied)
+* Portfolio heat: sum of open trade risks from journal / capital; stoploss-absent trades use 2% default
+* Heat ELEVATED (≥7%) → size ×0.75; CRITICAL (≥9%) → size ×0.50; stacks with portfolio risk report score
+* Portfolio risk HIGH (≥75) → ×0.75; EXTREME (≥90) → ×0.50; broker auth failure → factor silently skipped
+* All factors stack multiplicatively via _apply_size_factors; floor at 1
+* size_from_recommendation returns AVOID with null sizing fields and null log_trade_params (no accidental logging)
+* log_trade_params returned by all 3 tools; keys validated against log_trade() signature
+* Journal schema v1 → v2: adds risk_amount REAL, capital_at_risk REAL, portfolio_heat_at_entry REAL
+* Migration via ALTER TABLE ADD COLUMN; idempotent try/except per statement; version stamp updated
+* Immutability rule: risk_amount, capital_at_risk, portfolio_heat_at_entry set at entry, never modified
+* log_trade() gains 3 new optional params (risk_amount, capital_at_risk, portfolio_heat_at_entry); all callers unaffected
+* 107 new tests across 2 files; PS-1 through PS-5 regression guards
+* Schema version tests in test_journal_db.py updated to reference _SCHEMA_VERSION constant (not hardcoded 1)
+* Zero changes to existing 55 tools; no regressions
+* Tagged: phase-14-position-sizing
 
 Phase 13:
 
@@ -205,7 +231,7 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 13 complete and tagged.
+None. Phase 14 complete and tagged.
 
 ---
 

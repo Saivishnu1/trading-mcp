@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -89,6 +89,15 @@ mcp = FastMCP(
         "  get_news_sentiment('INFY')        — aggregate sentiment score and counts\n"
         "  get_earnings_calendar('INFY')     — next earnings date, EPS estimate, dividends, splits\n"
         "  get_event_risk('INFY')            — composite 0-100 event risk: earnings + news + market\n\n"
+        "POSITION SIZING tools (portfolio-aware, no auth needed):\n"
+        "  size_equity_trade('INFY', 'LONG', entry=1540, stoploss=1490, capital=100000)\n"
+        "    — quantity, capital_required, max_loss; adjusts for portfolio heat\n"
+        "    — returns log_trade_params with risk_amount, capital_at_risk, portfolio_heat_at_entry\n"
+        "  size_options_trade('NIFTY', 'LONG', premium=120, stoploss_premium=60, lot_size=50)\n"
+        "    — lots, quantity, capital_required; warns when single-position risk > 5%\n"
+        "  size_from_recommendation('INFY', capital=100000, risk_percent=1)\n"
+        "    — calls recommend_trade() then adds full absolute sizing + log_trade_params\n"
+        "    — returns null sizing fields when recommendation is AVOID\n\n"
         "TRADE RECOMMENDATIONS tools (portfolio-aware, no auth needed):\n"
         "  recommend_trade('INFY', capital=100000, risk_percent=1)\n"
         "    — ENTER / WAIT / AVOID with direction, sizing, event risk, VIX context\n"
@@ -136,6 +145,7 @@ portfolio_intelligence.register(mcp)
 catalyst.register(mcp)
 journal.register(mcp)
 recommendations.register(mcp)
+sizer.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()

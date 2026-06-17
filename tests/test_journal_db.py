@@ -40,9 +40,9 @@ class TestSchemaInit:
         ).fetchone()
         assert row is not None
 
-    def test_schema_version_is_1(self, fresh_db):
+    def test_schema_version_is_current(self, fresh_db):
         version = journal_db._get_schema_version(fresh_db)
-        assert version == 1
+        assert version == journal_db._SCHEMA_VERSION
 
     def test_idempotent_double_init(self, fresh_db):
         journal_db._init_schema(fresh_db)
@@ -126,8 +126,8 @@ class TestConnectionFactory:
 # ---------------------------------------------------------------------------
 
 class TestSchemaVersion:
-    def test_get_schema_version_returns_1(self, fresh_db):
-        assert journal_db._get_schema_version(fresh_db) == 1
+    def test_get_schema_version_returns_current(self, fresh_db):
+        assert journal_db._get_schema_version(fresh_db) == journal_db._SCHEMA_VERSION
 
     def test_get_schema_version_returns_none_for_empty_table(self, fresh_db):
         fresh_db.execute("DELETE FROM schema_version")
