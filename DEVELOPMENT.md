@@ -563,7 +563,7 @@ for equity symbols (soft-blocked by NSE). The builder catches this and returns
 
 ## Phase 7 — Trade Review Engine
 
-**Commit:** *(this commit)*
+**Commit:** `d3b4f82`
 **Tag:** `phase-7-trade-review-engine-complete`
 **Tools added:** 1 → **Total: 36**
 
@@ -608,7 +608,59 @@ SHORT = (entry − price)/entry).
 
 ---
 
-## Complete Tool Registry (36 tools)
+## Phase 8 — Equity Option Chain Support
+
+**Commit:** *(this commit)*
+**Tag:** `phase-8-equity-option-chain-support`
+**Tools added:** 1 → **Total: 37**
+
+### Problem
+
+`build_option_strategy()` and the options tools only worked for index symbols
+(NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Equity symbols like RELIANCE or INFY
+returned `premium_data_available: false` because the service passed `"NSE:RELIANCE"`
+to jugaad's `equities_option_chain()`, which expects a bare symbol (`"RELIANCE"`).
+The exchange prefix caused jugaad to return 0 rows → `RuntimeError` → graceful
+degradation with null payoffs.
+
+### Investigation (pre-implementation)
+
+Test scripts confirmed:
+- `NSELive.equities_option_chain("RELIANCE")` → 53 rows, real premiums ✓
+- `NSELive.equities_option_chain("NSE:RELIANCE")` → 0 rows (root cause) ✓
+- Row-level `expiryDates` (plural string) normalised to `expiryDate` by existing
+  `_normalize()` — no change needed there
+- RELIANCE, INFY, SBIN, IDEA all return live strikes, OI, IV, lastPrice
+
+### Fix
+
+Two-line change in `src/options/service.py`:
+
+1. Added `_strip_exchange_prefix(symbol)` static method — `"NSE:RELIANCE"` → `"RELIANCE"`
+2. Applied in `_fetch_via_jugaad()` (equity path only) and `_fetch_via_httpx()`
+
+Index path (`NIFTY`, `BANKNIFTY`, etc.) is unchanged — these are already bare symbols.
+
+### New tool
+
+`get_equity_option_chain(symbol, expiry, atm_range=10)` — generic chain tool for
+any NSE F&O equity. Same output schema as `get_nifty_option_chain`.
+
+### Impact on existing tools
+
+`build_option_strategy("NSE:RELIANCE")` now returns real strikes, premiums, and
+payoff structures instead of degrading. The builder required no changes — the
+service fix was sufficient.
+
+### Tools (1)
+
+| Tool | Description |
+|---|---|
+| `get_equity_option_chain` | CE/PE OI, IV, LTP for any NSE equity F&O symbol |
+
+---
+
+## Complete Tool Registry (37 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -620,10 +672,10 @@ SHORT = (entry − price)/entry).
 `get_quote`, `get_ohlc`, `get_ltp`, `get_historical_data`,
 `get_instruments`, `search_instruments`, `invalidate_instruments_cache`
 
-### Options & Derivatives (7) — no auth
+### Options & Derivatives (8) — no auth
 `get_expiries`, `get_nifty_option_chain`, `get_banknifty_option_chain`,
-`calculate_pcr`, `get_oi_analysis`, `identify_support_resistance_from_oi`,
-`calculate_max_pain`
+`get_equity_option_chain`, `calculate_pcr`, `get_oi_analysis`,
+`identify_support_resistance_from_oi`, `calculate_max_pain`
 
 ### Technicals (6) — no auth
 `calculate_rsi`, `calculate_ema`, `calculate_macd`,
@@ -658,7 +710,8 @@ SHORT = (entry − price)/entry).
 | `phase-5.1-trade-quality-filter` | `e0cb0b2` | trade_quality classification by RR ratio |
 | `phase-5.2-risk-reward-optimization` | `cc910c9` | Regime-aware ATR multipliers — RR 1.2–2.0 |
 | `phase-6-option-strategy-builder-complete` | `f216db5` | build_option_strategy — strikes + payoffs |
-| `phase-7-trade-review-engine-complete` | *(current)* | review_trade — HOLD/REDUCE/EXIT + thesis |
+| `phase-7-trade-review-engine-complete` | `d3b4f82` | review_trade — HOLD/REDUCE/EXIT + thesis |
+| `phase-8-equity-option-chain-support` | *(current)* | get_equity_option_chain — real strikes/premiums for NSE equities |
 
 ---
 
@@ -674,4 +727,4 @@ SHORT = (entry − price)/entry).
 | Error isolation in dashboard | Each section catches independently; partial responses returned |
 | Signal-strategy conflicts | Signal takes priority over regime in recommend_strategy (Phase 4.1) |
 | Structurally poor RR | Regime-aware ATR multipliers in generate_trade_setup (Phase 5.2) |
-| Equity option chains | OptionsService raises RuntimeError for equities; builder degrades gracefully |
+| Equity option chains | Strip exchange prefix (NSE:RELIANCE→RELIANCE) before calling jugaad equities_option_chain |

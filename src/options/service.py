@@ -68,6 +68,13 @@ class OptionsService:
     def _is_index_symbol(self, symbol: str) -> bool:
         return symbol.upper() in _SUPPORTED
 
+    @staticmethod
+    def _strip_exchange_prefix(symbol: str) -> str:
+        """Return bare symbol for NSE/jugaad API calls (NSE:RELIANCE → RELIANCE)."""
+        if ":" in symbol:
+            return symbol.split(":", 1)[1]
+        return symbol
+
     def _fetch_via_jugaad(self, symbol: str, expiry: Optional[str] = None) -> dict | None:
         nse = self._get_nse_live()
         if nse is None:
@@ -75,7 +82,8 @@ class OptionsService:
         try:
             if self._is_index_symbol(symbol):
                 return nse.index_option_chain(symbol, expiry=expiry)
-            return nse.equities_option_chain(symbol, expiry=expiry)
+            bare = self._strip_exchange_prefix(symbol)
+            return nse.equities_option_chain(bare, expiry=expiry)
         except Exception as exc:
             logger.debug(
                 "NSELive option chain fetch failed for %s expiry=%s: %s",
@@ -105,7 +113,8 @@ class OptionsService:
         self._prime_cookies()
         try:
             option_type = "Indices" if self._is_index_symbol(symbol) else "Equity"
-            params = {"type": option_type, "symbol": symbol}
+            bare = self._strip_exchange_prefix(symbol)
+            params = {"type": option_type, "symbol": bare}
             if expiry:
                 params["expiry"] = expiry
             r = self._client.get("/api/option-chain-v3", params=params)

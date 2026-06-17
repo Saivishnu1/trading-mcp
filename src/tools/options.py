@@ -130,6 +130,30 @@ def register(mcp: FastMCP) -> None:
         return _format_chain(chain, "BANKNIFTY", resolved, atm_range)
 
     @mcp.tool()
+    def get_equity_option_chain(
+        symbol: str,
+        expiry: Optional[str] = None,
+        atm_range: int = 10,
+    ) -> dict:
+        """Fetch the NSE equity option chain for any F&O stock.
+
+        Returns per-strike CE/PE open interest, volume, implied volatility,
+        last traded price, bid, and ask. No authentication required.
+
+        Works for any NSE-listed equity with an active F&O segment:
+        RELIANCE, INFY, TCS, SBIN, HDFC, ICICIBANK, etc.
+
+        Args:
+            symbol:    NSE equity symbol — e.g. 'RELIANCE' or 'NSE:RELIANCE'.
+            expiry:    Expiry date as shown on NSE, e.g. '30-Jun-2026'.
+                       Defaults to the nearest monthly expiry.
+            atm_range: Number of strikes above and below ATM to return (default 10).
+                       Set to 0 to return all strikes.
+        """
+        chain, resolved = _fetch(symbol, expiry)
+        return _format_chain(chain, symbol.upper(), resolved, atm_range)
+
+    @mcp.tool()
     def calculate_pcr(
         symbol: str = "NIFTY",
         expiry: Optional[str] = None,
