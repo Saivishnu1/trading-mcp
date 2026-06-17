@@ -5,7 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
-from src.tools import auth, portfolio, market, instruments, options
+from src.tools import auth, portfolio, market, instruments, options, technicals
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -48,6 +48,14 @@ mcp = FastMCP(
         "  get_oi_analysis('NIFTY')                   — top OI strikes\n"
         "  identify_support_resistance_from_oi('NIFTY') — S/R from OI\n"
         "  calculate_max_pain('NIFTY')                — max pain strike\n\n"
+        "TECHNICALS tools (daily candles via Yahoo Finance, no auth needed):\n"
+        "  calculate_rsi('NIFTY', period=14)          — Relative Strength Index\n"
+        "  calculate_ema('NIFTY', period=20)          — Exponential Moving Average\n"
+        "  calculate_macd('NIFTY')                    — MACD 12/26/9\n"
+        "  calculate_adx('NIFTY')                     — ADX + DI (trend strength)\n"
+        "  calculate_atr('NIFTY')                     — Average True Range (volatility)\n"
+        "  analyze_technicals('NIFTY')                — all indicators in one call\n"
+        "  Symbols: 'NIFTY','BANKNIFTY','NSE:INFY', or raw yfinance tickers.\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
@@ -61,6 +69,7 @@ portfolio.register(mcp)
 market.register(mcp)
 instruments.register(mcp)
 options.register(mcp)
+technicals.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
