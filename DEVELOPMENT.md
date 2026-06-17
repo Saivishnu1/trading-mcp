@@ -2,7 +2,7 @@
 
 **Repository:** `trading-mcp`
 **Deployed:** Railway (`zerodha-mcp-production.up.railway.app`)
-**Date:** 2026-06-17
+**Date:** 2026-06-18
 
 ---
 
@@ -10,9 +10,9 @@
 
 A personal Model Context Protocol (MCP) server that connects Claude to a Zerodha
 trading account **without** requiring a paid Kite Connect subscription. Built across
-eleven phases, from a bare authentication stub to a 48-tool trading intelligence platform
+twelve phases, from a bare authentication stub to a 52-tool trading intelligence platform
 with market regime analysis, risk scoring, macro context awareness, portfolio intelligence,
-and company-level catalyst tracking (news, earnings, event risk).
+company-level catalyst tracking (news, earnings, event risk), and a persistent trade journal.
 
 ---
 
@@ -36,6 +36,9 @@ src/
 │   ├── news.py              get_symbol_news(), _aggregate_sentiment()
 │   ├── earnings.py          get_earnings_calendar(), proximity scoring, corporate actions
 │   └── event_risk.py        get_event_risk(), confidence model, dual catalyst fields
+├── journal/                 Trade Journal — SQLite-backed persistent log (Phase 12)
+│   ├── db.py                Connection factory, schema init, reset_connection() test seam
+│   └── service.py           log_trade, close_trade, get_open_trades, get_trade_history
 ├── tools/                   MCP tool registrations (one file per domain)
 └── server.py                FastMCP server + ASGI app + /health endpoint
 ```
@@ -929,7 +932,169 @@ and a `note` field. `get_symbol_news("NIFTY")` returns market-wide news (useful 
 
 ---
 
-## Complete Tool Registry (48 tools)
+## Phase 12 — Trade Journal Foundation
+
+**Commit:** `83f22cb`
+**Tag:** `phase-12-trade-journal`
+**Tools added:** 4 → **Total: 52**
+**Tests added:** 110 (3 new files) → **Total: 661**
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/journal/__init__.py` | Package init |
+| `src/journal/db.py` | SQLite connection factory, schema DDL, `reset_connection()` test seam |
+| `src/journal/service.py` | CRUD + P&L — log_trade, close_trade, get_open_trades, get_trade_history |
+| `src/tools/journal.py` | 4 MCP tool registrations |
+| `tests/test_journal_db.py` | Schema init, indexes, connection factory, schema version (17 tests) |
+| `tests/test_journal_service.py` | CRUD, P&L, tags, snapshot, summary (68 tests) |
+| `tests/test_journal_regressions.py` | JR-1 through JR-5 regression guards (25 tests) |
+
+### Design decisions
+
+**SQLite, no external services** — `sqlite3` from the Python standard library. File path from
+`JOURNAL_DB` env var (default: `journal.db`). On Railway, mount a persistent volume and set
+`JOURNAL_DB=/data/journal.db` — otherwise the journal is lost on container restart.
+
+**Schema v1 (30 columns):**
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | Raw UUID4 hex, aliased to `trade_id` in all API responses |
+| `symbol` | TEXT | Uppercased at write time |
+| `trade_type` | TEXT | DEFAULT `'EQUITY'` — EQUITY / OPTIONS / FUTURES / INDEX |
+| `direction` | TEXT | `'LONG'` or `'SHORT'` (case-normalised at write) |
+| `entry_price` | REAL | Required; validated > 0 |
+| `stoploss` / `target` | REAL | Optional; `risk_reward` auto-calculated if both provided |
+| `risk_reward` | REAL | Explicit value takes precedence over auto-calculated |
+| `regime` / `signal` / `risk_score` | TEXT/INT | Context from prior analysis calls — not auto-fetched |
+| `analysis_snapshot` | TEXT | JSON blob — any additional analysis context at entry |
+| `created_by` | TEXT | DEFAULT `'MANUAL'` — MANUAL / CLAUDE / AUTOMATED |
+| `status` | TEXT | `'OPEN'` or `'CLOSED'` only |
+| `exit_reason` | TEXT | TARGET_HIT / STOPLOSS_HIT / MANUAL / THESIS_INVALIDATED / EXPIRED / CANCELLED |
+| `pnl` / `pnl_percent` / `holding_days` | REAL/INT | Calculated on `close_trade()` |
+| `tags` | TEXT | JSON array; returned as Python list |
+| `created_at` / `updated_at` | TEXT | ISO-8601 UTC datetime |
+
+**Trade IDs:** `TRD-` + 8 lowercase hex chars from `uuid4().hex[:8]`.
+Short enough to copy-paste for `close_trade()`. Collision probability < 0.01% at 10,000 trades.
+
+**P&L calculation:**
+
+```python
+# LONG:  pnl = (exit - entry) * qty;  pct = (exit - entry) / entry * 100
+# SHORT: pnl = (entry - exit) * qty;  pct = (entry - exit) / entry * 100
+# quantity=None defaults to 1 for pnl; pnl_percent is always per-unit
+```
+
+**risk_reward auto-calculation:**
+
+```python
+# LONG:  reward = target - entry;  risk = entry - stoploss
+# SHORT: reward = entry - target;  risk = stoploss - entry
+# risk <= 0 → None (no auto-calc; e.g. stoploss above entry for LONG)
+```
+
+**Context fields (regime, signal, risk_score, analysis_snapshot)** are purely optional.
+The MCP client (Claude) populates them from prior `detect_market_regime` /
+`get_market_risk_score` / `get_event_risk` calls already in the conversation session.
+`log_trade` does not auto-call any analysis tools — this avoids coupling journal writes to
+network I/O and keeps `log_trade` always fast and available.
+
+**`analysis_snapshot`** is a free-form JSON dict for any extra context the caller wants to
+preserve at entry time (e.g. `{"vix": 14.2, "event_risk": 42, "pcr": 1.1}`). Stored as
+JSON string, returned as a parsed Python dict.
+
+**Error isolation** — every service function wraps its body in `try/except Exception` and
+returns `{"error": str(exc)}`. No exception propagates to the MCP caller.
+
+**Testability seam** — `db.reset_connection(conn)` injects a connection directly into the
+module-level `_conn` global. All tests call this with `sqlite3.connect(":memory:")` before
+each test class, giving every test a fresh isolated in-memory database. Service functions
+access the connection via `_db._get_connection()` (module-reference lookup, not direct
+import) so `monkeypatch.setattr(journal_db, "_get_connection", _fail)` reaches service.py
+correctly.
+
+**WAL mode** — `PRAGMA journal_mode=WAL` enables concurrent reads while writes are
+serialised by a module-level `_WRITE_LOCK = threading.Lock()` in `service.py`.
+
+**notes append semantics** — `close_trade(notes=...)` appends to existing notes with a
+newline separator. Passing `notes=None` leaves existing notes unchanged.
+
+**status is binary** — only `OPEN` or `CLOSED`. `CANCELLED` is a valid `exit_reason` value
+(records a trade that was entered but abandoned), not a separate status value. This keeps
+P&L filtering simple: `WHERE status = 'CLOSED'` captures all finalised trades regardless of
+exit reason.
+
+### get_trade_history summary
+
+```json
+{
+  "summary": {
+    "total_trades": 12,
+    "open_trades": 2,
+    "closed_trades": 10,
+    "win_count": 6,
+    "loss_count": 4,
+    "win_rate_pct": 60.0,
+    "total_pnl": 4850.0,
+    "avg_pnl": 485.0,
+    "avg_holding_days": 3.8,
+    "best_trade":  {"trade_id": "TRD-c7f2a1b0", "symbol": "TCS",  "pnl": 2100.0},
+    "worst_trade": {"trade_id": "TRD-d9e0b3a2", "symbol": "IDEA", "pnl": -640.0}
+  }
+}
+```
+
+`win_count` = closed trades with `pnl > 0`. `avg_pnl` and `avg_holding_days` are over
+closed trades only. `best_trade` / `worst_trade` are `null` when no closed trades exist in
+the filtered result set.
+
+### Indexes
+
+```sql
+idx_trades_symbol      ON trades(symbol)
+idx_trades_status      ON trades(status)
+idx_trades_entry_date  ON trades(entry_date)
+idx_trades_trade_type  ON trades(trade_type)
+```
+
+### Migration strategy
+
+Schema version tracked in `schema_version` table (v1 on first init). Future phases add
+columns via `ALTER TABLE` + `_migrate()` function in `db.py`. The `_init_schema()` function
+is idempotent (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`).
+
+### Regression guards (JR-1 through JR-5)
+
+| # | Class | Scenario protected |
+|---|---|---|
+| JR-1 | `TestJR1LogTradeMinimal` | `log_trade` with only required fields → valid `trade_id`, no crash |
+| JR-2 | `TestJR2CloseNonExistent` | `close_trade` with unknown `trade_id` → `{"error": "trade not found: ..."}`, no exception |
+| JR-3 | `TestJR3DatabaseFailure` | DB connection raises → `{"error": "..."}` from all 4 service functions |
+| JR-4 | `TestJR4DoubleClose` | `close_trade` on already-closed trade → error dict, original `exit_price` unchanged |
+| JR-5 | `TestJR5HistoryDaysZero` | `get_trade_history(days=0)` → valid empty result, no SQL error |
+
+### Coverage
+
+| Module | Coverage |
+|---|---|
+| `src/journal/db.py` | 92% |
+| `src/journal/service.py` | 93% |
+
+### Tools (4)
+
+| Tool | Auth | Description |
+|---|---|---|
+| `log_trade` | — | Record a new trade; returns `trade_id` (TRD-xxxxxxxx) |
+| `close_trade` | — | Finalise a position; calculates pnl, pnl_percent, holding_days |
+| `get_open_trades` | — | List open positions, optional symbol filter |
+| `get_trade_history` | — | Query history with filters + performance summary |
+
+---
+
+## Complete Tool Registry (52 tools)
 
 ### Authentication (2)
 `zerodha_login`, `check_auth_status`
@@ -974,6 +1139,9 @@ and a `note` field. `get_symbol_news("NIFTY")` returns market-wide news (useful 
 
 ### Catalyst Intelligence (4) — no auth
 `get_symbol_news`, `get_news_sentiment`, `get_earnings_calendar`, `get_event_risk`
+
+### Trade Journal (4) — no auth
+`log_trade`, `close_trade`, `get_open_trades`, `get_trade_history`
 
 ---
 
@@ -1127,7 +1295,8 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-9-automated-testing` | *(prev)* | 270 tests, 80%+ coverage on all business-logic modules |
 | `phase-10-market-intelligence` | `215c52f` | Market Intelligence Engine — VIX, global pulse, events, risk score; 41 tools, 361 tests |
 | `phase-11a-portfolio-intelligence` | *(prev)* | Portfolio Intelligence — risk report, regime analysis, exposure breakdown; 44 tools, 427 tests |
-| `phase-11b-catalyst-intelligence` | *(current)* | Catalyst Intelligence — news, earnings, event risk; 48 tools, 551 tests |
+| `phase-11b-catalyst-intelligence` | `e157948` | Catalyst Intelligence — news, earnings, event risk; 48 tools, 551 tests |
+| `phase-12-trade-journal` | `83f22cb` | Trade Journal Foundation — SQLite journal, P&L, summary; 52 tools, 661 tests |
 
 ---
 
