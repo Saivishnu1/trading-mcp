@@ -1393,7 +1393,9 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-14-position-sizing` | *(prev)* | Position Sizing Engine — size_equity_trade, size_options_trade, size_from_recommendation; 58 tools, 852 tests |
 | `phase-14.5-reliability-hardening` | *(prev)* | Reliability Hardening — NaN propagation fix, RSI tiers, confidence cap, gating cautions; 58 tools, 867 tests |
 | `phase-14.6-consistency-hardening` | *(prev)* | Consistency & Data-Source Hardening — symbol unification, event-risk confidence gating, degradation flags, one confidence scale, common package, data_basis/staleness; 58 tools, 1011 tests |
-| `phase-15a-journal-analytics` | *(pending)* | Journal Performance Analytics — get_performance_analytics: realized win-rate / avg-P&L / profit-factor by signal, regime, confidence band; 59 tools, 1030 tests |
+| `phase-15a-journal-analytics` | `cd872be` | Journal Performance Analytics — get_performance_analytics: realized win-rate / avg-P&L / profit-factor by signal, regime, confidence band; 59 tools, 1030 tests |
+| `phase-15b-turso-migration` | `2b55dcb` | Journal Persistence — Turso cloud SQLite via libsql_experimental; linux-only dep; _LibsqlConn wrapper; 59 tools, 1030 tests |
+| `phase-16-zerodha-auto-import` | `b539a8e` | Zerodha Trade Auto-Import — sync_trades_from_zerodha, get_orders, schema v3 external_id; 61 tools, 1053 tests |
 
 ---
 
@@ -1632,6 +1634,88 @@ That seam is unchanged; all 1030 tests pass against the sqlite3 path as before.
 | `TURSO_AUTH_TOKEN` | JWT token from `turso db tokens create <db>` |
 
 Leave both blank for local sqlite3 fallback.
+
+---
+
+## Phase 16 — Zerodha Trade Auto-Import
+
+**Commit:** `b539a8e`
+**Tag:** `phase-16-zerodha-auto-import`
+**Tools added:** 2 → **Total: 61**
+**Tests added:** 23 (1 new file) → **Total: 1053**
+
+### What was built
+
+Automatic sync of executed Zerodha orders into the trade journal — no manual `log_trade` calls needed after placing trades.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/broker/zerodha_web.py` | Added `orders()` → `GET /api/orders`, `trades()` → `GET /api/trades` |
+| `src/broker/base.py` | Added `orders()` and `trades()` to `BrokerClient` Protocol |
+| `src/broker/jugaad.py` | Added `orders()` / `trades()` stubs (raise `NotImplementedError`) |
+| `src/journal/db.py` | Schema v3: `external_id TEXT` column + `idx_trades_external_id`; migrations run before indexes |
+| `src/journal/service.py` | Extended `log_trade` with `external_id`, `entry_date`, `entry_time`; added `sync_zerodha_orders`, `_find_open_long_for_symbol`, `_parse_order_timestamp`, `_product_to_trade_type` |
+| `src/tools/journal.py` | 2 new MCP tools: `get_orders`, `sync_trades_from_zerodha` |
+| `tests/test_journal_sync.py` | 23 new tests covering helpers + sync logic |
+| `tests/test_sizer_engine.py` | Updated `TestSchemaMigration` to use `_SCHEMA_VERSION` constant (not hardcoded 2) |
+
+### Design decisions
+
+**Idempotent via `external_id`** — Zerodha's `order_id` is stored in `external_id` on each imported BUY. Re-running sync skips any order already in the journal. SELL closure is naturally idempotent: once the matched LONG is CLOSED, no subsequent SELL finds it.
+
+**BUY/SELL matching logic:**
+
+```
+for each COMPLETE order (sorted by timestamp):
+  BUY  → check external_id not in journal → log_trade(LONG, external_id=order_id)
+  SELL → find most recent open LONG for same symbol → close_trade()
+         if no open LONG found → unmatched_sells (reported, not an error)
+```
+
+**Trade type detection (`_product_to_trade_type`):**
+
+| Zerodha product | Symbol suffix | Result |
+|---|---|---|
+| CNC / MIS | any | EQUITY |
+| NRML | ends with `CE`/`PE` AND digit before | OPTIONS |
+| NRML | ends with `FUT` | FUTURES |
+| any | other | EQUITY |
+
+The digit-before check prevents equity symbols like `RELIANCE` (ends in `CE`) from being misclassified.
+
+**Schema migration ordering** — `_init_schema` was restructured to run migrations before creating indexes. Previously, index creation on `external_id` failed on v1/v2 databases because the column didn't exist yet when the index was attempted.
+
+**Timestamp preservation** — `log_trade` gains optional `entry_date` / `entry_time` overrides so imported trades record the Zerodha order timestamp, not the sync time.
+
+**`created_by = "ZERODHA_SYNC"`, `tags = ["zerodha-import"]`** — imported trades are distinguishable from manually logged ones in history and analytics.
+
+### Sync response schema
+
+```json
+{
+  "imported": 3,
+  "closed": 2,
+  "skipped": 1,
+  "unmatched_sells": 0,
+  "errors": 0,
+  "details": {
+    "imported": [{"order_id": "...", "symbol": "RELIANCE", "trade_id": "TRD-...", "price": 2500, "qty": 10}],
+    "closed":   [{"order_id": "...", "symbol": "RELIANCE", "trade_id": "TRD-...", "pnl": 500, "exit_price": 2550}],
+    "skipped":  [{"order_id": "...", "symbol": "INFY", "reason": "already_imported"}],
+    "unmatched_sells": [],
+    "errors": []
+  }
+}
+```
+
+### Tools (2)
+
+| Tool | Auth | Description |
+|---|---|---|
+| `get_orders` | ✓ | Fetch today's Zerodha orders; filterable by status (default: complete) |
+| `sync_trades_from_zerodha` | ✓ | Import today's executed orders into journal; idempotent |
 
 ---
 

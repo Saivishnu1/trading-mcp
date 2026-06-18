@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: 15B (complete) — Phase 16 next
+Current Phase: 16 (complete) — Phase 17 next
 
-Current Tool Count: 59
+Current Tool Count: 61
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.

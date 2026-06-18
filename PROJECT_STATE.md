@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 15B (complete)
+Current Phase: 16 (complete)
 
 Latest Tag:
-phase-15b-turso-migration
+phase-16-zerodha-auto-import
 
 Tool Count:
-59
+61
 
 Test Count:
-1030 (29 test files, 0 failures)
+1053 (30 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -84,7 +84,9 @@ Production deployed on Railway
 
 ✅ Phase 15B — Journal Persistence (Turso cloud SQLite)
 
-⬜ Phase 16 — next
+✅ Phase 16 — Zerodha Trade Auto-Import
+
+⬜ Phase 17 — next
 
 ---
 
@@ -116,17 +118,27 @@ Portfolio Intelligence: 3
 
 Catalyst Intelligence: 4
 
-Trade Journal: 5
+Trade Journal: 7
 
 Trade Recommendations: 3
 
 Position Sizing: 3
 
-Total: 59
+Total: 61
 
 ---
 
 ## Recent Changes
+
+Phase 16:
+
+* 2 new tools: get_orders, sync_trades_from_zerodha (59 → 61); 23 new tests → 1053
+* ZerodhaWebClient.orders() / trades() — fetch today's orders/fills from /api/orders, /api/trades
+* sync_zerodha_orders(): BUY→log LONG, SELL→close matching open LONG (unmatched→reported); idempotent via external_id
+* Schema v3: external_id TEXT column + index; migration from v1/v2 idempotent
+* _product_to_trade_type(): CNC/MIS→EQUITY, NRML+CE/PE suffix→OPTIONS, FUT→FUTURES; "RELIANCE" correctly stays EQUITY
+* orders() / trades() stubs added to JugaadClient (raise NotImplementedError) and BrokerClient Protocol
+* Tagged: phase-16-zerodha-auto-import
 
 Phase 15B:
 
