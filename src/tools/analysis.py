@@ -6,6 +6,20 @@ from src.analysis import regime
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
+    def get_regime_alignment(symbol: str) -> dict:
+        """Return the market regime across daily, weekly, and monthly timeframes.
+
+        Identifies whether all timeframes agree (STRONG), most agree (PARTIAL),
+        daily and weekly conflict (CONFLICT), or signals are mixed (MIXED).
+        Use before entering a trade to confirm the daily signal is backed by
+        higher timeframe momentum — counter-trend setups carry more risk.
+
+        Args:
+            symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
+        """
+        return regime.get_regime_alignment(symbol)
+
+    @mcp.tool()
     def detect_market_regime(symbol: str) -> dict:
         """Detect the current market regime for a symbol.
 

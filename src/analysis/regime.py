@@ -68,12 +68,29 @@ def _validate_number(name: str, value: float) -> str | None:
     return None
 
 
+# Lookback days and yfinance interval strings per timeframe.
+# Weekly needs ~85 bars (600d/7) for EMA50 warmup; monthly needs ~83 bars (2500d/30).
+_TIMEFRAME_LOOKBACK: dict[str, int] = {
+    "daily":   150,
+    "weekly":  600,
+    "monthly": 2500,
+}
+_TIMEFRAME_INTERVAL: dict[str, str] = {
+    "daily":   "1d",
+    "weekly":  "1wk",
+    "monthly": "1mo",
+}
+
+# Regime direction groupings for timeframe alignment logic.
+_BULLISH_REGIMES: frozenset[str] = frozenset({"BULL_TREND", "NEUTRAL_BULLISH", "BREAKOUT_POTENTIAL"})
+_BEARISH_REGIMES: frozenset[str] = frozenset({"BEAR_TREND", "NEUTRAL_BEARISH"})
+
 # Short-TTL cache. A single recommend_trade / review_trade flow calls
 # _analyze_technicals many times for the same symbol (setup → regime → strategy
 # → plan). Caching collapses those into one fetch and guarantees every layer in
 # the flow sees the *same* candle snapshot (no mid-call divergence).
 _ANALYSIS_TTL = 60  # seconds
-_ANALYSIS_CACHE: dict[tuple[str, int], tuple[dict, float]] = {}
+_ANALYSIS_CACHE: dict[tuple[str, int, str], tuple[dict, float]] = {}
 _ANALYSIS_LOCK = threading.Lock()
 
 
@@ -83,19 +100,21 @@ def clear_analysis_cache() -> None:
         _ANALYSIS_CACHE.clear()
 
 
-def _analyze_technicals(symbol: str, lookback_days: int = 150) -> dict:
+def _analyze_technicals(symbol: str, lookback_days: int = 150, interval: str = "daily") -> dict:
     """Reuse the same historical loader and indicator math as technical tools.
 
-    Cached for _ANALYSIS_TTL seconds per (symbol, lookback) so a single
+    Cached for _ANALYSIS_TTL seconds per (symbol, lookback, interval) so a single
     recommendation/review flow fetches once and stays internally consistent.
+    interval: friendly name — 'daily', 'weekly', or 'monthly'.
     """
-    cache_key = (symbol.upper(), lookback_days)
+    yf_interval = _TIMEFRAME_INTERVAL.get(interval, "1d")
+    cache_key = (symbol.upper(), lookback_days, interval)
     with _ANALYSIS_LOCK:
         hit = _ANALYSIS_CACHE.get(cache_key)
         if hit is not None and time.monotonic() - hit[1] < _ANALYSIS_TTL:
             return hit[0]
 
-    candles = _load_candles(symbol, lookback_days)
+    candles = _load_candles(symbol, lookback_days, interval=yf_interval)
     if not candles:
         result = _error(symbol, "no price data - check the symbol")
         with _ANALYSIS_LOCK:
@@ -148,8 +167,13 @@ def _data_basis(technicals: dict) -> dict:
     }
 
 
-def detect_market_regime(symbol: str) -> dict:
-    technicals = _analyze_technicals(symbol)
+def _classify_regime(symbol: str, technicals: dict) -> dict:
+    """Classify market regime from a technicals snapshot (any timeframe).
+
+    Pure function — no I/O. Called by detect_market_regime (daily) and
+    _regime_for_timeframe (weekly/monthly) so the classification rules are
+    defined once and used identically across all timeframes.
+    """
     if "error" in technicals:
         return technicals
 
@@ -201,6 +225,95 @@ def detect_market_regime(symbol: str) -> dict:
         "ema50": ema50,
         "adx": adx,
         "atr": atr,
+    }
+
+
+def detect_market_regime(symbol: str) -> dict:
+    technicals = _analyze_technicals(symbol)
+    return _classify_regime(symbol, technicals)
+
+
+# ---------------------------------------------------------------------------
+# Multi-timeframe alignment (Phase 19)
+# ---------------------------------------------------------------------------
+
+def _regime_direction(regime: str | None) -> str:
+    """Map a regime name to its broad directional bias."""
+    if regime in _BULLISH_REGIMES:
+        return "bullish"
+    if regime in _BEARISH_REGIMES:
+        return "bearish"
+    return "neutral"
+
+
+def _alignment_level(daily_dir: str, weekly_dir: str, monthly_dir: str) -> str:
+    """Classify the agreement across three timeframe directions."""
+    # Hard conflict: daily and weekly directly oppose each other (both non-neutral)
+    if daily_dir != "neutral" and weekly_dir != "neutral" and daily_dir != weekly_dir:
+        return "CONFLICT"
+    dirs = [daily_dir, weekly_dir, monthly_dir]
+    if len(set(dirs)) == 1:
+        return "STRONG"
+    if dirs.count(daily_dir) >= 2 or dirs.count(weekly_dir) >= 2:
+        return "PARTIAL"
+    return "MIXED"
+
+
+def _alignment_summary(daily: dict, weekly: dict, monthly: dict, alignment: str) -> str:
+    d_reg = daily.get("regime") or "unknown"
+    w_reg = weekly.get("regime") or "unknown"
+    m_reg = monthly.get("regime") or "unknown"
+    if alignment == "STRONG":
+        d_dir = _regime_direction(d_reg)
+        return f"Daily, weekly, and monthly all {d_dir} ({d_reg}) — strong timeframe alignment"
+    if alignment == "CONFLICT":
+        return (
+            f"Daily {d_reg} conflicts with weekly {w_reg} — "
+            "counter-trend risk, wait for higher timeframe confirmation"
+        )
+    if alignment == "PARTIAL":
+        return f"Daily {d_reg}, weekly {w_reg}, monthly {m_reg} — majority aligned"
+    return f"Daily {d_reg}, weekly {w_reg}, monthly {m_reg} — mixed signals across timeframes"
+
+
+def _regime_for_timeframe(symbol: str, timeframe: str) -> dict:
+    """Fetch candles for the given timeframe, classify regime, return slim summary."""
+    lookback = _TIMEFRAME_LOOKBACK.get(timeframe, 150)
+    technicals = _analyze_technicals(symbol, lookback_days=lookback, interval=timeframe)
+    if "error" in technicals:
+        return {"regime": None, "confidence": None, "error": technicals["error"]}
+    result = _classify_regime(symbol, technicals)
+    if "error" in result:
+        return {"regime": None, "confidence": None, "error": result["error"]}
+    rsi_val = result["rsi"]
+    adx_val = result["adx"]
+    return {
+        "regime": result["regime"],
+        "confidence": result["confidence"],
+        "rsi": round(float(rsi_val), 1) if rsi_val is not None else None,
+        "adx": round(float(adx_val), 1) if adx_val is not None else None,
+    }
+
+
+def get_regime_alignment(symbol: str) -> dict:
+    """Return daily, weekly, and monthly regime with alignment classification."""
+    daily = _regime_for_timeframe(symbol, "daily")
+    weekly = _regime_for_timeframe(symbol, "weekly")
+    monthly = _regime_for_timeframe(symbol, "monthly")
+
+    daily_dir = _regime_direction(daily.get("regime"))
+    weekly_dir = _regime_direction(weekly.get("regime"))
+    monthly_dir = _regime_direction(monthly.get("regime"))
+
+    alignment = _alignment_level(daily_dir, weekly_dir, monthly_dir)
+
+    return {
+        "symbol": symbol.upper(),
+        "daily": daily,
+        "weekly": weekly,
+        "monthly": monthly,
+        "alignment": alignment,
+        "summary": _alignment_summary(daily, weekly, monthly, alignment),
     }
 
 

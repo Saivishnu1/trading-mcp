@@ -210,9 +210,27 @@ def patch_analyze(monkeypatch):
     def _apply(tech_dict):
         monkeypatch.setattr(
             "src.analysis.regime._analyze_technicals",
-            lambda symbol, lookback_days=150: tech_dict,
+            lambda symbol, lookback_days=150, interval="daily": tech_dict,
         )
     return _apply
+
+
+@pytest.fixture(autouse=True)
+def _mock_regime_alignment(monkeypatch):
+    """Default: return STRONG alignment with no conflict — prevents live yfinance
+    calls from the Phase 19 timeframe check inside recommend_trade.
+
+    Override per-test by calling monkeypatch.setattr(eng, '_get_regime_alignment', ...)
+    after this fixture has already run (last setattr wins).
+    """
+    import src.recommendations.engine as eng
+    monkeypatch.setattr(eng, "_get_regime_alignment", lambda s: {
+        "daily":   {"regime": "BULL_TREND", "confidence": 65},
+        "weekly":  {"regime": "BULL_TREND", "confidence": 60},
+        "monthly": {"regime": "BULL_TREND", "confidence": 63},
+        "alignment": "STRONG",
+        "summary": "All timeframes bullish — strong alignment",
+    })
 
 
 # ---------------------------------------------------------------------------

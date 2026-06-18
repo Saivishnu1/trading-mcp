@@ -17,6 +17,7 @@ from src.common.signals import (
     direction_from_signal,
 )
 from src.feedback.calibration_adjustment import calibration_size_factor as _cal_size_factor
+from src.analysis.regime import get_regime_alignment as _get_regime_alignment
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -198,6 +199,35 @@ def recommend_trade(
                         f"{calibrated_confidence:.0f} confirms high historical accuracy"
                     )
 
+        # Timeframe alignment check (Phase 19)
+        weekly_regime: str | None = None
+        timeframe_alignment: str | None = None
+        _alignment_reason: str | None = None  # appended to reasons after they are declared
+        try:
+            alignment_data = _get_regime_alignment(symbol)
+            if "error" not in alignment_data:
+                weekly_data = alignment_data.get("weekly", {})
+                weekly_regime = weekly_data.get("regime")
+                timeframe_alignment = alignment_data.get("alignment")
+
+                if weekly_regime:
+                    if signal in _LONG_SIGNALS and weekly_regime in ("BEAR_TREND", "NEUTRAL_BEARISH"):
+                        cautions.append(
+                            f"Higher timeframe conflict: weekly is {weekly_regime} — "
+                            "daily bullish signal may be counter-trend"
+                        )
+                    elif signal in _SHORT_SIGNALS and weekly_regime in ("BULL_TREND", "NEUTRAL_BULLISH"):
+                        cautions.append(
+                            f"Higher timeframe conflict: weekly is {weekly_regime} — "
+                            "daily bearish signal may be counter-trend"
+                        )
+                    elif timeframe_alignment == "STRONG":
+                        _alignment_reason = (
+                            f"Weekly {weekly_regime} confirms daily signal — strong timeframe alignment"
+                        )
+        except Exception:
+            pass
+
         # Final position size
         position_size = _apply_size_factors(base_position_size, size_factors)
 
@@ -213,6 +243,8 @@ def recommend_trade(
         reasons: list[str] = []
         if direction:
             reasons.append(f"{regime or 'Unknown'} regime with {signal} signal")
+        if _alignment_reason:
+            reasons.append(_alignment_reason)
         if event_risk_score is not None:
             reasons.append(f"Event risk {event_risk_rating or ''} ({event_risk_score}/100)".strip())
         if vix_caution:
@@ -252,12 +284,15 @@ def recommend_trade(
             "gating_data_available": {
                 "event_risk": _event_risk_available,
                 "vix": _vix_available,
+                "timeframe": weekly_regime is not None,
             },
             "data_basis": data_basis,
             "raw_confidence": raw_confidence,
             "calibrated_confidence": calibrated_confidence,
             "confidence_adjustment": confidence_adjustment,
             "calibration_applied": calibration_applied,
+            "weekly_regime": weekly_regime,
+            "timeframe_alignment": timeframe_alignment,
         }
     except Exception as exc:
         return {"error": str(exc), "symbol": symbol if isinstance(symbol, str) else "unknown"}

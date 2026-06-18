@@ -14,17 +14,18 @@ from mcp.server.fastmcp import FastMCP
 from src.market import get_market
 from src.technical import indicators
 
-def _load_candles(symbol: str, lookback_days: int) -> list[dict]:
+def _load_candles(symbol: str, lookback_days: int, interval: str = "1d") -> list[dict]:
     """Return raw OHLCV candle dicts (each with a 'date'), or [] on failure.
 
     Symbol resolution (index aliases, exchange prefixes) is delegated to the
     market service's canonical resolver — see src/market/symbols.py.
+    interval: yfinance interval string — '1d' (daily), '1wk' (weekly), '1mo' (monthly).
     """
     today = date.today()
     start = (today - timedelta(days=lookback_days)).isoformat()
     end = (today + timedelta(days=1)).isoformat()
     try:
-        candles = get_market().get_historical(symbol, start, end, "1d")
+        candles = get_market().get_historical(symbol, start, end, interval)
     except Exception:
         return []
     return candles or []

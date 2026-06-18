@@ -505,7 +505,7 @@ class TestDataBasis:
 
     def test_setup_includes_data_basis(self, monkeypatch):
         import src.analysis.regime as regime
-        monkeypatch.setattr(regime, "_load_candles", lambda s, l: self._candles())
+        monkeypatch.setattr(regime, "_load_candles", lambda s, l, interval="1d": self._candles())
         r = generate_trade_setup("NIFTY")
         assert "data_basis" in r
         assert r["data_basis"]["source"] == "yfinance_eod_adjusted"
@@ -538,7 +538,7 @@ class TestAnalysisCache:
         import src.analysis.regime as regime
         calls = {"n": 0}
 
-        def _counting_loader(symbol, lookback):
+        def _counting_loader(symbol, lookback, interval="1d"):
             calls["n"] += 1
             return self._candles()
 
@@ -555,7 +555,7 @@ class TestAnalysisCache:
         import src.analysis.regime as regime
         calls = {"n": 0}
 
-        def _counting_loader(symbol, lookback):
+        def _counting_loader(symbol, lookback, interval="1d"):
             calls["n"] += 1
             return self._candles()
 
