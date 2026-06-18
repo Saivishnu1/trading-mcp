@@ -97,6 +97,48 @@ def _init_schema(conn) -> None:
     conn.commit()
 
 
+class _LibsqlCursor:
+    """Makes libsql_experimental cursors sqlite3-compatible (dict rows, fetchone/fetchall)."""
+
+    def __init__(self, cursor):
+        self._cur = cursor
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    def _as_dict(self, row):
+        if row is None:
+            return None
+        desc = self._cur.description
+        if not desc:
+            return row
+        return dict(zip([d[0] for d in desc], row))
+
+    def fetchone(self):
+        return self._as_dict(self._cur.fetchone())
+
+    def fetchall(self):
+        return [self._as_dict(r) for r in self._cur.fetchall()]
+
+
+class _LibsqlConn:
+    """Makes libsql_experimental connections sqlite3-compatible."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.execute(sql, params) if params else self._conn.execute(sql)
+        return _LibsqlCursor(cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
 def _get_schema_version(conn) -> int | None:
     row = conn.execute("SELECT version FROM schema_version").fetchone()
     return row["version"] if row else None
@@ -105,12 +147,12 @@ def _get_schema_version(conn) -> int | None:
 def _connect(path: str):
     if _TURSO_URL:
         import libsql_experimental as libsql  # type: ignore[import]
-        conn = libsql.connect(_TURSO_URL, auth_token=_TURSO_TOKEN)
+        conn = _LibsqlConn(libsql.connect(_TURSO_URL, auth_token=_TURSO_TOKEN))
     else:
         conn = sqlite3.connect(path, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
+        conn.row_factory = sqlite3.Row
     _init_schema(conn)
     return conn
 
