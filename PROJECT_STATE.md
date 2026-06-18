@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 17 (complete)
+Current Phase: 18 (complete)
 
 Latest Tag:
-phase-17-calibration-engine
+phase-18-feedback-loop
 
 Tool Count:
 62
 
 Test Count:
-1081 (31 test files, 0 failures)
+1129 (33 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -88,7 +88,9 @@ Production deployed on Railway
 
 ✅ Phase 17 — Calibration Engine
 
-⬜ Phase 18 — next
+✅ Phase 18 — Recommendation Feedback Loop
+
+⬜ Phase 19 — next
 
 ---
 
@@ -133,6 +135,16 @@ Total: 62
 ---
 
 ## Recent Changes
+
+Phase 18:
+
+* 0 new tools (62 total, unchanged); 48 new tests → 1129; FB-1 through FB-7 regression guards
+* New src/feedback/calibration_adjustment.py: get_calibrated_confidence, calibration_size_factor, _bucket_for_confidence, _adjustment_for_bucket
+* create_trade_plan: fetches Phase 17 calibration report, adds raw_confidence / calibrated_confidence / confidence_adjustment / calibration_applied; "confidence" key unchanged (backward compat)
+* recommend_trade: reads calibration from plan, applies size factor (×0.50 at ≤45, ×0.75 at ≤55, ×1.10 at ≥75) via apply_size_factors(); factor applied once only (FB-7)
+* Min calibration sample: 20 trades per bucket (stricter than Phase 17's 5) before activation
+* calibrated_confidence always clamped to [0, 85] (FB-4, FB-5)
+* Tagged: phase-18-feedback-loop
 
 Phase 17:
 

@@ -1397,6 +1397,7 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-15b-turso-migration` | `2b55dcb` | Journal Persistence — Turso cloud SQLite via libsql_experimental; linux-only dep; _LibsqlConn wrapper; 59 tools, 1030 tests |
 | `phase-16-zerodha-auto-import` | `b539a8e` | Zerodha Trade Auto-Import — sync_trades_from_zerodha, get_orders, schema v3 external_id; 61 tools, 1053 tests |
 | `phase-17-calibration-engine` | `6f3c21c` | Calibration Engine — Brier score, reliability curve, overconfidence analysis; 62 tools, 1081 tests |
+| `phase-18-feedback-loop` | `3e6a516` | Recommendation Feedback Loop — self-correcting confidence, calibration-based sizing; 62 tools, 1129 tests |
 
 ---
 
@@ -1826,6 +1827,94 @@ directly from `src/journal/service.py` to avoid duplicating confidence extractio
   "notes": ["7% of trades have no confidence score (logged without analysis_snapshot.confidence)."]
 }
 ```
+
+---
+
+## Phase 18 — Recommendation Feedback Loop
+
+**Commit:** `3e6a516`
+**Tag:** `phase-18-feedback-loop`
+**Tools added:** 0 → **Total: 62 (unchanged)**
+**Tests added:** 48 (2 new files) → **Total: 1129**
+
+### What was built
+
+The system's recommendations become self-correcting: instead of trusting the model's
+raw confidence scores, recommendations now use what historical performance actually
+shows. A model that claims 80% confidence but wins only 65% of the time will have
+its trades sized down automatically.
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/feedback/__init__.py` | Package init |
+| `src/feedback/calibration_adjustment.py` | Core helpers: `get_calibrated_confidence`, `calibration_size_factor` |
+| `tests/test_feedback.py` | 30 unit + integration tests |
+| `tests/test_feedback_regressions.py` | 18 regression guards FB-1 through FB-7 |
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `src/planner/trade_plan.py` | Fetches calibration report post-plan; adds `raw_confidence`, `calibrated_confidence`, `confidence_adjustment`, `calibration_applied` to output |
+| `src/recommendations/engine.py` | Imports `calibration_size_factor`; reads calibration fields from plan; applies size factor; adds calibration fields to return dict |
+
+### Design decisions
+
+**Single calibration fetch** — `create_trade_plan` fetches `get_calibration_report()` once.
+`recommend_trade` calls `create_trade_plan` and reads the calibration fields from the plan —
+no second fetch. The journal query runs exactly once per recommendation flow.
+
+**Calibration bucket matching:**
+
+| Raw confidence | Bucket used |
+|---|---|
+| ≥ 75 | `high` |
+| 60–74 | `moderate` |
+| < 60 | `low` |
+
+The bucket's `actual_win_rate` (from Phase 17 reliability curve) is converted back
+to the 0–85 confidence space: `calibrated = actual_win_rate × 85`.
+
+**Minimum sample gate** — 20 trades per bucket required before calibration activates.
+Below that threshold, `calibration_applied=False` and the raw confidence is used unchanged.
+This is stricter than Phase 17's default `min_sample=5` because Phase 18 acts on the output
+(position sizing) rather than just reporting it.
+
+**Position size adjustment via existing `apply_size_factors()`:**
+
+| Calibrated confidence | Factor | Effect |
+|---|---|---|
+| ≤ 45 | ×0.50 | Halve position |
+| ≤ 55 | ×0.75 | Reduce 25% |
+| 56–74 | ×1.00 | No change |
+| ≥ 75 | ×1.10 | Increase 10% |
+
+Applied in `recommend_trade` only (not in `create_trade_plan`) so the factor appears
+once in `risk_adjustments` and is never compounded (FB-7). Stacks correctly with
+event-risk and duplicate-exposure factors via the existing `apply_size_factors()` chain.
+
+**Backward compatibility** — the existing `confidence` key in both `create_trade_plan`
+and `recommend_trade` responses is unchanged (raw model confidence). The four new keys
+(`raw_confidence`, `calibrated_confidence`, `confidence_adjustment`, `calibration_applied`)
+are purely additive. All 62 tools remain unchanged (FB-6).
+
+**Graceful degradation** — the calibration fetch in `create_trade_plan` is wrapped in
+`try/except`. Any failure (DB unreachable, no history, insufficient sample) sets
+`calibration_applied=False` and the plan proceeds with the raw confidence unmodified.
+
+### Regression guards (FB-1 through FB-7)
+
+| # | Class | Scenario protected |
+|---|---|---|
+| FB-1 | `TestFB1NoCalibrationHistoryRecommendationUnchanged` | Empty curve → `calibration_applied=False`, size unchanged |
+| FB-2 | `TestFB2LowSampleBucketNoCalibration` | Bucket below 20 trades → `calibration_applied=False` |
+| FB-3 | `TestFB3MissingConfidenceCalibrationSkipped` | `actual_win_rate=None` → raw confidence used |
+| FB-4 | `TestFB4AdjustedConfidenceNeverBelowZero` | `calibrated_confidence` always ≥ 0 |
+| FB-5 | `TestFB5AdjustedConfidenceNeverAbove85` | `calibrated_confidence` always ≤ 85 |
+| FB-6 | `TestFB6ExistingSchemaUnchanged` | All existing response keys present in both tools |
+| FB-7 | `TestFB7PositionSizeReductionAppliedOnce` | Calibration factor appears once, not compounded |
 
 ---
 
