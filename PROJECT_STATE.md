@@ -20,10 +20,10 @@ Status:
 
 ## Current State
 
-Current Phase: 15A (complete)
+Current Phase: 15B (complete)
 
 Latest Tag:
-phase-15a-journal-analytics
+phase-15b-turso-migration
 
 Tool Count:
 59
@@ -82,7 +82,9 @@ Production deployed on Railway
 
 ✅ Phase 15A — Journal Performance Analytics
 
-⬜ Phase 15B — next
+✅ Phase 15B — Journal Persistence (Turso cloud SQLite)
+
+⬜ Phase 16 — next
 
 ---
 
@@ -125,6 +127,16 @@ Total: 59
 ---
 
 ## Recent Changes
+
+Phase 15B:
+
+* No new tools (59 total, unchanged); no new tests
+* journal/db.py: branches on TURSO_DATABASE_URL env var — libsql_experimental (Turso cloud) when set, local sqlite3 fallback when unset
+* _LibsqlConn + _LibsqlCursor wrappers make libsql_experimental sqlite3-compatible (dict rows, fetchone/fetchall, no row_factory)
+* libsql-experimental added as linux-only dep (sys_platform == 'linux') — Railway installs it; Windows skips and uses sqlite3
+* Two new env vars: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN (documented in .env.example)
+* Schema, queries, service.py, and reset_connection() test seam all unchanged
+* Tagged: phase-15b-turso-migration
 
 Phase 15A:
 

@@ -37,8 +37,8 @@ src/
 │   ├── news.py              get_symbol_news(), _aggregate_sentiment()
 │   ├── earnings.py          get_earnings_calendar(), proximity scoring, corporate actions
 │   └── event_risk.py        get_event_risk(), confidence model, dual catalyst fields
-├── journal/                 Trade Journal — SQLite-backed persistent log (Phase 12)
-│   ├── db.py                Connection factory, schema init, reset_connection() test seam
+├── journal/                 Trade Journal — Turso cloud SQLite (Phase 12 + 15B)
+│   ├── db.py                Connection factory (Turso/sqlite3 branch), schema init, reset_connection() test seam
 │   └── service.py           log_trade, close_trade, get_open_trades, get_trade_history
 ├── recommendations/         Trade Recommendation Engine (Phase 13)
 │   └── engine.py            recommend_trade, review_open_trades, get_daily_brief
@@ -1585,6 +1585,53 @@ existing journal schema (no new storage, no persistent recommendation log).
 
 `journal/service.py` 96%; new function near-fully exercised (19 tests, incl. MCP
 registration). No tools or tests modified elsewhere.
+
+---
+
+## Phase 15B — Journal Persistence (Turso cloud SQLite)
+
+**Commits:** `2b55dcb`, `c6bca46`
+**Tag:** `phase-15b-turso-migration`
+**Tools added:** 0 → **Total: 59**
+**Tests added:** 0 → **Total: 1030**
+
+### What was built
+
+Migrated the trade journal from ephemeral local SQLite (lost on every Railway redeploy) to
+[Turso](https://turso.tech) cloud-hosted libSQL — same SQL dialect, no schema changes, free tier
+(9 GB / 1B row reads / month, permanent).
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/journal/db.py` | Branches on `TURSO_DATABASE_URL`: libsql_experimental (Turso) when set, local sqlite3 fallback when unset. Added `_LibsqlConn` + `_LibsqlCursor` wrappers. |
+| `pyproject.toml` | Added `libsql-experimental>=0.0.6; sys_platform == 'linux'` — Railway (Linux) installs it; Windows skips and uses sqlite3 fallback. |
+| `.env.example` | Documents `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. |
+
+### Design decisions
+
+**libsql_experimental compatibility** — the package does not support `conn.row_factory`, so a
+thin wrapper (`_LibsqlConn` / `_LibsqlCursor`) was added that:
+- intercepts `execute()` and wraps the raw cursor
+- converts tuple rows to dicts using `cursor.description` column names
+- exposes `fetchone()` / `fetchall()` returning dict rows (compatible with `dict(row)` in `service.py`)
+
+**Platform marker** — `libsql-experimental` has no pre-built Windows wheel and requires Rust
+compilation. Using `sys_platform == 'linux'` keeps the Railway deploy clean while letting
+local Windows dev continue with sqlite3.
+
+**Zero test changes** — tests inject an in-memory sqlite3 connection via `reset_connection()`.
+That seam is unchanged; all 1030 tests pass against the sqlite3 path as before.
+
+**New env vars:**
+
+| Variable | Purpose |
+|---|---|
+| `TURSO_DATABASE_URL` | `libsql://your-db.turso.io` — activates Turso path when set |
+| `TURSO_AUTH_TOKEN` | JWT token from `turso db tokens create <db>` |
+
+Leave both blank for local sqlite3 fallback.
 
 ---
 

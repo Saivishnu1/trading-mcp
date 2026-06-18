@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 15A (complete) — Phase 15B next
+Current Phase: 15B (complete) — Phase 16 next
 
 Current Tool Count: 59
 
