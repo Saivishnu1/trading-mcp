@@ -1396,6 +1396,7 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-15a-journal-analytics` | `cd872be` | Journal Performance Analytics — get_performance_analytics: realized win-rate / avg-P&L / profit-factor by signal, regime, confidence band; 59 tools, 1030 tests |
 | `phase-15b-turso-migration` | `2b55dcb` | Journal Persistence — Turso cloud SQLite via libsql_experimental; linux-only dep; _LibsqlConn wrapper; 59 tools, 1030 tests |
 | `phase-16-zerodha-auto-import` | `b539a8e` | Zerodha Trade Auto-Import — sync_trades_from_zerodha, get_orders, schema v3 external_id; 61 tools, 1053 tests |
+| `phase-17-calibration-engine` | `6f3c21c` | Calibration Engine — Brier score, reliability curve, overconfidence analysis; 62 tools, 1081 tests |
 
 ---
 
@@ -1716,6 +1717,115 @@ The digit-before check prevents equity symbols like `RELIANCE` (ends in `CE`) fr
 |---|---|---|
 | `get_orders` | ✓ | Fetch today's Zerodha orders; filterable by status (default: complete) |
 | `sync_trades_from_zerodha` | ✓ | Import today's executed orders into journal; idempotent |
+
+---
+
+## Phase 17 — Calibration Engine
+
+**Commit:** `6f3c21c`
+**Tag:** `phase-17-calibration-engine`
+**Tools added:** 1 → **Total: 62**
+**Tests added:** 28 (1 new file) → **Total: 1081**
+
+### What was built
+
+Proper scoring rule (Brier score) to measure whether the model's stated confidence
+values actually predict trade outcomes — answering "when the model says 75% confident,
+does it win 75% of the time?"
+
+### Files created
+
+| File | Purpose |
+|---|---|
+| `src/calibration/__init__.py` | Package init |
+| `src/calibration/service.py` | `get_calibration_report` + 4 private helpers |
+| `src/tools/calibration.py` | 1 MCP tool registration |
+| `tests/test_calibration.py` | 28 unit + integration tests |
+
+### Files modified
+
+| File | Change |
+|---|---|
+| `src/server.py` | Added `calibration` import + `calibration.register(mcp)` |
+
+### Design decisions
+
+**Brier score** — `mean((confidence/85 − outcome)²)` where `confidence` is read from
+`analysis_snapshot.confidence` and `outcome` is 1 for a win (pnl > 0) or 0 for a loss.
+The `/85` normalises to [0, 1] probability space using the system-wide confidence ceiling.
+Only trades with a recorded confidence contribute to the score — trades logged without it
+are reported in `notes` as a percentage but excluded from the calculation.
+
+**Rating thresholds:**
+
+| Brier Score | Rating |
+|---|---|
+| ≤ 0.15 | EXCELLENT |
+| ≤ 0.20 | GOOD |
+| ≤ 0.25 | FAIR |
+| > 0.25 | POOR |
+
+**Reliability curve** — groups closed trades into confidence buckets, then computes
+per-bucket average predicted probability vs actual win rate and their difference:
+
+```
+calibration_gap = actual_win_rate − avg_predicted_probability
+  positive → underconfident (model undersells its accuracy)
+  negative → overconfident  (model oversells its accuracy)
+```
+
+Buckets below `min_sample` (default 5) are flagged `low_sample` so thin data doesn't
+mislead. The `unknown` bucket captures trades with no recorded confidence.
+
+**Overconfidence analysis** — aggregates directional bias across non-low-sample buckets:
+
+```
+overconfidence_score  = mean(|negative gaps|)   # how much model over-predicts
+underconfidence_score = mean(positive gaps)      # how much model under-predicts
+dominant_bias = OVERCONFIDENT | UNDERCONFIDENT | BALANCED
+```
+
+**Phase 18 reuse** — three helpers are designed for direct reuse by the Recommendation
+Feedback Loop (Phase 18):
+
+| Helper | Purpose |
+|---|---|
+| `_calculate_brier_score(trades)` | Brier score + rating over any trade list |
+| `_build_reliability_curve(trades, min_sample)` | Per-bucket curve data |
+| `_calibration_gap(actual, predicted)` | Single-gap calculation |
+
+These are internal to `calibration/service.py` — not exported as MCP tools.
+
+**Reuses existing primitives** — `_confidence_of()` and `_row_to_dict()` imported
+directly from `src/journal/service.py` to avoid duplicating confidence extraction logic.
+
+### Tool (1)
+
+| Tool | Auth | Description |
+|---|---|---|
+| `get_calibration_report` | — | Brier score, reliability curve, and overconfidence bias over closed journal trades |
+
+### Example output
+
+```json
+{
+  "brier_score": 0.18,
+  "calibration_rating": "GOOD",
+  "brier_scored_trades": 45,
+  "reliability_curve": [
+    {"bucket": "high",     "trade_count": 18, "avg_predicted_probability": 0.894, "actual_win_rate": 0.778, "calibration_gap": -0.116, "low_sample": false},
+    {"bucket": "moderate", "trade_count": 20, "avg_predicted_probability": 0.741, "actual_win_rate": 0.700, "calibration_gap": -0.041, "low_sample": false},
+    {"bucket": "low",      "trade_count":  7, "avg_predicted_probability": 0.565, "actual_win_rate": 0.571, "calibration_gap":  0.006, "low_sample": false}
+  ],
+  "overconfidence_analysis": {
+    "overconfidence_score": 0.0785,
+    "underconfidence_score": 0.006,
+    "dominant_bias": "OVERCONFIDENT"
+  },
+  "trade_count": 52,
+  "notes": ["7% of trades have no confidence score (logged without analysis_snapshot.confidence)."]
+}
+```
 
 ---
 
