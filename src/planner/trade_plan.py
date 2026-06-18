@@ -206,12 +206,37 @@ def create_trade_plan(
     trade_allowed = quality != "LOW_QUALITY"
     summary = _build_summary(signal, entry, stoploss, target, rr_val, recommended_strategy, quality)
 
+    # --- calibration context (Phase 18) ---
+    raw_confidence = confidence
+    calibration_meta: dict = {
+        "calibration_applied": False,
+        "calibrated_confidence": float(raw_confidence),
+        "confidence_adjustment": 0,
+        "reason": None,
+    }
+    try:
+        from src.calibration.service import get_calibration_report as _get_cal_report
+        from src.feedback.calibration_adjustment import (
+            get_calibrated_confidence as _get_cal_conf,
+        )
+        cal = _get_cal_report()
+        if "error" not in cal and cal.get("reliability_curve"):
+            calibration_meta = _get_cal_conf(
+                float(raw_confidence), cal["reliability_curve"]
+            )
+    except Exception:
+        pass
+
     return {
         "symbol": sym,
         "trade_allowed": trade_allowed,
         "signal": signal,
         "trade_quality": quality,
         "confidence": confidence,
+        "raw_confidence": raw_confidence,
+        "calibrated_confidence": calibration_meta["calibrated_confidence"],
+        "confidence_adjustment": calibration_meta["confidence_adjustment"],
+        "calibration_applied": calibration_meta["calibration_applied"],
         "entry": entry,
         "stoploss": stoploss,
         "target": target,

@@ -16,6 +16,7 @@ from src.common.signals import (
     SHORT_SIGNALS as _SHORT_SIGNALS,
     direction_from_signal,
 )
+from src.feedback.calibration_adjustment import calibration_size_factor as _cal_size_factor
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -78,6 +79,10 @@ def recommend_trade(
         strategy = plan.get("strategy", {}).get("recommended")
         trade_quality = plan.get("trade_quality")
         data_basis = plan.get("data_basis")
+        raw_confidence = plan.get("raw_confidence", plan.get("confidence"))
+        calibrated_confidence = plan.get("calibrated_confidence", raw_confidence)
+        confidence_adjustment = plan.get("confidence_adjustment", 0)
+        calibration_applied = plan.get("calibration_applied", False)
 
         # 3. Event risk
         event_risk_score: int | None = None
@@ -176,6 +181,23 @@ def recommend_trade(
             size_factors.append(_DUPLICATE_SIZE_FACTOR)
             risk_adjustments.append("Position size reduced 50% due to duplicate exposure")
 
+        # Calibration-based size adjustment (FB-7: applied once here, not in create_trade_plan)
+        if calibration_applied and calibrated_confidence is not None:
+            cal_factor = _cal_size_factor(calibrated_confidence)
+            if cal_factor != 1.0:
+                size_factors.append(cal_factor)
+                if cal_factor < 1.0:
+                    pct = round((1 - cal_factor) * 100)
+                    risk_adjustments.append(
+                        f"Position size reduced {pct}% — calibrated confidence "
+                        f"{calibrated_confidence:.0f} (raw: {raw_confidence})"
+                    )
+                else:
+                    risk_adjustments.append(
+                        f"Position size increased 10% — calibrated confidence "
+                        f"{calibrated_confidence:.0f} confirms high historical accuracy"
+                    )
+
         # Final position size
         position_size = _apply_size_factors(base_position_size, size_factors)
 
@@ -232,6 +254,10 @@ def recommend_trade(
                 "vix": _vix_available,
             },
             "data_basis": data_basis,
+            "raw_confidence": raw_confidence,
+            "calibrated_confidence": calibrated_confidence,
+            "confidence_adjustment": confidence_adjustment,
+            "calibration_applied": calibration_applied,
         }
     except Exception as exc:
         return {"error": str(exc), "symbol": symbol if isinstance(symbol, str) else "unknown"}
