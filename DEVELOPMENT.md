@@ -1919,6 +1919,61 @@ are purely additive. All 62 tools remain unchanged (FB-6).
 
 ---
 
+## Phase 20A — Regime Predictiveness Audit (Research)
+
+**Commit:** `64539c4` — `feat(research): Phase 20A regime predictiveness audit`
+**Tests at end of phase:** 1222 (1195 existing + 27 new)
+**Tools added:** 0 (research infrastructure, no new MCP tools)
+
+### What was built
+
+- `scripts/regime_audit.py` — walk-forward audit framework for regime model evaluation
+  - Sliding 150-candle window, advancing day-by-day from 2022-01-01 through 2025-12-11
+  - `_build_technicals()`: pure mirror of `_analyze_technicals()` with no I/O — uses pre-downloaded candles
+  - `run_symbol_audit()`: per-symbol walk-forward loop with warmup, tail exclusion, and closure guards
+  - `compute_metrics()`: per-regime n, runs, avg run length, directional accuracy, avg forward returns (5/10/20d)
+  - `run_start_vs_continuation()`: splits each regime run into entry day vs continuation days to distinguish mature-trend effect from inception failure
+  - `monotonicity_check()`: validates expected BULL > NEUTRAL_BULLISH > RANGE_BOUND > NEUTRAL_BEARISH > BEAR ordering
+  - `print_run_diagnostic()`: inline interpretation labels for each diagnostic outcome
+- `tests/test_regime_audit.py` — 27 regression tests
+  - Guards: no `detect_market_regime` calls, no live I/O in inner loop
+  - Boundary guards: warmup, tail exclusion, CLASSIFY_FROM
+  - `TestRunStartVsContinuation`: 11 tests covering all four interpretation outcomes
+
+### Finding (negative result)
+
+| Metric | Result |
+|---|---|
+| BULL_TREND aggregate 10d return | -0.354% |
+| BULL_TREND run-start 10d return | -0.608% |
+| BEAR_TREND aggregate 10d return | +0.316% |
+| Monotonicity | Violated |
+| Inception failure | 3 of 4 equities |
+
+The current EMA20/EMA50 + ADX > 25 regime engine does not demonstrate directional
+predictive value for NSE equities over the 2022-2025 test window. Run-start returns
+are negative across most symbols, ruling out the mature-trend/late-signal hypothesis.
+This is an inception failure: the classification logic does not identify positive-return
+environments at the moment of entry.
+
+The audit framework is retained for evaluating future regime models.
+
+### Symbols tested
+
+`^NSEI`, `INFY.NS`, `HDFCBANK.NS`, `RELIANCE.NS`, `TATAMOTORS.NS`
+
+### Methodology constraints enforced
+
+| Constraint | Implementation |
+|---|---|
+| No lookahead | Forward returns computed only within `max_classify_idx = n - 1 - TAIL_EXCLUSION` |
+| Warmup | First LOOKBACK-1 indices skipped; CLASSIFY_FROM date gate applied |
+| No live I/O in loop | `_build_technicals()` uses pre-downloaded slice; tested by 3 guard tests |
+| Closure-in-loop safety | `_fwd()` captures `i` and `close_t` via default argument |
+| Production parity | Indicator construction mirrors `_analyze_technicals()` exactly |
+
+---
+
 ## Key Technical Constraints
 
 | Constraint | Resolution |

@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 19 (complete) — Phase 20 next
+Current Phase: 20A (complete, committed) — Phase 20B next
 
 Current Tool Count: 63
 
@@ -107,7 +107,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1179 unit + regression tests across 34 test files (pytest, no live network calls).
+* 1222 unit + regression tests across 36 test files (pytest, no live network calls).
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF). Do not add per-module alias tables.
