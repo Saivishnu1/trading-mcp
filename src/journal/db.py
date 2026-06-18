@@ -9,7 +9,7 @@ _TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 _INIT_LOCK = threading.Lock()
 _conn = None  # sqlite3.Connection or libsql_experimental connection
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS trades (
     risk_amount             REAL,
     capital_at_risk         REAL,
     portfolio_heat_at_entry REAL,
+    external_id             TEXT,
     created_at              TEXT    NOT NULL,
     updated_at              TEXT    NOT NULL
 )
@@ -63,19 +64,24 @@ _V2_MIGRATIONS = [
     "ALTER TABLE trades ADD COLUMN portfolio_heat_at_entry REAL",
 ]
 
+# v2 → v3: add external_id for Zerodha auto-import deduplication
+_V3_MIGRATIONS = [
+    "ALTER TABLE trades ADD COLUMN external_id TEXT",
+]
+
 _DDL_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS idx_trades_symbol     ON trades(symbol)",
-    "CREATE INDEX IF NOT EXISTS idx_trades_status     ON trades(status)",
-    "CREATE INDEX IF NOT EXISTS idx_trades_entry_date ON trades(entry_date)",
-    "CREATE INDEX IF NOT EXISTS idx_trades_trade_type ON trades(trade_type)",
+    "CREATE INDEX IF NOT EXISTS idx_trades_symbol      ON trades(symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_trades_status      ON trades(status)",
+    "CREATE INDEX IF NOT EXISTS idx_trades_entry_date  ON trades(entry_date)",
+    "CREATE INDEX IF NOT EXISTS idx_trades_trade_type  ON trades(trade_type)",
+    "CREATE INDEX IF NOT EXISTS idx_trades_external_id ON trades(external_id)",
 ]
 
 
 def _init_schema(conn) -> None:
     conn.execute(_DDL_SCHEMA_VERSION)
     conn.execute(_DDL_TRADES)
-    for idx_sql in _DDL_INDEXES:
-        conn.execute(idx_sql)
+    # Run migrations before creating indexes so all columns exist first
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     existing_version = _get_schema_version(conn)
     if existing_version is None:
@@ -90,10 +96,18 @@ def _init_schema(conn) -> None:
                     conn.execute(sql)
                 except Exception:
                     pass  # column already exists (idempotent)
+        if existing_version < 3:
+            for sql in _V3_MIGRATIONS:
+                try:
+                    conn.execute(sql)
+                except Exception:
+                    pass  # column already exists (idempotent)
         conn.execute(
             "UPDATE schema_version SET version = ?, applied = ?",
             (_SCHEMA_VERSION, now),
         )
+    for idx_sql in _DDL_INDEXES:
+        conn.execute(idx_sql)
     conn.commit()
 
 

@@ -1,11 +1,13 @@
 from mcp.server.fastmcp import FastMCP
 
+from src.broker import get_broker as _get_broker
 from src.journal.service import (
     log_trade as _log_trade,
     close_trade as _close_trade,
     get_open_trades as _get_open_trades,
     get_trade_history as _get_trade_history,
     get_performance_analytics as _get_performance_analytics,
+    sync_zerodha_orders as _sync_zerodha_orders,
 )
 
 
@@ -154,3 +156,45 @@ def register(mcp: FastMCP) -> None:
             days=days,
             min_sample=min_sample,
         )
+
+    @mcp.tool()
+    def get_orders(status: str = "complete") -> dict:
+        """Fetch today's orders from your Zerodha account.
+
+        status: filter by order status — 'complete' (default), 'open', 'cancelled', or '' for all.
+        Requires an active Zerodha session (call zerodha_login first).
+
+        Returns count and list of raw Zerodha order objects.
+        """
+        try:
+            orders = _get_broker().orders()
+            if status:
+                s = status.upper()
+                orders = [o for o in orders if (o.get("status") or "").upper() == s]
+            return {"count": len(orders), "orders": orders}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    @mcp.tool()
+    def sync_trades_from_zerodha() -> dict:
+        """Sync today's executed Zerodha orders into your trade journal.
+
+        Imports COMPLETE BUY orders as LONG journal entries.
+        SELL orders automatically close the most recent matching open LONG position.
+        Already-imported orders are skipped — idempotent, safe to run multiple times.
+
+        Response:
+          imported        — new LONG positions logged
+          closed          — open LONG positions closed by a matching SELL
+          skipped         — already imported or non-COMPLETE orders
+          unmatched_sells — SELL orders with no open LONG to close (informational)
+          errors          — any unexpected failures
+          details         — full per-order breakdown
+
+        Requires an active Zerodha session (call zerodha_login first).
+        """
+        try:
+            orders = _get_broker().orders()
+            return _sync_zerodha_orders(orders)
+        except Exception as exc:
+            return {"error": str(exc)}

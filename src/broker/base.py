@@ -39,3 +39,11 @@ class BrokerClient(Protocol):
     def load_session(self, path: str) -> bool:
         """Restore auth session from a JSON file. Returns True on success."""
         ...
+
+    def orders(self) -> list[dict]:
+        """Return today's orders."""
+        ...
+
+    def trades(self) -> list[dict]:
+        """Return today's executed trade fills."""
+        ...

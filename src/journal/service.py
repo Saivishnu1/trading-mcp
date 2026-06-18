@@ -143,6 +143,9 @@ def log_trade(
     risk_amount: float | None = None,
     capital_at_risk: float | None = None,
     portfolio_heat_at_entry: float | None = None,
+    external_id: str | None = None,
+    entry_date: str | None = None,
+    entry_time: str | None = None,
 ) -> dict:
     try:
         direction = direction.upper().strip()
@@ -162,7 +165,8 @@ def log_trade(
             rr = _auto_risk_reward(direction, entry_price, stoploss, target)
 
         now = _now_utc()
-        today = _today()
+        entry_d = entry_date if entry_date is not None else _today()
+        entry_t = entry_time if entry_time is not None else now
         trade_id = _new_trade_id()
 
         tags_json = json.dumps(tags) if tags is not None else None
@@ -178,7 +182,7 @@ def log_trade(
                     regime, signal, risk_score, analysis_snapshot,
                     created_by, status, tags, notes,
                     risk_amount, capital_at_risk, portfolio_heat_at_entry,
-                    created_at, updated_at
+                    external_id, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
@@ -186,16 +190,16 @@ def log_trade(
                     ?, ?, ?, ?,
                     ?, 'OPEN', ?, ?,
                     ?, ?, ?,
-                    ?, ?
+                    ?, ?, ?
                 )""",
                 (
                     trade_id, symbol, trade_type, direction, strategy,
-                    entry_price, quantity, today, now,
+                    entry_price, quantity, entry_d, entry_t,
                     rationale, stoploss, target, rr,
                     regime, signal, risk_score, snapshot_json,
                     created_by, tags_json, notes,
                     risk_amount, capital_at_risk, portfolio_heat_at_entry,
-                    now, now,
+                    external_id, now, now,
                 ),
             )
             conn.commit()
@@ -293,6 +297,131 @@ def get_open_trades(symbol: str | None = None) -> dict:
         return {"count": len(trades), "trades": trades}
     except Exception as exc:
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Zerodha auto-import (Phase 16)
+# ---------------------------------------------------------------------------
+
+def _parse_order_timestamp(ts: str) -> tuple[str, str]:
+    """Parse Zerodha timestamp '2024-06-19 10:30:00' → ('2024-06-19', '10:30:00')."""
+    try:
+        ts = ts.strip()
+        if not ts:
+            return _today(), _now_utc()
+        sep = "T" if "T" in ts else " "
+        parts = ts.split(sep, 1)
+        return parts[0], parts[1] if len(parts) > 1 else _now_utc()
+    except Exception:
+        return _today(), _now_utc()
+
+
+def _product_to_trade_type(product: str, symbol: str) -> str:
+    sym = symbol.upper()
+    # Options: symbol ends with CE/PE AND the char before is a digit (e.g. "24000CE", not "RELIANCE")
+    if (sym.endswith("CE") or sym.endswith("PE")) and len(sym) > 2 and sym[-3].isdigit():
+        return "OPTIONS"
+    if sym.endswith("FUT"):
+        return "FUTURES"
+    return "EQUITY"
+
+
+def _find_open_long_for_symbol(symbol: str) -> dict | None:
+    conn = _db._get_connection()
+    row = conn.execute(
+        "SELECT * FROM trades WHERE symbol = ? AND direction = 'LONG' AND status = 'OPEN'"
+        " ORDER BY created_at DESC LIMIT 1",
+        (symbol.upper(),),
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def sync_zerodha_orders(orders: list[dict]) -> dict:
+    """Import Zerodha COMPLETE orders into the journal.
+
+    BUY orders → log as LONG (skipped if external_id already imported).
+    SELL orders → close most recent open LONG for that symbol; skipped if none found.
+    Idempotent: safe to call multiple times for the same order list.
+    """
+    def _ts(o: dict) -> str:
+        return o.get("order_timestamp") or o.get("exchange_timestamp") or ""
+
+    imported, closed_trades, skipped, unmatched, errors = [], [], [], [], []
+
+    for order in sorted(orders, key=_ts):
+        try:
+            status = (order.get("status") or "").upper()
+            if status != "COMPLETE":
+                skipped.append({"order_id": order.get("order_id"), "reason": f"status={status}"})
+                continue
+
+            order_id = str(order.get("order_id", "")).strip()
+            symbol = (order.get("tradingsymbol") or "").upper().strip()
+            txn = (order.get("transaction_type") or "").upper()
+            avg_price = float(order.get("average_price") or 0)
+            qty = int(order.get("filled_quantity") or order.get("quantity") or 0)
+            product = order.get("product", "CNC")
+            ts = order.get("order_timestamp") or order.get("exchange_timestamp") or ""
+
+            if not order_id or not symbol or avg_price <= 0 or qty <= 0:
+                skipped.append({"order_id": order_id, "reason": "missing/invalid fields"})
+                continue
+
+            entry_date, entry_time = _parse_order_timestamp(ts)
+            trade_type = _product_to_trade_type(product, symbol)
+
+            if txn == "BUY":
+                conn = _db._get_connection()
+                already = conn.execute(
+                    "SELECT id FROM trades WHERE external_id = ?", (order_id,)
+                ).fetchone()
+                if already:
+                    skipped.append({"order_id": order_id, "symbol": symbol, "reason": "already_imported"})
+                    continue
+                result = log_trade(
+                    symbol=symbol, direction="LONG", entry_price=avg_price,
+                    quantity=qty, trade_type=trade_type, created_by="ZERODHA_SYNC",
+                    tags=["zerodha-import"], external_id=order_id,
+                    entry_date=entry_date, entry_time=entry_time,
+                )
+                if "error" in result:
+                    errors.append({"order_id": order_id, "symbol": symbol, "error": result["error"]})
+                else:
+                    imported.append({"order_id": order_id, "symbol": symbol, "trade_id": result["trade_id"], "price": avg_price, "qty": qty})
+
+            elif txn == "SELL":
+                open_long = _find_open_long_for_symbol(symbol)
+                if open_long:
+                    result = close_trade(
+                        trade_id=open_long["trade_id"],
+                        exit_price=avg_price,
+                        exit_reason="MANUAL",
+                        notes=f"zerodha_sync:{order_id}",
+                    )
+                    if "error" in result:
+                        errors.append({"order_id": order_id, "symbol": symbol, "error": result["error"]})
+                    else:
+                        closed_trades.append({"order_id": order_id, "symbol": symbol, "trade_id": open_long["trade_id"], "pnl": result.get("pnl"), "exit_price": avg_price})
+                else:
+                    unmatched.append({"order_id": order_id, "symbol": symbol, "reason": "no_open_long_found"})
+
+        except Exception as exc:
+            errors.append({"order_id": order.get("order_id", "?"), "error": str(exc)})
+
+    return {
+        "imported": len(imported),
+        "closed": len(closed_trades),
+        "skipped": len(skipped),
+        "unmatched_sells": len(unmatched),
+        "errors": len(errors),
+        "details": {
+            "imported": imported,
+            "closed": closed_trades,
+            "skipped": skipped,
+            "unmatched_sells": unmatched,
+            "errors": errors,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------

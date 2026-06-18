@@ -123,6 +123,12 @@ class ZerodhaWebClient:
     def margins(self, segment: str = "equity") -> dict:
         return self._get(f"/api/user/margins/{segment}")  # type: ignore[return-value]
 
+    def orders(self) -> list[dict]:
+        return self._get("/api/orders")  # type: ignore[return-value]
+
+    def trades(self) -> list[dict]:
+        return self._get("/api/trades")  # type: ignore[return-value]
+
     def is_authenticated(self) -> bool:
         if not self._enctoken:
             return False

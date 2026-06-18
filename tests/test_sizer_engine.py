@@ -721,22 +721,22 @@ class TestSchemaMigration:
         conn = self._make_v1_conn()
         journal_db._init_schema(conn)
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
-        assert version == 2
+        assert version == journal_db._SCHEMA_VERSION
 
     def test_migration_idempotent(self):
-        """Running _init_schema twice on a v2 db must not raise."""
+        """Running _init_schema twice must not raise."""
         import src.journal.db as journal_db
         conn = self._make_v1_conn()
         journal_db._init_schema(conn)
         journal_db._init_schema(conn)  # second call — must not crash
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
-        assert version == 2
+        assert version == journal_db._SCHEMA_VERSION
 
-    def test_fresh_install_starts_at_v2(self):
+    def test_fresh_install_starts_at_current_version(self):
         import src.journal.db as journal_db
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         journal_db._init_schema(conn)
         version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
-        assert version == 2
+        assert version == journal_db._SCHEMA_VERSION

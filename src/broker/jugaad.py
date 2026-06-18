@@ -105,3 +105,9 @@ class JugaadClient:
         except Exception as exc:
             logger.warning("JugaadClient: could not load session: %s", exc)
             return False
+
+    def orders(self) -> list[dict]:
+        raise NotImplementedError("orders() not supported by jugaad backend — use zerodha_web")
+
+    def trades(self) -> list[dict]:
+        raise NotImplementedError("trades() not supported by jugaad backend — use zerodha_web")
