@@ -309,3 +309,60 @@ class TestNaNPropagation:
             "adx() must propagate NaN from highs through Wilder smoothing — "
             "the result dict must contain float('nan'), not None or a clean value"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestAnalyzeTechnicalsTool — Fix 3 lock-in (Phase 14.5)
+# ---------------------------------------------------------------------------
+
+class _CapturingMCP:
+    """Minimal stand-in for FastMCP that captures @tool()-decorated functions."""
+
+    def __init__(self):
+        self.tools: dict = {}
+
+    def tool(self, *args, **kwargs):
+        def deco(fn):
+            self.tools[fn.__name__] = fn
+            return fn
+        return deco
+
+
+class TestAnalyzeTechnicalsTool:
+    """
+    Exercises the real analyze_technicals MCP tool (Fix 3, Phase 14.5).
+
+    The earlier TestNaNPropagation tests cover the indicator math directly;
+    this drives the registered tool's NaN guard so that removing the guard at
+    src/tools/technicals.py would fail a test instead of passing silently.
+    """
+
+    def _get_tool(self):
+        import src.tools.technicals as tech
+        cap = _CapturingMCP()
+        tech.register(cap)
+        return tech, cap.tools["analyze_technicals"]
+
+    def test_tool_returns_error_when_any_indicator_nan(self, monkeypatch):
+        tech, analyze = self._get_tool()
+        closes = [100.0 + i * 0.5 for i in range(60)]
+        closes[30] = float("nan")  # one bad row poisons every indicator
+        highs = [c + 2.0 for c in closes]
+        lows = [c - 2.0 for c in closes]
+        monkeypatch.setattr(tech, "_load_closes", lambda s, l: (closes, highs, lows))
+
+        result = analyze("IDEA")
+        assert "error" in result, "any NaN indicator must produce an error, not a NaN-bearing dict"
+        assert "rsi_14" in result["error"]  # affected indicators are named
+
+    def test_tool_returns_values_when_all_clean(self, monkeypatch):
+        tech, analyze = self._get_tool()
+        closes = [100.0 + i * 0.5 for i in range(120)]
+        highs = [c + 2.0 for c in closes]
+        lows = [c - 2.0 for c in closes]
+        monkeypatch.setattr(tech, "_load_closes", lambda s, l: (closes, highs, lows))
+
+        result = analyze("INFY")
+        assert "error" not in result
+        assert result["rsi_14"] is not None
+        assert result["atr_14"] is not None

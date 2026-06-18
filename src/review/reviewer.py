@@ -217,7 +217,8 @@ def review_trade(
     adx: float     = regime_result["adx"]
 
     signal: str     = setup["signal"]
-    confidence: int = min(100, setup["confidence"])
+    # setup confidence is already on the system-wide 0–85 scale (see regime.MAX_CONFIDENCE)
+    confidence: int = setup["confidence"]
 
     current_regime:   str       = strat.get("regime", regime_result.get("regime", ""))
     current_strategy: str       = strat.get("recommended", strat.get("strategy", ""))

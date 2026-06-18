@@ -9,6 +9,15 @@ import src.recommendations.engine as rec_engine
 # Mock factories
 # ---------------------------------------------------------------------------
 
+def _data_basis(staleness_days=0, last_candle_date="2026-06-18"):
+    return {
+        "source": "yfinance_eod_adjusted",
+        "candles_used": 150,
+        "last_candle_date": last_candle_date,
+        "staleness_days": staleness_days,
+    }
+
+
 def _plan(
     signal="BUY",
     trade_allowed=True,
@@ -19,6 +28,7 @@ def _plan(
     quality="HIGH_QUALITY",
     regime="BULL_TREND",
     position_size=6,
+    data_basis=None,
 ):
     if signal == "NEUTRAL":
         return {
@@ -28,6 +38,7 @@ def _plan(
             "reason": "No trade.",
             "market_context": {"regime": None},
             "risk_score": None,
+            "data_basis": data_basis,
             "summary": "No trade recommended.",
         }
     return {
@@ -49,15 +60,16 @@ def _plan(
         "strategy": {"recommended": "Bull Call Spread", "secondary": None, "reason": "..."},
         "market_context": {"regime": regime},
         "risk_score": None,
+        "data_basis": data_basis,
         "summary": "Enter above 1540.",
     }
 
 
-def _event_risk(score=35, rating="LOW"):
+def _event_risk(score=35, rating="LOW", confidence=1.0):
     return {
         "event_risk_score": score,
         "event_risk_rating": rating,
-        "confidence": 1.0,
+        "confidence": confidence,
         "factors": [],
     }
 
@@ -517,6 +529,115 @@ class TestGatingDataUnavailable:
         result = rec_engine.recommend_trade("INFY")
         assert result["gating_data_available"]["event_risk"] is True
         assert result["gating_data_available"]["vix"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestEventRiskConfidenceGating — A2 (Phase 14.6)
+# ---------------------------------------------------------------------------
+
+class TestEventRiskConfidenceGating:
+    """
+    A2: get_event_risk never raises and never returns an error key — it falls
+    back internally and reports a low `confidence`. recommend_trade must NOT
+    hard-gate (AVOID) on a low-confidence score, must surface a caution, and
+    must report gating_data_available.event_risk = False.
+    """
+
+    def _wire(self, monkeypatch, event_risk):
+        monkeypatch.setattr(rec_engine, "_get_open_trades", lambda s: _open_trades())
+        monkeypatch.setattr(rec_engine, "_create_trade_plan",
+                            lambda s, capital, risk_percent: _plan())
+        monkeypatch.setattr(rec_engine, "_get_event_risk", lambda s: event_risk)
+        monkeypatch.setattr(rec_engine, "_get_india_vix", lambda: _vix())
+
+    def test_low_confidence_extreme_score_does_not_avoid(self, monkeypatch):
+        # Score 85 would normally force AVOID — but confidence 0.3 means the
+        # score is fabricated from fallbacks and must not gate.
+        self._wire(monkeypatch, _event_risk(score=85, rating="EXTREME", confidence=0.3))
+        result = rec_engine.recommend_trade("INFY")
+        assert result["trade_allowed"] is True, "must not hard-gate on low-confidence event risk"
+        assert result["recommendation"] != "AVOID"
+        assert result["gating_data_available"]["event_risk"] is False
+        assert any("low-confidence" in c.lower() for c in result["cautions"])
+        assert result["event_risk_confidence"] == 0.3
+
+    def test_high_confidence_extreme_score_still_avoids(self, monkeypatch):
+        # Confidence 1.0 → the EXTREME score is trustworthy and must still gate.
+        self._wire(monkeypatch, _event_risk(score=85, rating="EXTREME", confidence=1.0))
+        result = rec_engine.recommend_trade("INFY")
+        assert result["trade_allowed"] is False
+        assert result["recommendation"] == "AVOID"
+        assert result["gating_data_available"]["event_risk"] is True
+
+    def test_borderline_confidence_below_threshold_skips_gating(self, monkeypatch):
+        # 0.5 is the threshold (>= passes); 0.49-equivalent (0.3) already tested.
+        # The 0.8 two-source case must remain reliable.
+        self._wire(monkeypatch, _event_risk(score=85, rating="EXTREME", confidence=0.8))
+        result = rec_engine.recommend_trade("INFY")
+        assert result["gating_data_available"]["event_risk"] is True
+        assert result["trade_allowed"] is False
+
+
+# ---------------------------------------------------------------------------
+# TestDataBasisAndStaleness — B4 (Phase 14.6)
+# ---------------------------------------------------------------------------
+
+class TestDataBasisAndStaleness:
+    """B4: recommend_trade surfaces the data provenance and warns on stale data."""
+
+    def _wire(self, monkeypatch, plan):
+        monkeypatch.setattr(rec_engine, "_get_open_trades", lambda s: _open_trades())
+        monkeypatch.setattr(rec_engine, "_create_trade_plan",
+                            lambda s, capital, risk_percent: plan)
+        monkeypatch.setattr(rec_engine, "_get_event_risk", lambda s: _event_risk())
+        monkeypatch.setattr(rec_engine, "_get_india_vix", lambda: _vix())
+
+    def test_data_basis_surfaced(self, monkeypatch):
+        self._wire(monkeypatch, _plan(data_basis=_data_basis(staleness_days=1)))
+        result = rec_engine.recommend_trade("INFY")
+        assert result["data_basis"]["source"] == "yfinance_eod_adjusted"
+        assert result["data_basis"]["staleness_days"] == 1
+
+    def test_fresh_data_no_staleness_caution(self, monkeypatch):
+        self._wire(monkeypatch, _plan(data_basis=_data_basis(staleness_days=3)))
+        result = rec_engine.recommend_trade("INFY")
+        assert not any("stale" in c.lower() for c in result["cautions"])
+
+    def test_stale_data_adds_caution(self, monkeypatch):
+        self._wire(monkeypatch, _plan(data_basis=_data_basis(staleness_days=9)))
+        result = rec_engine.recommend_trade("INFY")
+        assert any("stale" in c.lower() for c in result["cautions"])
+
+    def test_missing_data_basis_tolerated(self, monkeypatch):
+        # Older plans / mocks without data_basis must not crash or warn.
+        self._wire(monkeypatch, _plan(data_basis=None))
+        result = rec_engine.recommend_trade("INFY")
+        assert "error" not in result
+        assert not any("stale" in c.lower() for c in result["cautions"])
+
+
+# ---------------------------------------------------------------------------
+# TestEventRiskBoundaryCaution — C2 (Phase 14.6)
+# ---------------------------------------------------------------------------
+
+class TestEventRiskBoundaryCaution:
+    def _wire(self, monkeypatch, event_risk):
+        monkeypatch.setattr(rec_engine, "_get_open_trades", lambda s: _open_trades())
+        monkeypatch.setattr(rec_engine, "_create_trade_plan",
+                            lambda s, capital, risk_percent: _plan())
+        monkeypatch.setattr(rec_engine, "_get_event_risk", lambda s: event_risk)
+        monkeypatch.setattr(rec_engine, "_get_india_vix", lambda: _vix())
+
+    def test_score_near_block_flags_borderline(self, monkeypatch):
+        # 78 is within 5 of the 80 AVOID gate.
+        self._wire(monkeypatch, _event_risk(score=78, rating="HIGH", confidence=1.0))
+        result = rec_engine.recommend_trade("INFY")
+        assert any("borderline" in c.lower() for c in result["cautions"])
+
+    def test_score_far_from_block_no_borderline(self, monkeypatch):
+        self._wire(monkeypatch, _event_risk(score=35, rating="LOW", confidence=1.0))
+        result = rec_engine.recommend_trade("INFY")
+        assert not any("borderline" in c.lower() for c in result["cautions"])
 
 
 

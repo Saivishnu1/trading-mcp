@@ -5,6 +5,7 @@ import math
 from src.journal.service import get_open_trades as _get_open_trades
 from src.portfolio_intelligence.service import get_portfolio_risk_report as _get_portfolio_risk_report
 from src.recommendations.engine import recommend_trade as _recommend_trade
+from src.common.scoring import apply_size_factors as _apply_size_factors
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -27,15 +28,6 @@ _OPTIONS_CAUTION_THRESHOLD = 5.0  # capital_at_risk_pct above which a caution is
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
-
-def _apply_size_factors(base: int | None, factors: list[float]) -> int | None:
-    if base is None:
-        return None
-    result = float(base)
-    for f in factors:
-        result *= f
-    return max(1, int(round(result)))
-
 
 def _compute_portfolio_heat(capital: float) -> tuple[float, list[str]]:
     """Return (heat_pct, caution_messages). Never raises."""

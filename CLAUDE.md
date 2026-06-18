@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 14.5 (complete) — Phase 15 next
+Current Phase: 14.6 (complete) — Phase 15 next
 
 Current Tool Count: 58
 
@@ -107,9 +107,13 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 867 unit + regression tests across 26 test files (pytest, no live network calls).
-* Coverage: analysis 91%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 91–98%, portfolio_intelligence 97%, catalyst 80%+, journal 90%+, recommendations 98%, sizer 90%+.
-* Recommendation confidence is capped at 85 — reflects indicator model uncertainty, not a 100-point ceiling.
+* 1011 unit + regression tests across 29 test files (pytest, no live network calls).
+* Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
+* Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
+* Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF). Do not add per-module alias tables.
+* Shared scoring/signals live in src/common/ (risk_rating, apply_size_factors, signal sets). Reuse them; do not duplicate.
+* Risk/event scores carry confidence/is_degraded — never gate hard on a degraded or low-confidence composite without surfacing a caution.
+* Analysis basis is yfinance EOD adjusted candles (see data_basis); live quotes (NSELive) are a different vendor/level.
 * `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` are schema v2 immutable entry-time snapshots — never recalculate or modify after trade creation.
 
 ---

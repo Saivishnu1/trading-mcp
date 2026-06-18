@@ -1391,7 +1391,8 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-12-trade-journal` | `83f22cb` | Trade Journal Foundation — SQLite journal, P&L, summary; 52 tools, 661 tests |
 | `phase-13-trade-recommendation` | *(prev)* | Trade Recommendation Engine — recommend_trade, review_open_trades, get_daily_brief; 55 tools, 745 tests |
 | `phase-14-position-sizing` | *(prev)* | Position Sizing Engine — size_equity_trade, size_options_trade, size_from_recommendation; 58 tools, 852 tests |
-| `phase-14.5-reliability-hardening` | *(pending)* | Reliability Hardening — NaN propagation fix, RSI tiers, confidence cap, gating cautions; 58 tools, 867 tests |
+| `phase-14.5-reliability-hardening` | *(prev)* | Reliability Hardening — NaN propagation fix, RSI tiers, confidence cap, gating cautions; 58 tools, 867 tests |
+| `phase-14.6-consistency-hardening` | *(pending)* | Consistency & Data-Source Hardening — symbol unification, event-risk confidence gating, degradation flags, one confidence scale, common package, data_basis/staleness; 58 tools, 1011 tests |
 
 ---
 
@@ -1465,6 +1466,85 @@ Root causes confirmed via codebase audit:
 ### Backward compatibility
 
 All 58 tools unchanged. `recommend_trade` gains additive `gating_data_available` field. `confidence` maximum changes from 100 to 85 (no caller should gate on `confidence == 100`).
+
+---
+
+## Phase 14.6 — Consistency & Data-Source Hardening
+
+**Tag:** `phase-14.6-consistency-hardening`
+**Tools added:** 0 → **Total: 58 (unchanged)**
+**Tests added:** 144 → **Total: 1011**
+
+### What was built
+
+A post-release audit of Phase 14.5 surfaced a second tier of correctness,
+consistency, and data-source issues. No new tools — targeted hardening only.
+
+**Tier A — correctness**
+- **A0** Lock-in tests for the 14.5 fixes that previously had no test on their real
+  code path: a NaN-bearing DataFrame through `get_historical` (Fix 1) and the
+  `analyze_technicals` MCP tool's NaN guard (Fix 3). Both could have silently
+  regressed.
+- **A1** Unified symbol resolution into `src/market/symbols.py` (single source of
+  truth). Three divergent `_INDEX_YF` tables (market/technicals/catalyst) had let
+  the same alias resolve differently or break — e.g. `get_quote("NIFTY")` resolved
+  to a bad ticker while `calculate_rsi("NIFTY")` worked. Catalyst keeps its
+  NSE-centric equity rule (BSE→.NS) but shares the canonical index table.
+- **A2** `recommend_trade` now reads `event_risk.confidence`. `get_event_risk`
+  never raises and falls back internally, so the engine was hard-gating AVOID on
+  fabricated low-confidence scores; gating now only applies at confidence ≥ 0.5,
+  otherwise a caution is raised and `gating_data_available.event_risk` is False.
+- **A3** `get_market_risk_score` now reports `confidence`, `is_degraded`, and
+  `degraded_components`. A score built entirely from neutral fallbacks no longer
+  masquerades as a reliable MODERATE.
+
+**Tier B — consistency / single source of truth**
+- **B1** One confidence scale (0–85) everywhere. The setup tally is *rescaled*
+  into the band (not clamped — preserves resolution), regime confidence shares the
+  ceiling, and the dead `min(100, …)` in the reviewer is removed.
+- **B2** New `src/common/` package: `scoring.py` (`risk_rating`,
+  `apply_size_factors`) and `signals.py` (signal sets + `direction_from_signal`).
+  Removed the duplicated rating bands (risk + event_risk) and size-factor math
+  (recommendations + sizer). Regime names are now a canonical `REGIMES` frozenset
+  in regime.py, with a test guarding `_REGIME_SCORES` coverage.
+- **B3** PCR risk scoring keys on a stable `pcr_sentiment_code` from
+  `calculate_pcr`, not the human-readable interpretation prose — display copy can
+  change without silently breaking the risk score.
+- **B4** `recommend_trade` and the trade plan now surface a `data_basis`
+  (source, candles_used, last_candle_date, staleness_days), and a caution is added
+  when the last EOD candle is more than 5 days old.
+
+**Tier C — robustness polish**
+- **C1** `_analyze_technicals` is cached per `(symbol, lookback)` for 60s, so a
+  single recommend/review flow fetches once and every layer sees the same candle
+  snapshot (no mid-call divergence; removes the ~8-fetch redundancy in
+  `review_trade`). `clear_analysis_cache()` is an autouse test seam.
+- **C2** Near-boundary cautions: RSI within 2 points of 30/70, and event risk
+  within 5 of the binary AVOID gate, are flagged as unstable/borderline.
+- **C3** Property/shape tests for scoring: confidence ceiling across an input
+  sweep, RSI-overbought monotonicity (the YES BANK regression), and `risk_rating`
+  monotonicity.
+- **C4** `get_historical` docstring documents the `auto_adjust=True` (adjusted)
+  price basis and its implication for absolute entry/stop/target levels.
+
+### New files
+
+| File | Purpose |
+|---|---|
+| `src/market/symbols.py` | Canonical symbol resolution |
+| `src/common/scoring.py` | Shared `risk_rating`, `apply_size_factors` |
+| `src/common/signals.py` | Signal taxonomy + `direction_from_signal` |
+| `tests/test_market_service.py` | get_historical NaN filter + symbol resolution |
+| `tests/test_common.py` | Shared primitives + regime-coverage guard |
+| `tests/test_scoring_properties.py` | Monotonicity / ceiling property tests |
+
+### Backward compatibility
+
+All 58 tools unchanged. `recommend_trade` gains additive `event_risk_confidence`
+and `data_basis` fields; `get_market_risk_score` gains `confidence`/`is_degraded`/
+`degraded_components`; `calculate_pcr` gains `pcr_sentiment_code`. Confidence
+values for RSI<70 setups shift slightly (rescaled 0–85 vs former clamp), but the
+field range and BUY/SELL thresholds are unchanged.
 
 ---
 

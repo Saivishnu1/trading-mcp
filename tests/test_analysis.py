@@ -326,6 +326,22 @@ class TestGenerateTradeSetup:
             f"signal was {r['signal']}"
         )
 
+    def test_rsi_near_70_adds_boundary_caution(self, monkeypatch):
+        import src.analysis.regime as regime
+        near = _tech("NIFTY", rsi=71.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
+        monkeypatch.setattr(regime, "_analyze_technicals",
+                            lambda s, lookback_days=150: near)
+        r = generate_trade_setup("NIFTY")
+        assert any("boundary" in line.lower() for line in r["reasoning"])
+
+    def test_rsi_mid_range_no_boundary_caution(self, monkeypatch):
+        import src.analysis.regime as regime
+        mid = _tech("NIFTY", rsi=60.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
+        monkeypatch.setattr(regime, "_analyze_technicals",
+                            lambda s, lookback_days=150: mid)
+        r = generate_trade_setup("NIFTY")
+        assert not any("boundary" in line.lower() for line in r["reasoning"])
+
     def test_rsi_oversold_adds_bullish_not_bearish(self, monkeypatch):
         r = self._setup(monkeypatch, OVERSOLD_BEAR)
         reasoning_text = " ".join(r.get("reasoning", []))
@@ -433,3 +449,120 @@ class TestRecommendStrategy:
         assert r["recommended"] == "Bear Put Spread"
         assert r["recommended"] != "Iron Condor"
         assert r.get("secondary") == "Iron Condor"
+
+
+# ---------------------------------------------------------------------------
+# TestConfidenceScale — B1 (Phase 14.6): one 0–85 scale, rescaled not clamped
+# ---------------------------------------------------------------------------
+
+class TestConfidenceScale:
+    def test_scale_helper_maps_band(self):
+        from src.analysis.regime import _scale_confidence, MAX_CONFIDENCE
+        assert _scale_confidence(100) == MAX_CONFIDENCE == 85
+        assert _scale_confidence(0) == 0
+        # No flat top below the ceiling: distinct internal scores stay distinct.
+        assert _scale_confidence(80) < _scale_confidence(100)
+        assert _scale_confidence(60) < _scale_confidence(80)
+
+    def test_regime_confidence_within_band(self, monkeypatch):
+        import src.analysis.regime as regime
+        monkeypatch.setattr(regime, "_analyze_technicals",
+                            lambda s, lookback_days=150: BULL)
+        r = detect_market_regime("NIFTY")
+        assert 0 <= r["confidence"] <= 85
+
+    def test_setup_confidence_within_band(self, monkeypatch):
+        import src.analysis.regime as regime
+        monkeypatch.setattr(regime, "_analyze_technicals",
+                            lambda s, lookback_days=150: BULL)
+        r = generate_trade_setup("NIFTY")
+        assert 0 <= r["confidence"] <= 85
+
+    def test_regime_and_setup_share_ceiling(self, monkeypatch):
+        import src.analysis.regime as regime
+        strong = _tech("NIFTY", rsi=68.0, ema20=100.0, ema50=90.0, adx=40.0, price=101.0)
+        monkeypatch.setattr(regime, "_analyze_technicals",
+                            lambda s, lookback_days=150: strong)
+        assert detect_market_regime("NIFTY")["confidence"] <= 85
+        assert generate_trade_setup("NIFTY")["confidence"] <= 85
+
+
+# ---------------------------------------------------------------------------
+# TestDataBasis — B4 (Phase 14.6): provenance surfaced from real candles
+# ---------------------------------------------------------------------------
+
+class TestDataBasis:
+    def _candles(self, n=160, last_date="2026-06-15"):
+        # Rising series so all indicators are valid; last candle dated for staleness.
+        candles = [
+            {"date": f"2026-01-{(i % 28) + 1:02d}T00:00:00",
+             "open": 100.0 + i, "high": 102.0 + i, "low": 99.0 + i,
+             "close": 100.5 + i, "volume": 1000}
+            for i in range(n)
+        ]
+        candles[-1]["date"] = f"{last_date}T00:00:00"
+        return candles
+
+    def test_setup_includes_data_basis(self, monkeypatch):
+        import src.analysis.regime as regime
+        monkeypatch.setattr(regime, "_load_candles", lambda s, l: self._candles())
+        r = generate_trade_setup("NIFTY")
+        assert "data_basis" in r
+        assert r["data_basis"]["source"] == "yfinance_eod_adjusted"
+        assert r["data_basis"]["last_candle_date"].startswith("2026-06-15")
+        assert isinstance(r["data_basis"]["staleness_days"], int)
+
+    def test_staleness_helper(self):
+        from src.analysis.regime import _staleness_days
+        from datetime import date, timedelta
+        five_ago = (date.today() - timedelta(days=5)).isoformat()
+        assert _staleness_days(five_ago) == 5
+        assert _staleness_days(None) is None
+        assert _staleness_days("not-a-date") is None
+
+
+# ---------------------------------------------------------------------------
+# TestAnalysisCache — C1 (Phase 14.6): one fetch per (symbol, lookback) flow
+# ---------------------------------------------------------------------------
+
+class TestAnalysisCache:
+    def _candles(self, n=160):
+        return [
+            {"date": f"2026-01-{(i % 28) + 1:02d}T00:00:00",
+             "open": 100.0 + i, "high": 102.0 + i, "low": 99.0 + i,
+             "close": 100.5 + i, "volume": 1000}
+            for i in range(n)
+        ]
+
+    def test_repeated_calls_fetch_once(self, monkeypatch):
+        import src.analysis.regime as regime
+        calls = {"n": 0}
+
+        def _counting_loader(symbol, lookback):
+            calls["n"] += 1
+            return self._candles()
+
+        monkeypatch.setattr(regime, "_load_candles", _counting_loader)
+        regime.clear_analysis_cache()
+
+        # A single setup triggers setup + regime (+ strategy via recommend paths);
+        # all share one cached fetch for the same (symbol, lookback).
+        regime.generate_trade_setup("NIFTY")
+        regime.detect_market_regime("NIFTY")
+        assert calls["n"] == 1, "repeated analysis must reuse one cached fetch"
+
+    def test_clear_cache_forces_refetch(self, monkeypatch):
+        import src.analysis.regime as regime
+        calls = {"n": 0}
+
+        def _counting_loader(symbol, lookback):
+            calls["n"] += 1
+            return self._candles()
+
+        monkeypatch.setattr(regime, "_load_candles", _counting_loader)
+        regime.clear_analysis_cache()
+
+        regime.detect_market_regime("NIFTY")
+        regime.clear_analysis_cache()
+        regime.detect_market_regime("NIFTY")
+        assert calls["n"] == 2, "clearing the cache must force a fresh fetch"

@@ -37,10 +37,9 @@ def _risk_score_context(symbol: str) -> dict | None:
         pass
     return None
 
-logger = logging.getLogger(__name__)
+from src.common.signals import NEUTRAL_SIGNALS as _NEUTRAL_SIGNALS
 
-_NEUTRAL_SIGNALS = {"NEUTRAL"}
-_DIRECTIONAL_SIGNALS = {"BUY", "SELL", "NEUTRAL_BULLISH", "NEUTRAL_BEARISH"}
+logger = logging.getLogger(__name__)
 
 
 def _options_context(symbol: str) -> dict:
@@ -158,6 +157,7 @@ def create_trade_plan(
     entry: float = setup["entry"]
     stoploss: float = setup["stoploss"]
     target: float = setup["target"]
+    data_basis = setup.get("data_basis")
 
     # --- risk score (visibility only — never affects trade logic) ---
     try:
@@ -178,6 +178,7 @@ def create_trade_plan(
                 **opts_ctx,
             },
             "risk_score": risk_score,
+            "data_basis": data_basis,
             "summary": "No trade recommended. Market lacks sufficient directional conviction.",
         }
 
@@ -235,5 +236,6 @@ def create_trade_plan(
             **opts_ctx,
         },
         "risk_score": risk_score,
+        "data_basis": data_basis,
         "summary": summary,
     }

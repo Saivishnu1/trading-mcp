@@ -14,35 +14,25 @@ from mcp.server.fastmcp import FastMCP
 from src.market import get_market
 from src.technical import indicators
 
-# Friendly index aliases → yfinance tickers. Anything not listed here
-# (e.g. 'NSE:INFY', '^NSEI', 'INFY.NS') is passed straight to the market
-# service, which already resolves EXCHANGE:SYMBOL forms.
-_INDEX_YF: dict[str, str] = {
-    "NIFTY":      "^NSEI",
-    "NIFTY50":    "^NSEI",
-    "NIFTY 50":   "^NSEI",
-    "BANKNIFTY":  "^NSEBANK",
-    "NIFTY BANK": "^NSEBANK",
-    "SENSEX":     "^BSESN",
-    "FINNIFTY":   "^CNXFIN",
-    "MIDCPNIFTY": "^NSEMDCP50",
-}
+def _load_candles(symbol: str, lookback_days: int) -> list[dict]:
+    """Return raw OHLCV candle dicts (each with a 'date'), or [] on failure.
 
-
-def _resolve(symbol: str) -> str:
-    return _INDEX_YF.get(symbol.upper().strip(), symbol)
-
-
-def _load_closes(symbol: str, lookback_days: int):
-    """Return (closes, highs, lows) lists, or (None, None, None) on failure."""
-    yf_symbol = _resolve(symbol)
+    Symbol resolution (index aliases, exchange prefixes) is delegated to the
+    market service's canonical resolver — see src/market/symbols.py.
+    """
     today = date.today()
     start = (today - timedelta(days=lookback_days)).isoformat()
     end = (today + timedelta(days=1)).isoformat()
     try:
-        candles = get_market().get_historical(yf_symbol, start, end, "1d")
+        candles = get_market().get_historical(symbol, start, end, "1d")
     except Exception:
-        return None, None, None
+        return []
+    return candles or []
+
+
+def _load_closes(symbol: str, lookback_days: int):
+    """Return (closes, highs, lows) lists, or (None, None, None) on failure."""
+    candles = _load_candles(symbol, lookback_days)
     if not candles:
         return None, None, None
     closes = [c["close"] for c in candles]

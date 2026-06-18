@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 14.5 (complete)
+Current Phase: 14.6 (complete)
 
 Latest Tag:
-phase-14.5-reliability-hardening
+phase-14.6-consistency-hardening
 
 Tool Count:
 58
 
 Test Count:
-867 (26 test files, 0 failures)
+1011 (29 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -78,6 +78,8 @@ Production deployed on Railway
 
 ✅ Phase 14.5 — Reliability Hardening
 
+✅ Phase 14.6 — Consistency & Data-Source Hardening
+
 ⬜ Phase 15 — next
 
 ---
@@ -121,6 +123,21 @@ Total: 58
 ---
 
 ## Recent Changes
+
+Phase 14.6:
+
+* No new tools (58 total, unchanged); 144 new tests → 1011
+* New src/market/symbols.py — single source of truth for symbol resolution; removed 3 divergent _INDEX_YF tables (fixed get_quote vs indicator alias mismatch)
+* New src/common/ package: scoring.py (risk_rating, apply_size_factors), signals.py (signal sets, direction_from_signal) — removed duplicated rating bands and size-factor math
+* recommend_trade reads event_risk.confidence — no longer hard-gates AVOID on low-confidence (fabricated) event-risk scores; gating_data_available.event_risk reflects it
+* get_market_risk_score reports confidence/is_degraded/degraded_components — all-fallback scores no longer masquerade as reliable
+* One confidence scale (0–85) everywhere via _scale_confidence (rescaled, not clamped); removed dead min(100,...) in reviewer
+* PCR risk scoring keys on stable pcr_sentiment_code, not display prose
+* recommend_trade + plan surface data_basis (source/last_candle_date/staleness_days); staleness caution > 5 days
+* _analyze_technicals cached 60s per (symbol, lookback) — one fetch per flow, no mid-call divergence; clear_analysis_cache() seam
+* Near-boundary cautions (RSI ~30/70, event risk ~80); scoring property/shape tests added
+* get_historical documents auto_adjust (adjusted price basis)
+* Tagged: phase-14.6-consistency-hardening
 
 Phase 14.5:
 
@@ -246,7 +263,7 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 14.5 complete and tagged.
+None. Phase 14.6 complete and tagged.
 
 ---
 
@@ -297,10 +314,10 @@ create_trade_plan `risk_score` key is additive — never remove, never use it to
 
 ## Technical Debt (priority order)
 
-1. market/service.py at 36% coverage — NaN filter path partially tested; full mock-based data transformation tests still missing
+1. market/service.py at 36% coverage — get_historical NaN path now tested; live-quote (NSELive/yfinance) and jugaad paths still untested
 2. options/service.py at 60% coverage — jugaad fallback path untested
 3. `regime` variable assigned but unused in dashboard `_build_summary`
-4. TTL cache boilerplate duplicated across 5 modules — candidate for src/utils/cache.py
+4. TTL cache boilerplate duplicated across 6 modules (vix/global/events/risk/event_risk + analysis cache) — candidate for src/common/cache.py
 5. Options chain fetching duplicated in 3 places (dashboard, planner, risk)
 6. events.py: schedule expiry should surface as a response key, not just a log warning
-7. tools/technicals.py at 22% — `_load_closes` symbol mapping untested
+7. live quote (get_quote) vs analysis basis (get_historical, adjusted) are different vendors/levels — entry/stop/target are in adjusted space; consider reconciling or labelling at the tool boundary (Phase 14.6 added data_basis as a first step)

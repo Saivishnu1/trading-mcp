@@ -275,8 +275,9 @@ class TestIR5RiskScorePcrUnavailable:
             lambda: (_ for _ in ()).throw(RuntimeError("options unavailable")),
         )
 
-        score, desc = risk_mod._pcr_component("NIFTY")
+        score, desc, ok = risk_mod._pcr_component("NIFTY")
         assert score == 50
+        assert ok is False, "a fallback PCR component must report ok=False"
         assert "unavailable" in desc.lower() or "neutral" in desc.lower()
 
     def test_full_score_still_valid_without_pcr(self, monkeypatch):

@@ -10,35 +10,39 @@ from src.intelligence.vix import get_india_vix as _get_india_vix
 from src.intelligence.global_pulse import get_global_pulse as _get_global_pulse
 from src.intelligence.events import get_upcoming_events as _get_upcoming_events
 from src.intelligence.risk import get_market_risk_score as _get_market_risk_score
+from src.common.scoring import apply_size_factors as _apply_size_factors
+from src.common.signals import (
+    LONG_SIGNALS as _LONG_SIGNALS,
+    SHORT_SIGNALS as _SHORT_SIGNALS,
+    direction_from_signal,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_LONG_SIGNALS: frozenset[str] = frozenset({"BUY", "NEUTRAL_BULLISH"})
-_SHORT_SIGNALS: frozenset[str] = frozenset({"SELL", "NEUTRAL_BEARISH"})
 
 _EVENT_RISK_BLOCK = 80
 _EVENT_RISK_CAUTION = 60
 _EVENT_RISK_SIZE_FACTOR = 0.70
 _DUPLICATE_SIZE_FACTOR = 0.50
 
+# get_event_risk never raises and never returns an "error" key — it falls back
+# internally (earnings→10, news→45, market→50) and reports a low `confidence`.
+# Hard-gating on such a fabricated score is unsafe, so we only gate when the
+# composite is reliable enough.
+_EVENT_RISK_MIN_CONFIDENCE = 0.5
 
-def _direction_from_signal(signal: str) -> str | None:
-    if signal in _LONG_SIGNALS:
-        return "LONG"
-    if signal in _SHORT_SIGNALS:
-        return "SHORT"
-    return None
+# Last EOD candle older than this many calendar days suggests a data gap
+# (beyond a normal weekend/holiday); surfaced as a caution. Analysis rests on
+# yfinance EOD adjusted candles — see plan["data_basis"].
+_STALENESS_CAUTION_DAYS = 5
+
+# Event-risk points either side of the binary AVOID gate within which the
+# verdict is flagged as borderline.
+_EVENT_RISK_BOUNDARY_TOL = 5
 
 
-def _apply_size_factors(base_size: int | None, factors: list[float]) -> int | None:
-    if base_size is None:
-        return None
-    result = float(base_size)
-    for f in factors:
-        result *= f
-    return max(1, int(round(result)))
+_direction_from_signal = direction_from_signal  # canonical impl in src.common.signals
 
 
 # ---------------------------------------------------------------------------
@@ -73,17 +77,26 @@ def recommend_trade(
         base_position_size = plan.get("position", {}).get("position_size")
         strategy = plan.get("strategy", {}).get("recommended")
         trade_quality = plan.get("trade_quality")
+        data_basis = plan.get("data_basis")
 
         # 3. Event risk
         event_risk_score: int | None = None
         event_risk_rating: str | None = None
+        event_risk_confidence: float | None = None
         _event_risk_available = False
         try:
             er = _get_event_risk(symbol)
             if "error" not in er:
                 event_risk_score = er.get("event_risk_score")
                 event_risk_rating = er.get("event_risk_rating")
-                _event_risk_available = True
+                event_risk_confidence = er.get("confidence")
+                # Only treat as available-for-gating when the composite is
+                # backed by enough real data sources (see _EVENT_RISK_MIN_CONFIDENCE).
+                _event_risk_available = (
+                    event_risk_score is not None
+                    and event_risk_confidence is not None
+                    and event_risk_confidence >= _EVENT_RISK_MIN_CONFIDENCE
+                )
         except Exception:
             pass
 
@@ -106,12 +119,26 @@ def recommend_trade(
         size_factors: list[float] = []
 
         if not _event_risk_available:
-            cautions.append("Event risk data unavailable — gating skipped, verify manually")
+            if event_risk_score is not None and event_risk_confidence is not None:
+                cautions.append(
+                    f"Event risk is low-confidence ({event_risk_confidence:.1f}) — "
+                    "gating skipped, verify catalysts manually"
+                )
+            else:
+                cautions.append("Event risk data unavailable — gating skipped, verify manually")
         if not _vix_available:
             cautions.append("VIX data unavailable — volatility gating skipped, verify manually")
 
-        # Event risk gating
-        if event_risk_score is not None:
+        # Data staleness — analysis is built on EOD candles; a large gap means stale data.
+        _staleness = (data_basis or {}).get("staleness_days")
+        if _staleness is not None and _staleness > _STALENESS_CAUTION_DAYS:
+            cautions.append(
+                f"Price data is {_staleness} days old (last candle "
+                f"{(data_basis or {}).get('last_candle_date')}) — analysis may be stale"
+            )
+
+        # Event risk gating — only on reliable (sufficiently-sourced) data
+        if _event_risk_available and event_risk_score is not None:
             if event_risk_score >= _EVENT_RISK_BLOCK:
                 trade_allowed = False
                 cautions.append(
@@ -123,6 +150,14 @@ def recommend_trade(
                 )
                 size_factors.append(_EVENT_RISK_SIZE_FACTOR)
                 risk_adjustments.append("Position size reduced 30% due to HIGH event risk")
+
+            # Near-boundary caution: the 80 AVOID gate is binary, so a 1-point
+            # move can flip the verdict. Flag scores hugging the threshold.
+            if abs(event_risk_score - _EVENT_RISK_BLOCK) <= _EVENT_RISK_BOUNDARY_TOL:
+                cautions.append(
+                    f"Event risk {event_risk_score} is near the AVOID threshold "
+                    f"({_EVENT_RISK_BLOCK}) — the verdict is borderline"
+                )
 
         # VIX gating
         if vix_caution == "EXTREME":
@@ -177,6 +212,7 @@ def recommend_trade(
             "trade_quality": trade_quality,
             "event_risk_score": event_risk_score,
             "event_risk_rating": event_risk_rating,
+            "event_risk_confidence": event_risk_confidence,
             "vix": vix,
             "vix_caution": vix_caution,
             "duplicate_exposure": duplicate_exposure,
@@ -195,6 +231,7 @@ def recommend_trade(
                 "event_risk": _event_risk_available,
                 "vix": _vix_available,
             },
+            "data_basis": data_basis,
         }
     except Exception as exc:
         return {"error": str(exc), "symbol": symbol if isinstance(symbol, str) else "unknown"}

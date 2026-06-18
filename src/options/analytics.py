@@ -53,7 +53,23 @@ def calculate_pcr(chain_data: dict, expiry: str | None = None) -> dict:
         "total_put_volume": total_put_vol,
         "pcr_volume": pcr_vol,
         "interpretation": _pcr_sentiment(pcr_oi),
+        "pcr_sentiment_code": _pcr_code(pcr_oi),
     }
+
+
+# Stable, machine-readable sentiment code. Downstream scoring (intelligence/risk.py)
+# keys on this — never on the human-readable `interpretation` string, so display
+# copy can change without silently breaking the risk score.
+def _pcr_code(pcr: float | None) -> str:
+    if pcr is None:
+        return "INSUFFICIENT_DATA"
+    if pcr > 1.3:
+        return "BULLISH"
+    if pcr > 1.0:
+        return "MILDLY_BULLISH"
+    if pcr > 0.7:
+        return "NEUTRAL_BEARISH"
+    return "BEARISH"
 
 
 def _pcr_sentiment(pcr: float | None) -> str:

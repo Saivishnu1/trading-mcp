@@ -21,42 +21,14 @@ logger = logging.getLogger(__name__)
 # Symbol helpers
 # ---------------------------------------------------------------------------
 
-_INDEX_YF: dict[str, str] = {
-    "NIFTY 50": "^NSEI",
-    "NIFTY50": "^NSEI",
-    "SENSEX": "^BSESN",
-    "BANKNIFTY": "^NSEBANK",
-    "NIFTY BANK": "^NSEBANK",
-    "NIFTY IT": "^CNXIT",
-    "NIFTY MIDCAP 100": "^CNXMIDCAP",
-    "NIFTY MIDCAP": "^CNXMIDCAP",
-}
-
-
-def _parse(instrument: str) -> tuple[str | None, str]:
-    """Return (exchange, symbol). exchange is None for raw yfinance tickers."""
-    if ":" in instrument:
-        exchange, sym = instrument.split(":", 1)
-        return exchange.upper(), sym.upper()
-    return None, instrument
-
-
-def _to_yf(instrument: str) -> str:
-    exchange, sym = _parse(instrument)
-    if exchange is None:
-        return instrument  # already in yfinance format
-    if sym in _INDEX_YF:
-        return _INDEX_YF[sym]
-    if exchange == "NSE":
-        return f"{sym}.NS"
-    if exchange == "BSE":
-        return f"{sym}.BO"
-    return instrument
-
-
-def _is_nse_stock(instrument: str) -> bool:
-    exchange, sym = _parse(instrument)
-    return exchange == "NSE" and sym not in _INDEX_YF
+# Symbol resolution lives in src/market/symbols.py (single source of truth).
+# Local aliases kept so the rest of this module reads unchanged.
+from src.market.symbols import (  # noqa: E402
+    INDEX_YF as _INDEX_YF,
+    is_nse_stock as _is_nse_stock,
+    parse as _parse,
+    to_yf as _to_yf,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +221,19 @@ class MarketService:
         to_date: str,
         interval: str,
     ) -> list[dict]:
+        """Historical OHLCV candles via yfinance.
+
+        IMPORTANT — price basis: candles are split/dividend **adjusted**
+        (auto_adjust=True). This keeps ratio-based indicators (RSI/EMA/MACD/ADX)
+        correct across corporate actions, but means absolute levels (close, and
+        therefore ATR-derived entry/stoploss/target) are in *adjusted* space and
+        can differ from the live, unadjusted NSELive quote returned by
+        get_quote(). Consumers that surface provenance label this basis
+        'yfinance_eod_adjusted' (see analysis.regime._analyze_technicals).
+
+        NaN rows (holidays/halts/thin names) are filtered below so float('nan')
+        never enters the indicator pipeline (Phase 14.5, Fix 1).
+        """
         import yfinance as yf  # type: ignore[import]
         yf_sym = _to_yf(symbol)
         df = yf.download(

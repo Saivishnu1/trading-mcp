@@ -5,37 +5,46 @@ import time
 
 
 # ---------------------------------------------------------------------------
-# PCR score lookup (substring match)
+# PCR score lookup (B3: keyed on stable code, not display prose)
 # ---------------------------------------------------------------------------
 
 class TestPcrScore:
-    def test_bullish_put_writing(self):
+    def test_bullish_code(self):
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("bullish — elevated put writing signals market expects upside") == 10
+        assert _pcr_score("BULLISH") == 10
 
-    def test_mildly_bullish(self):
+    def test_mildly_bullish_code(self):
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("mildly bullish") == 25
+        assert _pcr_score("MILDLY_BULLISH") == 25
 
-    def test_neutral_to_mildly_bearish(self):
+    def test_neutral_bearish_code(self):
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("neutral to mildly bearish") == 55
+        assert _pcr_score("NEUTRAL_BEARISH") == 55
 
-    def test_bearish_call_writing(self):
+    def test_bearish_code(self):
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("bearish — elevated call writing signals market expects downside") == 85
+        assert _pcr_score("BEARISH") == 85
 
-    def test_insufficient_data(self):
+    def test_insufficient_data_code(self):
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("insufficient data") == 50
+        assert _pcr_score("INSUFFICIENT_DATA") == 50
 
-    def test_unknown_string_returns_neutral(self):
+    def test_unknown_code_returns_neutral(self):
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("some unexpected interpretation") == 50
+        assert _pcr_score("SOMETHING_ELSE") == 50
 
-    def test_case_insensitive(self):
+    def test_codes_match_analytics_output(self):
+        # B3 contract: the codes risk.py keys on are exactly the ones analytics emits.
+        from src.options.analytics import _pcr_code
+        from src.intelligence.risk import _PCR_CODE_RISK
+        for pcr in (None, 1.5, 1.1, 0.8, 0.5):
+            assert _pcr_code(pcr) in _PCR_CODE_RISK
+
+    def test_score_decoupled_from_interpretation_prose(self):
+        # Reword the display prose → score must NOT change (the whole point of B3).
         from src.intelligence.risk import _pcr_score
-        assert _pcr_score("MILDLY BULLISH extra text") == 25
+        from src.options.analytics import _pcr_code
+        assert _pcr_score(_pcr_code(0.5)) == 85  # bearish, regardless of prose wording
 
 
 # ---------------------------------------------------------------------------
@@ -217,3 +226,75 @@ class TestGetMarketRiskScore:
 
         result = risk_mod.get_market_risk_score("NIFTY")
         assert "RBI MPC Decision" in result["recommendation"] or "1 day" in result["recommendation"]
+
+
+# ---------------------------------------------------------------------------
+# TestRiskScoreDegradation — A3 (Phase 14.6)
+# ---------------------------------------------------------------------------
+
+class TestRiskScoreDegradation:
+    """
+    A3: a score built from neutral fallbacks must report reduced confidence and
+    is_degraded=True, instead of presenting a fabricated MODERATE as reliable.
+    """
+
+    def _clear(self, risk_mod):
+        with risk_mod._LOCK:
+            risk_mod._CACHE.clear()
+
+    def test_all_components_ok_confidence_one(self, monkeypatch):
+        import src.intelligence.risk as risk_mod
+        self._clear(risk_mod)
+        monkeypatch.setattr(risk_mod, "_vix_component", lambda: (15, "vix", True))
+        monkeypatch.setattr(risk_mod, "_event_component", lambda: (0, "ev", True))
+        monkeypatch.setattr(risk_mod, "_pcr_component", lambda s: (25, "pcr", True))
+        monkeypatch.setattr(risk_mod, "_regime_component", lambda s: (25, "rg", True))
+        monkeypatch.setattr(risk_mod, "get_upcoming_events", lambda **k: {"events": []})
+
+        result = risk_mod.get_market_risk_score("NIFTY")
+        assert result["confidence"] == 1.0
+        assert result["is_degraded"] is False
+        assert result["degraded_components"] == []
+
+    def test_pcr_and_regime_degraded_lowers_confidence(self, monkeypatch):
+        import src.intelligence.risk as risk_mod
+        self._clear(risk_mod)
+        monkeypatch.setattr(risk_mod, "_vix_component", lambda: (15, "vix", True))
+        monkeypatch.setattr(risk_mod, "_event_component", lambda: (0, "ev", True))
+        monkeypatch.setattr(risk_mod, "_pcr_component", lambda s: (50, "pcr down", False))
+        monkeypatch.setattr(risk_mod, "_regime_component", lambda s: (50, "rg down", False))
+        monkeypatch.setattr(risk_mod, "get_upcoming_events", lambda **k: {"events": []})
+
+        result = risk_mod.get_market_risk_score("NIFTY")
+        # vix 0.35 + event 0.30 reliable → confidence 0.65
+        assert result["confidence"] == 0.65
+        assert result["is_degraded"] is True
+        assert set(result["degraded_components"]) == {"pcr", "regime"}
+        assert "degraded" in result["recommendation"].lower()
+
+    def test_all_degraded_confidence_zero(self, monkeypatch):
+        import src.intelligence.risk as risk_mod
+        self._clear(risk_mod)
+        monkeypatch.setattr(risk_mod, "_vix_component", lambda: (50, "vix down", False))
+        monkeypatch.setattr(risk_mod, "_event_component", lambda: (0, "ev", False))
+        monkeypatch.setattr(risk_mod, "_pcr_component", lambda s: (50, "pcr down", False))
+        monkeypatch.setattr(risk_mod, "_regime_component", lambda s: (50, "rg down", False))
+        monkeypatch.setattr(risk_mod, "get_upcoming_events", lambda **k: {"events": []})
+
+        result = risk_mod.get_market_risk_score("NIFTY")
+        assert result["confidence"] == 0.0
+        assert result["is_degraded"] is True
+
+    def test_legacy_two_tuple_stub_treated_reliable(self, monkeypatch):
+        # _unpack tolerance: a 2-tuple component (test stub / legacy) is ok=True.
+        import src.intelligence.risk as risk_mod
+        self._clear(risk_mod)
+        monkeypatch.setattr(risk_mod, "_vix_component", lambda: (15, "vix"))
+        monkeypatch.setattr(risk_mod, "_event_component", lambda: (0, "ev"))
+        monkeypatch.setattr(risk_mod, "_pcr_component", lambda s: (25, "pcr"))
+        monkeypatch.setattr(risk_mod, "_regime_component", lambda s: (25, "rg"))
+        monkeypatch.setattr(risk_mod, "get_upcoming_events", lambda **k: {"events": []})
+
+        result = risk_mod.get_market_risk_score("NIFTY")
+        assert result["confidence"] == 1.0
+        assert result["is_degraded"] is False

@@ -8,6 +8,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _clear_analysis_cache():
+    """Isolate the _analyze_technicals TTL cache (Phase 14.6 C1) between tests."""
+    from src.analysis.regime import clear_analysis_cache
+    clear_analysis_cache()
+    yield
+    clear_analysis_cache()
+
+
 # ---------------------------------------------------------------------------
 # Option chain constants
 # ---------------------------------------------------------------------------

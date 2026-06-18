@@ -10,26 +10,22 @@ from __future__ import annotations
 # Index alias → yfinance ticker
 # ---------------------------------------------------------------------------
 
-_INDEX_YF: dict[str, str] = {
-    "NIFTY":        "^NSEI",
-    "NIFTY50":      "^NSEI",
-    "NIFTY 50":     "^NSEI",
-    "BANKNIFTY":    "^NSEBANK",
-    "NIFTY BANK":   "^NSEBANK",
-    "SENSEX":       "^BSESN",
-    "FINNIFTY":     "^CNXFIN",
-    "MIDCPNIFTY":   "^NSEMDCP50",
-}
-
-_INDEX_TICKERS: frozenset[str] = frozenset(_INDEX_YF.values())
+# Index alias table is the canonical one in src/market/symbols.py.
+# Catalyst keeps its own NSE-centric equity rule (BSE:X → X.NS, since news and
+# earnings are per-company and keyed on the NSE listing), but shares the index
+# table so index aliases never diverge from the rest of the system.
+from src.market.symbols import INDEX_YF as _INDEX_YF, is_index  # noqa: F401
 
 
 def _to_yf_ticker(symbol: str) -> str:
-    """Normalise a symbol to a yfinance-compatible ticker.
+    """Normalise a symbol to a yfinance-compatible ticker (catalyst semantics).
 
-    Handles: bare NSE symbols (INFY), exchange-prefixed (NSE:INFY),
+    Handles: bare NSE symbols (INFY), exchange-prefixed (NSE:INFY, BSE:RELIANCE),
     already-suffixed (INFY.NS), and index aliases (NIFTY → ^NSEI).
     Idempotent: calling twice does not double the .NS suffix.
+
+    Note: unlike market data resolution, a BSE: prefix resolves to .NS here —
+    catalyst data (news/earnings) is keyed on the NSE listing of the company.
     """
     s = symbol.upper().strip()
     # Strip exchange prefix
@@ -43,11 +39,6 @@ def _to_yf_ticker(symbol: str) -> str:
         return s
     # Default: NSE equity
     return s + ".NS"
-
-
-def is_index(yf_ticker: str) -> bool:
-    """Return True if the resolved yfinance ticker represents an index."""
-    return yf_ticker in _INDEX_TICKERS
 
 
 # ---------------------------------------------------------------------------

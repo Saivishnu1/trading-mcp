@@ -129,14 +129,7 @@ def _highest_impact_catalyst(catalysts: list[dict]) -> dict | None:
 # Rating + recommendation
 # ---------------------------------------------------------------------------
 
-def _rating(score: int) -> str:
-    if score < 30:
-        return "LOW"
-    if score < 60:
-        return "MODERATE"
-    if score < 80:
-        return "HIGH"
-    return "EXTREME"
+from src.common.scoring import risk_rating as _rating  # single source of truth
 
 
 def _recommendation(score: int, nearest: dict | None, symbol: str) -> str:
