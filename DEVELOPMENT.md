@@ -1392,7 +1392,8 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-13-trade-recommendation` | *(prev)* | Trade Recommendation Engine — recommend_trade, review_open_trades, get_daily_brief; 55 tools, 745 tests |
 | `phase-14-position-sizing` | *(prev)* | Position Sizing Engine — size_equity_trade, size_options_trade, size_from_recommendation; 58 tools, 852 tests |
 | `phase-14.5-reliability-hardening` | *(prev)* | Reliability Hardening — NaN propagation fix, RSI tiers, confidence cap, gating cautions; 58 tools, 867 tests |
-| `phase-14.6-consistency-hardening` | *(pending)* | Consistency & Data-Source Hardening — symbol unification, event-risk confidence gating, degradation flags, one confidence scale, common package, data_basis/staleness; 58 tools, 1011 tests |
+| `phase-14.6-consistency-hardening` | *(prev)* | Consistency & Data-Source Hardening — symbol unification, event-risk confidence gating, degradation flags, one confidence scale, common package, data_basis/staleness; 58 tools, 1011 tests |
+| `phase-15a-journal-analytics` | *(pending)* | Journal Performance Analytics — get_performance_analytics: realized win-rate / avg-P&L / profit-factor by signal, regime, confidence band; 59 tools, 1030 tests |
 
 ---
 
@@ -1545,6 +1546,45 @@ and `data_basis` fields; `get_market_risk_score` gains `confidence`/`is_degraded
 `degraded_components`; `calculate_pcr` gains `pcr_sentiment_code`. Confidence
 values for RSI<70 setups shift slightly (rescaled 0–85 vs former clamp), but the
 field range and BUY/SELL thresholds are unchanged.
+
+---
+
+## Phase 15A — Journal Performance Analytics
+
+**Tag:** `phase-15a-journal-analytics`
+**Tools added:** 1 → **Total: 59**
+**Tests added:** 19 → **Total: 1030**
+
+### What was built
+
+A realized-outcome feedback loop — the first thing that measures whether the
+analysis model actually has edge, rather than asserting it. Read-only; reuses the
+existing journal schema (no new storage, no persistent recommendation log).
+
+- New tool `get_performance_analytics(symbol=None, days=365, min_sample=10)` and
+  `journal.service.get_performance_analytics`.
+- Buckets CLOSED trades by `signal`, `regime`, and entry-confidence band
+  (`high (75-85)` / `moderate (60-74)` / `low (<60)` / `unknown`, read from
+  `analysis_snapshot.confidence`). Each bucket reports trades, wins,
+  win_rate_pct, avg_pnl, total_pnl, low_sample.
+- `overall` adds `profit_factor` = gains / |losses| (`null` when no losses —
+  JSON-safe, never `inf`).
+- `notes` surface a confidence-calibration check (do high-confidence trades win
+  more than low-confidence ones?) and small-sample warnings (buckets below
+  `min_sample` are flagged `low_sample` so a thin journal isn't over-read).
+- Only `status == "CLOSED"` trades count; open trades are excluded everywhere.
+  Legacy rows without a recorded confidence degrade gracefully into `"unknown"`.
+
+### Tool (1)
+
+| Tool | Auth | Description |
+|---|---|---|
+| `get_performance_analytics` | — | Realized win-rate / avg-P&L / profit-factor by signal, regime, and confidence band, with calibration + sample-size notes |
+
+### Coverage
+
+`journal/service.py` 96%; new function near-fully exercised (19 tests, incl. MCP
+registration). No tools or tests modified elsewhere.
 
 ---
 

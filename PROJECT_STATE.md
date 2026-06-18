@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 14.6 (complete)
+Current Phase: 15A (complete)
 
 Latest Tag:
-phase-14.6-consistency-hardening
+phase-15a-journal-analytics
 
 Tool Count:
-58
+59
 
 Test Count:
-1011 (29 test files, 0 failures)
+1030 (29 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -80,7 +80,9 @@ Production deployed on Railway
 
 ✅ Phase 14.6 — Consistency & Data-Source Hardening
 
-⬜ Phase 15 — next
+✅ Phase 15A — Journal Performance Analytics
+
+⬜ Phase 15B — next
 
 ---
 
@@ -112,17 +114,28 @@ Portfolio Intelligence: 3
 
 Catalyst Intelligence: 4
 
-Trade Journal: 4
+Trade Journal: 5
 
 Trade Recommendations: 3
 
 Position Sizing: 3
 
-Total: 58
+Total: 59
 
 ---
 
 ## Recent Changes
+
+Phase 15A:
+
+* 1 new tool: get_performance_analytics (58 → 59); 19 new tests → 1030
+* Realized-outcome feedback loop over CLOSED journal trades — answers "does the model have edge?"
+* Buckets closed trades by signal, regime, and entry-confidence band (from analysis_snapshot.confidence); per bucket: trades, wins, win_rate_pct, avg_pnl, total_pnl, low_sample
+* overall adds profit_factor (gains/|losses|; null when no losses — JSON-safe)
+* notes surface confidence-calibration check (does high band win more than low?) and small-sample warnings
+* Buckets below min_sample (default 10) flagged low_sample so a thin journal can't be over-read
+* Read-only; reuses existing journal schema; no persistent recommendation storage added
+* Tagged: phase-15a-journal-analytics
 
 Phase 14.6:
 

@@ -5,6 +5,7 @@ from src.journal.service import (
     close_trade as _close_trade,
     get_open_trades as _get_open_trades,
     get_trade_history as _get_trade_history,
+    get_performance_analytics as _get_performance_analytics,
 )
 
 
@@ -121,4 +122,35 @@ def register(mcp: FastMCP) -> None:
             days=days,
             status=status,
             limit=limit,
+        )
+
+    @mcp.tool()
+    def get_performance_analytics(
+        symbol: str | None = None,
+        days: int = 365,
+        min_sample: int = 10,
+    ) -> dict:
+        """Measure realized trading edge from your CLOSED journal trades.
+
+        Answers "does the model actually work?" by bucketing closed trades by
+        signal, regime, and entry-confidence band, and reporting win rate,
+        average P&L, total P&L, and an overall profit factor per bucket.
+
+        symbol:     optional filter (e.g. 'INFY'); omit for the whole book
+        days:       look-back window in calendar days (default 365)
+        min_sample: buckets with fewer trades are flagged low_sample (default 10)
+
+        Response:
+          closed_trades, overall (incl. profit_factor),
+          by_signal / by_regime / by_confidence_band — each:
+            { trades, wins, win_rate_pct, avg_pnl, total_pnl, low_sample }
+          notes — plain-English edge / confidence-calibration / sample warnings
+
+        Note: confidence buckets require analysis_snapshot.confidence to have
+        been stored at log_trade time; otherwise trades fall in the 'unknown' band.
+        """
+        return _get_performance_analytics(
+            symbol=symbol,
+            days=days,
+            min_sample=min_sample,
         )

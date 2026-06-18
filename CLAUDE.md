@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: 14.6 (complete) — Phase 15 next
+Current Phase: 15A (complete) — Phase 15B next
 
-Current Tool Count: 58
+Current Tool Count: 59
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
@@ -107,7 +107,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1011 unit + regression tests across 29 test files (pytest, no live network calls).
+* 1030 unit + regression tests across 29 test files (pytest, no live network calls).
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF). Do not add per-module alias tables.

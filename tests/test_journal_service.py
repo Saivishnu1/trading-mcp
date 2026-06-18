@@ -13,6 +13,7 @@ from src.journal.service import (
     close_trade,
     get_open_trades,
     get_trade_history,
+    get_performance_analytics,
     _calculate_pnl,
     _auto_risk_reward,
     _build_summary,
@@ -527,3 +528,215 @@ class TestBuildSummary:
         assert s["total_pnl"] == 100.0
         assert s["open_trades"] == 1
         assert s["closed_trades"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TestPerformanceAnalytics — realized-outcome feedback loop (Phase 15)
+# ---------------------------------------------------------------------------
+
+class TestPerformanceAnalytics:
+    """get_performance_analytics buckets CLOSED trades by signal / regime /
+    confidence band and reports win-rate, avg/total P&L, and profit factor."""
+
+    def _win(self, signal="BUY", regime="BULL_TREND", confidence=None, symbol="INFY"):
+        snap = {"confidence": confidence} if confidence is not None else None
+        r = _log(symbol=symbol, direction="LONG", entry_price=100.0, quantity=1,
+                 signal=signal, regime=regime, analysis_snapshot=snap)
+        _close(r["trade_id"], exit_price=110.0)  # LONG win: +10
+        return r
+
+    def _loss(self, signal="SELL", regime="BEAR_TREND", confidence=None, symbol="INFY"):
+        snap = {"confidence": confidence} if confidence is not None else None
+        r = _log(symbol=symbol, direction="LONG", entry_price=100.0, quantity=1,
+                 signal=signal, regime=regime, analysis_snapshot=snap)
+        _close(r["trade_id"], exit_price=90.0)  # LONG loss: -10
+        return r
+
+    # --- no trades ---------------------------------------------------------
+
+    def test_no_trades(self):
+        r = get_performance_analytics()
+        assert "error" not in r
+        assert r["closed_trades"] == 0
+        assert r["overall"]["trades"] == 0
+        assert r["overall"]["win_rate_pct"] == 0.0
+        assert r["overall"]["profit_factor"] is None
+        assert r["by_signal"] == {}
+        assert any("not enough" in n.lower() for n in r["notes"])
+
+    # --- only open trades --------------------------------------------------
+
+    def test_only_open_trades_excluded(self):
+        _log(symbol="INFY", direction="LONG", entry_price=100.0, signal="BUY")
+        r = get_performance_analytics()
+        assert r["closed_trades"] == 0
+        assert r["overall"]["trades"] == 0
+
+    # --- only closed trades ------------------------------------------------
+
+    def test_only_closed_trades_counted(self):
+        self._win()
+        self._loss()
+        r = get_performance_analytics()
+        assert r["closed_trades"] == 2
+        assert r["overall"]["trades"] == 2
+
+    # --- mixed open + closed ----------------------------------------------
+
+    def test_mixed_trades_only_closed_in_stats(self):
+        self._win()
+        _log(symbol="TCS", direction="LONG", entry_price=100.0, signal="BUY")  # open
+        r = get_performance_analytics()
+        assert r["closed_trades"] == 1
+        assert r["overall"]["trades"] == 1
+
+    # --- signal aggregation ------------------------------------------------
+
+    def test_signal_aggregation(self):
+        self._win(signal="BUY")
+        self._win(signal="BUY")
+        self._loss(signal="SELL")
+        r = get_performance_analytics()
+        assert r["by_signal"]["BUY"]["trades"] == 2
+        assert r["by_signal"]["BUY"]["wins"] == 2
+        assert r["by_signal"]["BUY"]["win_rate_pct"] == 100.0
+        assert r["by_signal"]["SELL"]["trades"] == 1
+        assert r["by_signal"]["SELL"]["win_rate_pct"] == 0.0
+
+    def test_missing_signal_bucketed_as_unknown(self):
+        r0 = _log(symbol="INFY", direction="LONG", entry_price=100.0)  # no signal
+        _close(r0["trade_id"], exit_price=110.0)
+        r = get_performance_analytics()
+        assert "unknown" in r["by_signal"]
+
+    # --- regime aggregation ------------------------------------------------
+
+    def test_regime_aggregation(self):
+        self._win(regime="BULL_TREND")
+        self._loss(regime="RANGE_BOUND")
+        r = get_performance_analytics()
+        assert r["by_regime"]["BULL_TREND"]["wins"] == 1
+        assert r["by_regime"]["RANGE_BOUND"]["wins"] == 0
+
+    # --- confidence-band aggregation --------------------------------------
+
+    def test_confidence_band_aggregation(self):
+        self._win(confidence=80)   # high (75-85)
+        self._win(confidence=65)   # moderate (60-74)
+        self._loss(confidence=40)  # low (<60)
+        r = get_performance_analytics()
+        assert r["by_confidence_band"]["high (75-85)"]["trades"] == 1
+        assert r["by_confidence_band"]["moderate (60-74)"]["trades"] == 1
+        assert r["by_confidence_band"]["low (<60)"]["trades"] == 1
+
+    def test_missing_confidence_bucketed_as_unknown(self):
+        self._win(confidence=None)
+        r = get_performance_analytics()
+        assert "unknown" in r["by_confidence_band"]
+
+    # --- average P&L -------------------------------------------------------
+
+    def test_average_pnl(self):
+        self._win()   # +10
+        self._win()   # +10
+        self._loss()  # -10
+        r = get_performance_analytics()
+        # total = 10 + 10 - 10 = 10 over 3 trades → avg 3.33
+        assert r["overall"]["total_pnl"] == 10.0
+        assert r["overall"]["avg_pnl"] == round(10.0 / 3, 2)
+
+    # --- win rate ----------------------------------------------------------
+
+    def test_win_rate(self):
+        self._win()
+        self._win()
+        self._win()
+        self._loss()
+        r = get_performance_analytics()
+        assert r["overall"]["wins"] == 3
+        assert r["overall"]["win_rate_pct"] == 75.0
+
+    # --- profit factor -----------------------------------------------------
+
+    def test_profit_factor(self):
+        self._win()   # +10
+        self._win()   # +10
+        self._win()   # +10
+        self._loss()  # -10
+        self._loss()  # -10
+        r = get_performance_analytics()
+        # gains 30 / |losses 20| = 1.5
+        assert r["overall"]["profit_factor"] == 1.5
+
+    def test_profit_factor_none_without_losses(self):
+        self._win()
+        r = get_performance_analytics()
+        assert r["overall"]["profit_factor"] is None
+
+    # --- low-sample flag ---------------------------------------------------
+
+    def test_low_sample_flag(self):
+        self._win()  # 1 trade, default min_sample 10
+        r = get_performance_analytics()
+        assert r["by_signal"]["BUY"]["low_sample"] is True
+
+    def test_low_sample_cleared_with_enough_trades(self):
+        for _ in range(10):
+            self._win(signal="BUY")
+        r = get_performance_analytics(min_sample=10)
+        assert r["by_signal"]["BUY"]["low_sample"] is False
+
+    # --- confidence calibration note --------------------------------------
+
+    def test_calibration_note_when_high_underperforms(self):
+        # min_sample=2 so buckets qualify; high-conf loses, low-conf wins.
+        self._loss(confidence=80)
+        self._loss(confidence=80)
+        self._win(confidence=40)
+        self._win(confidence=40)
+        r = get_performance_analytics(min_sample=2)
+        assert any("not calibrated" in n.lower() for n in r["notes"])
+
+    # --- symbol filter -----------------------------------------------------
+
+    def test_symbol_filter(self):
+        self._win(symbol="INFY")
+        self._loss(symbol="TCS")
+        r = get_performance_analytics(symbol="INFY")
+        assert r["closed_trades"] == 1
+        assert r["filters"]["symbol"] == "INFY"
+
+
+# ---------------------------------------------------------------------------
+# TestPerformanceAnalyticsTool — MCP registration (Phase 15)
+# ---------------------------------------------------------------------------
+
+class _CapturingMCP:
+    def __init__(self):
+        self.tools: dict = {}
+
+    def tool(self, *a, **k):
+        def deco(fn):
+            self.tools[fn.__name__] = fn
+            return fn
+        return deco
+
+
+class TestPerformanceAnalyticsTool:
+    def _tool(self):
+        import src.tools.journal as journal_tools
+        cap = _CapturingMCP()
+        journal_tools.register(cap)
+        return cap.tools
+
+    def test_tool_is_registered(self):
+        assert "get_performance_analytics" in self._tool()
+
+    def test_tool_delegates_to_service(self):
+        analytics = self._tool()["get_performance_analytics"]
+        r0 = log_trade(symbol="INFY", direction="LONG", entry_price=100.0, signal="BUY")
+        close_trade(trade_id=r0["trade_id"], exit_price=110.0)
+        result = analytics()
+        assert "error" not in result
+        assert result["closed_trades"] == 1
+        assert result["by_signal"]["BUY"]["wins"] == 1

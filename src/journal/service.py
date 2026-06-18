@@ -295,6 +295,150 @@ def get_open_trades(symbol: str | None = None) -> dict:
         return {"error": str(exc)}
 
 
+# ---------------------------------------------------------------------------
+# Performance analytics — realized-outcome feedback loop (Phase 15)
+# ---------------------------------------------------------------------------
+
+# Below this many trades, a bucket's win rate is noise, not signal.
+_MIN_SAMPLE = 10
+
+
+def _confidence_of(trade: dict) -> float | None:
+    """Setup confidence recorded at entry, read from analysis_snapshot."""
+    snap = trade.get("analysis_snapshot")
+    if isinstance(snap, dict):
+        c = snap.get("confidence")
+        if isinstance(c, (int, float)):
+            return float(c)
+    return None
+
+
+def _confidence_band(c: float | None) -> str:
+    if c is None:
+        return "unknown"
+    if c >= 75:
+        return "high (75-85)"
+    if c >= 60:
+        return "moderate (60-74)"
+    return "low (<60)"
+
+
+def _bucket_stats(trades: list[dict], min_sample: int) -> dict:
+    n = len(trades)
+    pnls = [t.get("pnl") or 0 for t in trades]
+    wins = [p for p in pnls if p > 0]
+    total = round(sum(pnls), 2)
+    return {
+        "trades": n,
+        "wins": len(wins),
+        "win_rate_pct": round(len(wins) / n * 100, 1) if n else 0.0,
+        "avg_pnl": round(total / n, 2) if n else 0.0,
+        "total_pnl": total,
+        "low_sample": n < min_sample,
+    }
+
+
+def _profit_factor(trades: list[dict]) -> float | None:
+    gains = sum(p for t in trades if (p := t.get("pnl") or 0) > 0)
+    losses = sum(p for t in trades if (p := t.get("pnl") or 0) < 0)
+    if losses == 0:
+        return None  # no losing trades in sample — undefined
+    return round(gains / abs(losses), 2)
+
+
+def _group_stats(trades: list[dict], keyfn, min_sample: int) -> dict:
+    groups: dict[str, list[dict]] = {}
+    for t in trades:
+        groups.setdefault(keyfn(t), []).append(t)
+    return {k: _bucket_stats(v, min_sample) for k, v in groups.items()}
+
+
+def _edge_notes(closed: list[dict], by_signal: dict, by_conf: dict, min_sample: int) -> list[str]:
+    notes: list[str] = []
+    n = len(closed)
+    if n < min_sample:
+        notes.append(
+            f"Only {n} closed trade(s) — not enough to judge edge "
+            f"(need >= {min_sample}). Treat all figures as preliminary."
+        )
+        return notes
+
+    hi = by_conf.get("high (75-85)")
+    lo = by_conf.get("low (<60)")
+    if hi and lo and not hi["low_sample"] and not lo["low_sample"]:
+        if hi["win_rate_pct"] <= lo["win_rate_pct"]:
+            notes.append(
+                "Confidence is NOT calibrated: high-confidence trades are not "
+                f"winning more than low-confidence ones "
+                f"({hi['win_rate_pct']}% vs {lo['win_rate_pct']}%)."
+            )
+        else:
+            notes.append(
+                "Confidence looks calibrated: high-confidence "
+                f"{hi['win_rate_pct']}% vs low-confidence {lo['win_rate_pct']}% win rate."
+            )
+
+    weak = [k for k, v in by_signal.items() if v["low_sample"]]
+    if weak:
+        notes.append(
+            f"Low sample (<{min_sample}) for signal bucket(s): {', '.join(sorted(weak))} "
+            "— treat those win rates as indicative only."
+        )
+    return notes
+
+
+def get_performance_analytics(
+    symbol: str | None = None,
+    days: int = 365,
+    min_sample: int = _MIN_SAMPLE,
+) -> dict:
+    """Realized-outcome analytics over CLOSED trades — does the model have edge?
+
+    Buckets closed trades by signal, regime, and entry-confidence band, and
+    reports win rate / avg P&L / total P&L per bucket plus a profit factor.
+    Buckets below `min_sample` trades are flagged `low_sample` (win rate is noise).
+    Confidence is read from each trade's analysis_snapshot.confidence.
+    """
+    try:
+        cutoff = (date.today() - timedelta(days=max(days, 0))).isoformat()
+        conditions = ["status = 'CLOSED'", "entry_date >= ?"]
+        params: list = [cutoff]
+        if symbol:
+            conditions.append("symbol = ?")
+            params.append(symbol.upper().strip())
+        where = " AND ".join(conditions)
+
+        conn = _db._get_connection()
+        rows = conn.execute(
+            f"SELECT * FROM trades WHERE {where} ORDER BY entry_date DESC",
+            params,
+        ).fetchall()
+        closed = [_row_to_dict(r) for r in rows]
+
+        overall = _bucket_stats(closed, min_sample)
+        overall["profit_factor"] = _profit_factor(closed)
+
+        by_signal = _group_stats(closed, lambda t: t.get("signal") or "unknown", min_sample)
+        by_regime = _group_stats(closed, lambda t: t.get("regime") or "unknown", min_sample)
+        by_conf = _group_stats(closed, lambda t: _confidence_band(_confidence_of(t)), min_sample)
+
+        return {
+            "filters": {
+                "symbol": symbol.upper().strip() if symbol else None,
+                "days": days,
+                "min_sample": min_sample,
+            },
+            "closed_trades": len(closed),
+            "overall": overall,
+            "by_signal": by_signal,
+            "by_regime": by_regime,
+            "by_confidence_band": by_conf,
+            "notes": _edge_notes(closed, by_signal, by_conf, min_sample),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def get_trade_history(
     symbol: str | None = None,
     days: int = 30,
