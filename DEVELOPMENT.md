@@ -1398,6 +1398,7 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-16-zerodha-auto-import` | `b539a8e` | Zerodha Trade Auto-Import — sync_trades_from_zerodha, get_orders, schema v3 external_id; 61 tools, 1053 tests |
 | `phase-17-calibration-engine` | `6f3c21c` | Calibration Engine — Brier score, reliability curve, overconfidence analysis; 62 tools, 1081 tests |
 | `phase-18-feedback-loop` | `3e6a516` | Recommendation Feedback Loop — self-correcting confidence, calibration-based sizing; 62 tools, 1129 tests |
+| `phase-19-multiframe-confirmation` | `231cccc` | Multi-timeframe Regime Confirmation — get_regime_alignment, weekly conflict detection in recommend_trade; 63 tools, 1179 tests |
 
 ---
 

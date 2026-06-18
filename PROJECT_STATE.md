@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 18 (complete)
+Current Phase: 19 (complete)
 
 Latest Tag:
-phase-18-feedback-loop
+phase-19-multiframe-confirmation
 
 Tool Count:
-62
+63
 
 Test Count:
-1129 (33 test files, 0 failures)
+1179 (34 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -90,7 +90,9 @@ Production deployed on Railway
 
 ✅ Phase 18 — Recommendation Feedback Loop
 
-⬜ Phase 19 — next
+✅ Phase 19 — Multi-timeframe Regime Confirmation
+
+⬜ Phase 20 — next
 
 ---
 
@@ -135,6 +137,16 @@ Total: 62
 ---
 
 ## Recent Changes
+
+Phase 19:
+
+* 1 new tool `get_regime_alignment` (63 total); 50 new tests → 1179; no regressions
+* `_classify_regime()` extracted from `detect_market_regime` — pure function, identical rules across all timeframes
+* `_analyze_technicals` gains `interval` param ('daily'/'weekly'/'monthly'); lookback auto-sized per timeframe (600d weekly, 2500d monthly)
+* `recommend_trade` fetches weekly regime post-plan; BUY+BEAR_TREND or SELL+BULL_TREND weekly → caution → WAIT; STRONG alignment → reason added
+* `weekly_regime`, `timeframe_alignment`, `gating_data_available.timeframe` added to response (backward compat)
+* Graceful degradation: any timeframe failure is silently caught — recommendation unaffected
+* Tagged: phase-19-multiframe-confirmation
 
 Phase 18:
 
