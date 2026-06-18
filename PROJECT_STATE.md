@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 16 (complete)
+Current Phase: 17 (complete)
 
 Latest Tag:
-phase-16-zerodha-auto-import
+phase-17-calibration-engine
 
 Tool Count:
-61
+62
 
 Test Count:
-1053 (30 test files, 0 failures)
+1081 (31 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -86,7 +86,9 @@ Production deployed on Railway
 
 ✅ Phase 16 — Zerodha Trade Auto-Import
 
-⬜ Phase 17 — next
+✅ Phase 17 — Calibration Engine
+
+⬜ Phase 18 — next
 
 ---
 
@@ -120,15 +122,28 @@ Catalyst Intelligence: 4
 
 Trade Journal: 7
 
+Calibration: 1
+
 Trade Recommendations: 3
 
 Position Sizing: 3
 
-Total: 61
+Total: 62
 
 ---
 
 ## Recent Changes
+
+Phase 17:
+
+* 1 new tool: get_calibration_report (61 → 62); 28 new tests → 1081
+* New src/calibration/ package: service.py with get_calibration_report + 4 private helpers
+* Brier score = mean((confidence/85 − outcome)²); rated EXCELLENT(≤0.15)/GOOD(≤0.20)/FAIR(≤0.25)/POOR
+* Reliability curve: per-bucket (high/moderate/low/unknown) predicted probability vs actual win rate + calibration_gap
+* Overconfidence analysis: over/under-confidence scores, dominant bias (OVERCONFIDENT/UNDERCONFIDENT/BALANCED)
+* Low-sample buckets flagged (default min_sample=5); trades without confidence scores noted
+* Private helpers (_calculate_brier_score, _build_reliability_curve, _calibration_gap) designed for Phase 18 reuse
+* Tagged: phase-17-calibration-engine
 
 Phase 16:
 
