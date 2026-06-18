@@ -20,16 +20,17 @@ Status:
 
 ## Current State
 
-Current Phase: 19 (complete)
+Current Phase: 20A (complete, committed) — Phase 20B decision pending
 
 Latest Tag:
 phase-19-multiframe-confirmation
+(Phase 20A is a research phase — no git tag; committed as 64539c4)
 
 Tool Count:
 63
 
 Test Count:
-1179 (34 test files, 0 failures)
+1222 (36 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -92,7 +93,9 @@ Production deployed on Railway
 
 ✅ Phase 19 — Multi-timeframe Regime Confirmation
 
-⬜ Phase 20 — next
+✅ Phase 20A — Regime Predictiveness Audit (Research — negative finding)
+
+⬜ Phase 20B — next (decision pending)
 
 ---
 
@@ -137,6 +140,15 @@ Total: 62
 ---
 
 ## Recent Changes
+
+Phase 20A:
+
+* 0 new MCP tools (63 total, unchanged); 27 new tests → 1222; no regressions
+* `scripts/regime_audit.py`: walk-forward audit framework — 150-candle sliding window, per-regime forward return metrics (5/10/20d), run-start vs continuation diagnostics, monotonicity check
+* `tests/test_regime_audit.py`: 27 regression tests — walk-forward boundary guards, no live I/O in loop, `TestRunStartVsContinuation` (11 tests)
+* **Finding (negative)**: BULL_TREND avg 10d return −0.354% aggregate, −0.608% at run-start. Monotonicity violated. 3/4 equities show inception failure. Current EMA20/EMA50 + ADX regime engine does not demonstrate directional predictive value on NSE equities (2022-2025).
+* Audit framework retained for evaluating future regime models
+* Not tagged (research phase)
 
 Phase 19:
 
@@ -339,7 +351,13 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 14.6 complete and tagged.
+Phase 20B decision pending. Options:
+- Forward recommendation logger (log recommendations + outcomes for live edge measurement)
+- Recommendation outcome tracker (retrospective scoring of past recommendations)
+
+Regime engine finding from Phase 20A: EMA20/EMA50 + ADX does not have directional
+predictive value. Regime labels may still be useful for strategy selection and position
+sizing (descriptive use), but should not gate trade entries based on predicted direction.
 
 ---
 

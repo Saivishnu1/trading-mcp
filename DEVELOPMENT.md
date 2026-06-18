@@ -1399,6 +1399,7 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-17-calibration-engine` | `6f3c21c` | Calibration Engine — Brier score, reliability curve, overconfidence analysis; 62 tools, 1081 tests |
 | `phase-18-feedback-loop` | `3e6a516` | Recommendation Feedback Loop — self-correcting confidence, calibration-based sizing; 62 tools, 1129 tests |
 | `phase-19-multiframe-confirmation` | `231cccc` | Multi-timeframe Regime Confirmation — get_regime_alignment, weekly conflict detection in recommend_trade; 63 tools, 1179 tests |
+| *(no tag — research phase)* | `64539c4` | Phase 20A Regime Predictiveness Audit — walk-forward audit framework, run-start diagnostics, negative finding on EMA+ADX; 63 tools, 1222 tests |
 
 ---
 
@@ -1922,6 +1923,7 @@ are purely additive. All 62 tools remain unchanged (FB-6).
 ## Phase 20A — Regime Predictiveness Audit (Research)
 
 **Commit:** `64539c4` — `feat(research): Phase 20A regime predictiveness audit`
+**Tag:** *(none — research phase, no MCP tools added)*
 **Tests at end of phase:** 1222 (1195 existing + 27 new)
 **Tools added:** 0 (research infrastructure, no new MCP tools)
 
