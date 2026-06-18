@@ -20,16 +20,16 @@ Status:
 
 ## Current State
 
-Current Phase: 14 (complete)
+Current Phase: 14.5 (complete)
 
 Latest Tag:
-phase-14-position-sizing
+phase-14.5-reliability-hardening
 
 Tool Count:
 58
 
 Test Count:
-852 (26 test files, 0 failures)
+867 (26 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -76,6 +76,8 @@ Production deployed on Railway
 
 ✅ Phase 14 — Position Sizing Engine
 
+✅ Phase 14.5 — Reliability Hardening
+
 ⬜ Phase 15 — next
 
 ---
@@ -119,6 +121,19 @@ Total: 58
 ---
 
 ## Recent Changes
+
+Phase 14.5:
+
+* No new tools (58 total, unchanged)
+* Fix 1 (service.py): NaN rows from yfinance filtered in get_historical() — eliminates entire NaN propagation chain
+* Fix 2 (regime.py): _is_invalid() replaces None in (...) guard — catches float NaN which bypasses None membership tests
+* Fix 3 (tools/technicals.py): analyze_technicals returns error on any NaN indicator
+* Fix 4 (regime.py): RSI > 70 → bearish +10 (overbought); RSI < 30 → bullish +10 (oversold); 30–70 range unchanged
+* Fix 5 (regime.py): Confidence capped at 85 — no indicator model warrants 100%
+* Fix 6 (engine.py): Event risk and VIX gating failures surface as cautions; gating_data_available field added
+* Fix 7 (tools/technicals.py): Docstrings clarify lookback period differences
+* 15 new tests; RH-1 through RH-3 regression guards
+* Tagged: phase-14.5-reliability-hardening
 
 Phase 14:
 
@@ -231,7 +246,7 @@ Phase 9:
 
 ## Current Open Work
 
-None. Phase 14 complete and tagged.
+None. Phase 14.5 complete and tagged.
 
 ---
 
@@ -282,7 +297,7 @@ create_trade_plan `risk_score` key is additive — never remove, never use it to
 
 ## Technical Debt (priority order)
 
-1. market/service.py at 33% coverage — data transformation path untested
+1. market/service.py at 36% coverage — NaN filter path partially tested; full mock-based data transformation tests still missing
 2. options/service.py at 60% coverage — jugaad fallback path untested
 3. `regime` variable assigned but unused in dashboard `_build_summary`
 4. TTL cache boilerplate duplicated across 5 modules — candidate for src/utils/cache.py

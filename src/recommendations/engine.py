@@ -77,22 +77,26 @@ def recommend_trade(
         # 3. Event risk
         event_risk_score: int | None = None
         event_risk_rating: str | None = None
+        _event_risk_available = False
         try:
             er = _get_event_risk(symbol)
             if "error" not in er:
                 event_risk_score = er.get("event_risk_score")
                 event_risk_rating = er.get("event_risk_rating")
+                _event_risk_available = True
         except Exception:
             pass
 
         # 4. VIX context
         vix: float | None = None
         vix_caution: str | None = None
+        _vix_available = False
         try:
             vix_data = _get_india_vix()
             if "error" not in vix_data:
                 vix = vix_data.get("vix")
                 vix_caution = vix_data.get("caution_level")
+                _vix_available = True
         except Exception:
             pass
 
@@ -100,6 +104,11 @@ def recommend_trade(
         cautions: list[str] = []
         risk_adjustments: list[str] = []
         size_factors: list[float] = []
+
+        if not _event_risk_available:
+            cautions.append("Event risk data unavailable — gating skipped, verify manually")
+        if not _vix_available:
+            cautions.append("VIX data unavailable — volatility gating skipped, verify manually")
 
         # Event risk gating
         if event_risk_score is not None:
@@ -182,6 +191,10 @@ def recommend_trade(
             "cautions": cautions,
             "reasons": reasons,
             "risk_adjustments": risk_adjustments,
+            "gating_data_available": {
+                "event_risk": _event_risk_available,
+                "vix": _vix_available,
+            },
         }
     except Exception as exc:
         return {"error": str(exc), "symbol": symbol if isinstance(symbol, str) else "unknown"}

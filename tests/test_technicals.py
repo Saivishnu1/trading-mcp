@@ -267,3 +267,45 @@ class TestAdx:
         result = adx(highs, lows, closes)
         if result["adx"] is not None:
             assert result["adx"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# TestNaNPropagation
+# ---------------------------------------------------------------------------
+
+class TestNaNPropagation:
+    """
+    Documents how float('nan') propagates through Wilder-smoothed indicators.
+
+    Root cause of the IDEA NaN bug: yfinance NaN rows were not filtered at
+    source (Fix 1 in service.py), so float('nan') reached indicator math.
+    Wilder smoothing produces a non-empty list of NaN floats, bypassing the
+    `if not avg_gain` empty-list guard — the NaN reaches the caller as
+    float('nan'), not None.
+
+    After Fix 1 these scenarios cannot occur in normal operation. These tests
+    document the propagation mechanism for future maintainers.
+    """
+
+    def test_nan_close_produces_nan_rsi(self):
+        import math
+        closes = [float(i) for i in range(1, 31)]
+        closes[15] = float("nan")
+        result = rsi(closes, 14)
+        assert isinstance(result, float) and math.isnan(result), (
+            "rsi() must propagate NaN when closes contains NaN — "
+            "not silently substitute a clean value"
+        )
+
+    def test_nan_high_produces_nan_adx(self):
+        import math
+        closes = [100.0 + i * 0.5 for i in range(50)]
+        highs = [c + 2.0 for c in closes]
+        lows = [c - 2.0 for c in closes]
+        highs[5] = float("nan")
+        result = adx(highs, lows, closes, 14)
+        adx_val = result.get("adx")
+        assert isinstance(adx_val, float) and math.isnan(adx_val), (
+            "adx() must propagate NaN from highs through Wilder smoothing — "
+            "the result dict must contain float('nan'), not None or a clean value"
+        )

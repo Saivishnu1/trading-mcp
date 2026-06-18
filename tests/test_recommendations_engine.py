@@ -475,6 +475,52 @@ class TestReviewOpenTrades:
 
 
 # ---------------------------------------------------------------------------
+# TestGatingDataUnavailable
+# ---------------------------------------------------------------------------
+
+class TestGatingDataUnavailable:
+    """
+    Fix 6: Silent except-pass on event_risk/VIX fetch now surfaces as cautions
+    and sets gating_data_available flags to False.
+    """
+
+    def test_event_risk_fetch_failure_adds_caution(self, monkeypatch):
+        monkeypatch.setattr(rec_engine, "_get_open_trades", lambda s: _open_trades())
+        monkeypatch.setattr(rec_engine, "_create_trade_plan",
+                            lambda s, capital, risk_percent: _plan())
+        monkeypatch.setattr(rec_engine, "_get_event_risk",
+                            lambda s: (_ for _ in ()).throw(RuntimeError("network error")))
+        monkeypatch.setattr(rec_engine, "_get_india_vix", lambda: _vix())
+        result = rec_engine.recommend_trade("INFY")
+        assert "error" not in result
+        assert any("event risk" in c.lower() for c in result["cautions"])
+        assert result["gating_data_available"]["event_risk"] is False
+
+    def test_vix_fetch_failure_adds_caution(self, monkeypatch):
+        monkeypatch.setattr(rec_engine, "_get_open_trades", lambda s: _open_trades())
+        monkeypatch.setattr(rec_engine, "_create_trade_plan",
+                            lambda s, capital, risk_percent: _plan())
+        monkeypatch.setattr(rec_engine, "_get_event_risk", lambda s: _event_risk())
+        monkeypatch.setattr(rec_engine, "_get_india_vix",
+                            lambda: (_ for _ in ()).throw(RuntimeError("network error")))
+        result = rec_engine.recommend_trade("INFY")
+        assert "error" not in result
+        assert any("vix" in c.lower() for c in result["cautions"])
+        assert result["gating_data_available"]["vix"] is False
+
+    def test_gating_data_available_true_when_both_succeed(self, monkeypatch):
+        monkeypatch.setattr(rec_engine, "_get_open_trades", lambda s: _open_trades())
+        monkeypatch.setattr(rec_engine, "_create_trade_plan",
+                            lambda s, capital, risk_percent: _plan())
+        monkeypatch.setattr(rec_engine, "_get_event_risk", lambda s: _event_risk())
+        monkeypatch.setattr(rec_engine, "_get_india_vix", lambda: _vix())
+        result = rec_engine.recommend_trade("INFY")
+        assert result["gating_data_available"]["event_risk"] is True
+        assert result["gating_data_available"]["vix"] is True
+
+
+
+# ---------------------------------------------------------------------------
 # TestGetDailyBrief
 # ---------------------------------------------------------------------------
 

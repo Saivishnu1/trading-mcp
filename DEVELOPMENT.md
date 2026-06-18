@@ -1389,7 +1389,82 @@ score = round((1 - Σ(sᵢ²)) × 100)   where sᵢ = position_value / total_val
 | `phase-11a-portfolio-intelligence` | *(prev)* | Portfolio Intelligence — risk report, regime analysis, exposure breakdown; 44 tools, 427 tests |
 | `phase-11b-catalyst-intelligence` | `e157948` | Catalyst Intelligence — news, earnings, event risk; 48 tools, 551 tests |
 | `phase-12-trade-journal` | `83f22cb` | Trade Journal Foundation — SQLite journal, P&L, summary; 52 tools, 661 tests |
-| `phase-13-trade-recommendation` | *(pending)* | Trade Recommendation Engine — recommend_trade, review_open_trades, get_daily_brief; 55 tools, 745 tests |
+| `phase-13-trade-recommendation` | *(prev)* | Trade Recommendation Engine — recommend_trade, review_open_trades, get_daily_brief; 55 tools, 745 tests |
+| `phase-14-position-sizing` | *(prev)* | Position Sizing Engine — size_equity_trade, size_options_trade, size_from_recommendation; 58 tools, 852 tests |
+| `phase-14.5-reliability-hardening` | *(pending)* | Reliability Hardening — NaN propagation fix, RSI tiers, confidence cap, gating cautions; 58 tools, 867 tests |
+
+---
+
+## Phase 14 — Position Sizing Engine
+
+**Tag:** `phase-14-position-sizing`
+**Tools added:** 3 → **Total: 58**
+**Tests added:** 107 → **Total: 852**
+
+### What was built
+
+- 3 new tools: `size_equity_trade`, `size_options_trade`, `size_from_recommendation`
+- New `src/sizer/` package: `engine.py` (all logic), `src/tools/sizer.py` (MCP registration)
+- `size_equity_trade`: quantity = max(1, floor(risk\_budget / stoploss\_distance)); direction-aware for LONG/SHORT
+- `size_options_trade`: lots = max(1, floor(risk\_budget / (premium\_distance × lot\_size))); caution when capital\_at\_risk > 5%
+- `size_from_recommendation`: calls `recommend_trade()` → uses its position\_size as base; applies ONLY portfolio heat on top (Phase 13 factors already applied)
+- Portfolio heat: sum of open trade risks from journal / capital; stoploss-absent trades use 2% default
+- Heat ELEVATED (≥7%) → size ×0.75; CRITICAL (≥9%) → size ×0.50; stacks with portfolio risk report score
+- Portfolio risk HIGH (≥75) → ×0.75; EXTREME (≥90) → ×0.50; broker auth failure → factor silently skipped
+- All factors stack multiplicatively via `_apply_size_factors`; floor at 1
+- `size_from_recommendation` returns AVOID with null sizing fields and null `log_trade_params` (no accidental logging)
+- `log_trade_params` returned by all 3 tools; keys validated against `log_trade()` signature
+- Journal schema v1 → v2: adds `risk_amount REAL`, `capital_at_risk REAL`, `portfolio_heat_at_entry REAL`
+- Migration via ALTER TABLE ADD COLUMN; idempotent try/except per statement; version stamp updated
+- Immutability rule: `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` set at entry, never modified
+- `log_trade()` gains 3 new optional params; all callers unaffected
+- 107 new tests across 2 files; PS-1 through PS-5 regression guards
+- Zero changes to existing 55 tools; no regressions
+
+---
+
+## Phase 14.5 — Reliability Hardening
+
+**Tag:** `phase-14.5-reliability-hardening`
+**Tools added:** 0 → **Total: 58 (unchanged)**
+**Tests added:** 15 → **Total: 867**
+
+### What was built
+
+No new tools. Targeted hardening of the data validation and scoring layer.
+
+Root causes confirmed via codebase audit:
+- `float(np.nan)` from yfinance NaN rows was not filtered, propagating through Wilder smoothing as `float('nan')` rather than `None`. `NaN ≠ None` in Python, so `None in (...)` guards did not catch it.
+- RSI > 70 (overbought) was not penalized — RSI 74 scored identically to RSI 56, producing confidence of 100 in some configurations.
+- Silent `except Exception: pass` in `recommend_trade` swallowed event\_risk and VIX fetch failures, proceeding without gating data and without informing the caller.
+
+### Changes
+
+| Fix | File | Description |
+|---|---|---|
+| Fix 1 | `src/market/service.py` | NaN rows from yfinance filtered in `get_historical()` before building candle list |
+| Fix 2a | `src/analysis/regime.py` | `_is_invalid()` helper returns True for None and float NaN; applied at both indicator guard sites |
+| Fix 2b | `src/analysis/regime.py` | `_validate_number()` rejects NaN via `math.isnan()` |
+| Fix 3 | `src/tools/technicals.py` | `analyze_technicals` returns error when any primary indicator is NaN |
+| Fix 4 | `src/analysis/regime.py` | RSI > 70 → bearish +10 (overbought); RSI < 30 → bullish +10 (oversold) instead of amplified directional signal |
+| Fix 5 | `src/analysis/regime.py` | Confidence capped at `min(85, ...)` in `generate_trade_setup` — no indicator model warrants 100% |
+| Fix 6 | `src/recommendations/engine.py` | Event risk and VIX fetch failures surface as cautions; `gating_data_available` field added |
+| Fix 7 | `src/tools/technicals.py` | Docstrings clarify lookback period differences (60d/120d vs 150d in `analyze_technicals`) |
+
+### New tests
+
+| File | Class | Tests |
+|---|---|---|
+| `tests/test_technicals.py` | `TestNaNPropagation` | `test_nan_close_produces_nan_rsi`, `test_nan_high_produces_nan_adx` |
+| `tests/test_analysis.py` | `TestIsInvalid` | 4 tests for `_is_invalid()` helper |
+| `tests/test_analysis.py` | `TestDetectMarketRegime` | `test_regime_returns_error_for_nan_rsi` |
+| `tests/test_analysis.py` | `TestGenerateTradeSetup` | `test_rsi_overbought_adds_bearish_not_bullish`, `test_rsi_oversold_adds_bullish_not_bearish` |
+| `tests/test_recommendations_engine.py` | `TestGatingDataUnavailable` | 3 gating caution tests |
+| `tests/test_regressions.py` | RH-1, RH-2, RH-3 | NaN→error, confidence≤85, overbought regression guards |
+
+### Backward compatibility
+
+All 58 tools unchanged. `recommend_trade` gains additive `gating_data_available` field. `confidence` maximum changes from 100 to 85 (no caller should gate on `confidence == 100`).
 
 ---
 

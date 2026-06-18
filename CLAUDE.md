@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 14 (complete) — Phase 15 next
+Current Phase: 14.5 (complete) — Phase 15 next
 
 Current Tool Count: 58
 
@@ -107,8 +107,9 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 852 unit + regression tests across 26 test files (pytest, no live network calls).
-* Coverage: analysis 90%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 91–98%, portfolio_intelligence 97%, catalyst 80%+, journal 90%+, recommendations 88%+, sizer 90%+.
+* 867 unit + regression tests across 26 test files (pytest, no live network calls).
+* Coverage: analysis 91%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 91–98%, portfolio_intelligence 97%, catalyst 80%+, journal 90%+, recommendations 98%, sizer 90%+.
+* Recommendation confidence is capped at 85 — reflects indicator model uncertainty, not a 100-point ceiling.
 * `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` are schema v2 immutable entry-time snapshots — never recalculate or modify after trade creation.
 
 ---

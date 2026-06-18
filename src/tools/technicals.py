@@ -5,6 +5,7 @@ OHLCV is pulled through the existing market service (yfinance-backed); the math
 lives in src/technical/indicators.py (pure Python). No auth required.
 """
 
+import math
 from datetime import date, timedelta
 from typing import Optional
 
@@ -70,7 +71,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
             period: RSI lookback period (default 14).
-            lookback_days: Calendar days of history to fetch (default 60).
+            lookback_days: Calendar days of history to fetch (default 60). Note: uses
+                a shorter window than analyze_technicals (150 days) for quick checks.
+                Use analyze_technicals for strategy-grade values consistent with trade
+                setup generation.
         """
         closes, _, _ = _load_closes(symbol, lookback_days)
         if not closes:
@@ -135,7 +139,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
-            lookback_days: Calendar days of history to fetch (default 120).
+            lookback_days: Calendar days of history to fetch (default 120). Note:
+                analyze_technicals uses 150 days; values may differ slightly.
         """
         closes, _, _ = _load_closes(symbol, lookback_days)
         if not closes:
@@ -207,7 +212,10 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
             period: ATR period (default 14).
-            lookback_days: Calendar days of history to fetch (default 60).
+            lookback_days: Calendar days of history to fetch (default 60). Note: uses
+                a shorter window than analyze_technicals (150 days) for quick checks.
+                Use analyze_technicals for strategy-grade values consistent with trade
+                setup generation.
         """
         closes, highs, lows = _load_closes(symbol, lookback_days)
         if not closes:
@@ -242,6 +250,7 @@ def register(mcp: FastMCP) -> None:
         if not closes:
             return _err(symbol, "no price data — check the symbol")
 
+        candles_used = len(closes)
         last_close = round(closes[-1], 4)
         rsi_val = indicators.rsi(closes, 14)
         ema20 = indicators.ema(closes, 20)
@@ -250,10 +259,29 @@ def register(mcp: FastMCP) -> None:
         adx_val = indicators.adx(highs, lows, closes, 14)
         atr_val = indicators.atr(highs, lows, closes, 14)
 
+        _indicator_checks = [
+            ("rsi_14", rsi_val),
+            ("ema_20", ema20),
+            ("ema_50", ema50),
+            ("macd",   macd_val.get("macd")),
+            ("adx_14", adx_val.get("adx")),
+            ("atr_14", atr_val),
+        ]
+        nan_indicators = [
+            name for name, v in _indicator_checks
+            if isinstance(v, float) and math.isnan(v)
+        ]
+        if nan_indicators:
+            return _err(
+                symbol,
+                f"indicator(s) invalid ({', '.join(nan_indicators)}) — "
+                f"possible data gap in price history ({candles_used} candles fetched)",
+            )
+
         return {
             "symbol": symbol.upper(),
             "last_close": last_close,
-            "candles_used": len(closes),
+            "candles_used": candles_used,
             "rsi_14": rsi_val,
             "ema_20": ema20,
             "ema_50": ema50,

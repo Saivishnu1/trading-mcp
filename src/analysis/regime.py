@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from src.technical import indicators
 from src.tools.technicals import _load_closes
 
@@ -14,6 +16,11 @@ def _round(value: float | None, digits: int = 4) -> float | None:
     return round(float(value), digits)
 
 
+def _is_invalid(v: object) -> bool:
+    """Return True for None and for float NaN (which bypasses None-membership tests)."""
+    return v is None or (isinstance(v, float) and math.isnan(v))
+
+
 def _validate_number(name: str, value: float) -> str | None:
     if value is None:
         return f"{name} is required"
@@ -21,6 +28,8 @@ def _validate_number(name: str, value: float) -> str | None:
         numeric = float(value)
     except (TypeError, ValueError):
         return f"{name} must be a number"
+    if math.isnan(numeric):
+        return f"{name} must be a valid number"
     if numeric <= 0:
         return f"{name} must be greater than zero"
     return None
@@ -58,7 +67,7 @@ def detect_market_regime(symbol: str) -> dict:
     adx = technicals["adx_14"]["adx"]
     atr = technicals["atr_14"]
 
-    if None in (price, rsi, ema20, ema50, adx, atr):
+    if any(_is_invalid(x) for x in (price, rsi, ema20, ema50, adx, atr)):
         return _error(symbol, "insufficient data for regime detection")
 
     regime = "RANGE_BOUND"
@@ -175,21 +184,27 @@ def generate_trade_setup(symbol: str) -> dict:
     adx = technicals["adx_14"]["adx"]
     atr = technicals["atr_14"]
 
-    if None in (price, rsi, ema20, ema50, adx, atr, macd["macd"], macd["signal"]):
+    if any(_is_invalid(x) for x in (price, rsi, ema20, ema50, adx, atr, macd["macd"], macd["signal"])):
         return _error(symbol, "insufficient data for trade setup")
 
     bullish = 0
     bearish = 0
     reasoning: list[str] = []
 
-    if rsi > 55:
+    if rsi > 70:
+        bearish += 10
+        reasoning.append(f"RSI at {rsi:.0f} is overbought — elevated mean-reversion risk.")
+    elif rsi > 55:
         bullish += 20
-        reasoning.append(f"RSI at {rsi} is above 55, favoring bullish momentum.")
+        reasoning.append(f"RSI at {rsi:.0f} is above 55, favoring bullish momentum.")
+    elif rsi < 30:
+        bullish += 10
+        reasoning.append(f"RSI at {rsi:.0f} is oversold — potential mean-reversion bounce.")
     elif rsi < 45:
         bearish += 20
-        reasoning.append(f"RSI at {rsi} is below 45, favoring bearish momentum.")
+        reasoning.append(f"RSI at {rsi:.0f} is below 45, favoring bearish momentum.")
     else:
-        reasoning.append(f"RSI at {rsi} is neutral.")
+        reasoning.append(f"RSI at {rsi:.0f} is neutral (45–55).")
 
     if price > ema20:
         bullish += 15
@@ -288,7 +303,7 @@ def generate_trade_setup(symbol: str) -> dict:
     return {
         "symbol": symbol.upper(),
         "signal": signal,
-        "confidence": min(100, confidence),
+        "confidence": min(85, confidence),
         # Legacy scalar fields (backward-compatible with Dashboard / Journal / Alerts)
         "entry": entry_scalar,
         "stoploss": stoploss_scalar,

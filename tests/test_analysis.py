@@ -9,6 +9,7 @@ to test every strategy-selection branch in isolation.
 import pytest
 
 from src.analysis.regime import (
+    _is_invalid,
     calculate_position_size,
     calculate_risk_reward,
     detect_market_regime,
@@ -57,6 +58,11 @@ RNG_BUY  = _tech("NIFTY", rsi=65.0, ema20=100.0, ema50=99.0, adx=15.0, price=101
 # bearish=50 (rsi<45+price<ema20+price<ema50), bullish=0, bearish<60 → NEUTRAL_BEARISH
 RNG_SELL = _tech("NIFTY", rsi=35.0, ema20=102.0, ema50=100.0, adx=15.0, price=99.0,
                  macd_val=-0.1, macd_sig=-0.3)
+# RSI overbought (>70): all else bullish — tests Fix 4 overbought tier
+OVERBOUGHT = _tech("NIFTY", rsi=74.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
+# RSI oversold (<30): all else bearish — tests Fix 4 oversold tier
+OVERSOLD_BEAR = _tech("NIFTY", rsi=25.0, ema20=90.0, ema50=100.0, adx=28.0, price=89.0,
+                      macd_val=-0.5, macd_sig=-0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +149,26 @@ class TestCalculatePositionSize:
 
 
 # ---------------------------------------------------------------------------
+# _is_invalid — unit tests for the NaN/None guard helper (Fix 2a)
+# ---------------------------------------------------------------------------
+
+class TestIsInvalid:
+
+    def test_none_is_invalid(self):
+        assert _is_invalid(None) is True
+
+    def test_nan_float_is_invalid(self):
+        assert _is_invalid(float("nan")) is True
+
+    def test_regular_float_is_valid(self):
+        assert _is_invalid(65.5) is False
+
+    def test_zero_is_valid(self):
+        # zero is a legitimate indicator value (e.g. ADX can be 0)
+        assert _is_invalid(0.0) is False
+
+
+# ---------------------------------------------------------------------------
 # detect_market_regime — mocks _analyze_technicals
 # ---------------------------------------------------------------------------
 
@@ -205,6 +231,15 @@ class TestDetectMarketRegime:
         r = detect_market_regime("nifty")
         assert r["symbol"] == "NIFTY"
 
+    def test_regime_returns_error_for_nan_rsi(self, monkeypatch):
+        nan_tech = {**BULL, "rsi_14": float("nan")}
+        monkeypatch.setattr("src.analysis.regime._analyze_technicals",
+                            lambda s, lookback_days=150: nan_tech)
+        r = detect_market_regime("NIFTY")
+        assert "error" in r, (
+            "NaN rsi_14 must cause detect_market_regime to return an error dict"
+        )
+
 
 # ---------------------------------------------------------------------------
 # generate_trade_setup — mocks _analyze_technicals
@@ -258,10 +293,10 @@ class TestGenerateTradeSetup:
         assert isinstance(r["reasoning"], list)
         assert len(r["reasoning"]) > 0
 
-    def test_confidence_between_0_and_100(self, monkeypatch):
+    def test_confidence_between_0_and_85(self, monkeypatch):
         for tech in (BULL, BEAR, RANGE, NEUT):
             r = self._setup(monkeypatch, tech)
-            assert 0 <= r["confidence"] <= 100
+            assert 0 <= r["confidence"] <= 85
 
     def test_buy_entry_above_spot(self, monkeypatch):
         r = self._setup(monkeypatch, BULL)
@@ -278,6 +313,30 @@ class TestGenerateTradeSetup:
                             lambda s, lookback_days=150: {"error": "no data"})
         r = generate_trade_setup("NIFTY")
         assert "error" in r
+
+    def test_rsi_overbought_adds_bearish_not_bullish(self, monkeypatch):
+        r = self._setup(monkeypatch, OVERBOUGHT)
+        reasoning_text = " ".join(r.get("reasoning", []))
+        assert "overbought" in reasoning_text.lower(), (
+            "RSI > 70 must include overbought warning in reasoning"
+        )
+        assert r["confidence"] <= 85
+        assert r["signal"] == "BUY", (
+            "Other bullish indicators must dominate RSI overbought penalty: "
+            f"signal was {r['signal']}"
+        )
+
+    def test_rsi_oversold_adds_bullish_not_bearish(self, monkeypatch):
+        r = self._setup(monkeypatch, OVERSOLD_BEAR)
+        reasoning_text = " ".join(r.get("reasoning", []))
+        assert "oversold" in reasoning_text.lower(), (
+            "RSI < 30 must include oversold note in reasoning"
+        )
+        assert r["confidence"] <= 85
+        assert r["signal"] == "SELL", (
+            "Other bearish indicators must dominate RSI oversold bounce: "
+            f"signal was {r['signal']}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -333,3 +333,110 @@ class TestReg7EquityOptionChain:
         assert "RELIANCE" in received, (
             f"Expected 'RELIANCE' to be passed to jugaad, got {received}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression RH-1 — Phase 14.5: NaN indicators → error, not signal
+# ---------------------------------------------------------------------------
+
+class TestRH1NaNDoesNotProduceBuySignal:
+    """
+    Bug: float('nan') from yfinance NaN rows bypassed the None-membership
+    guard (NaN ≠ None in Python), producing directional signals with NaN
+    confidence on sparse/halted stocks such as IDEA.
+    Fix 1 (service.py): NaN rows filtered at source.
+    Fix 2 (regime.py): _is_invalid() catches both None and float('nan').
+    """
+
+    def test_nan_data_produces_error_not_signal(self, monkeypatch):
+        nan_tech = {
+            "symbol": "IDEA",
+            "last_close": 12.5,
+            "candles_used": 100,
+            "rsi_14": float("nan"),
+            "ema_20": float("nan"),
+            "ema_50": float("nan"),
+            "macd": {
+                "macd": float("nan"),
+                "signal": float("nan"),
+                "histogram": float("nan"),
+            },
+            "adx_14": {
+                "adx": float("nan"),
+                "plus_di": float("nan"),
+                "minus_di": float("nan"),
+            },
+            "atr_14": float("nan"),
+        }
+        monkeypatch.setattr(
+            "src.analysis.regime._analyze_technicals",
+            lambda s, lookback_days=150: nan_tech,
+        )
+        r = generate_trade_setup("IDEA")
+        assert "error" in r, (
+            f"NaN indicators must produce an error response, not a signal. Got: {r}"
+        )
+        assert "signal" not in r
+
+
+# ---------------------------------------------------------------------------
+# Regression RH-2 — Phase 14.5: Confidence capped at 85
+# ---------------------------------------------------------------------------
+
+class TestRH2ConfidenceNeverExceeds85:
+    """
+    Bug: max-alignment indicators (RSI 65, BULL_TREND, ADX 35) could score
+    20+15+15+20+20+10 = 100 confidence. No technical indicator model warrants
+    100% confidence.
+    Fix 5 (regime.py): min(85, confidence).
+    """
+
+    def test_max_alignment_confidence_at_most_85(self, monkeypatch):
+        max_bull = _tech(rsi=65.0, ema20=100.0, ema50=90.0, adx=35.0, price=101.0)
+        monkeypatch.setattr(
+            "src.analysis.regime._analyze_technicals",
+            lambda s, lookback_days=150: max_bull,
+        )
+        r = generate_trade_setup("NIFTY")
+        assert "error" not in r
+        assert r["signal"] == "BUY"
+        assert r["confidence"] <= 85, (
+            f"Confidence must never exceed 85; got {r['confidence']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regression RH-3 — Phase 14.5: RSI overbought reduces confidence
+# ---------------------------------------------------------------------------
+
+class TestRH3RSIOverboughtReducesConfidence:
+    """
+    Bug: RSI 74 scored +20 bullish (identical to RSI 56), producing 100%
+    BUY confidence for stocks like YES BANK. Overbought RSI signals elevated
+    mean-reversion risk, not bullish momentum.
+    Fix 4 (regime.py): RSI > 70 → bearish +10 instead of bullish +20.
+    """
+
+    def test_overbought_confidence_lower_than_normal_bullish(self, monkeypatch):
+        normal_rsi = _tech(rsi=65.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
+        overbought = {**normal_rsi, "rsi_14": 74.0}
+
+        monkeypatch.setattr(
+            "src.analysis.regime._analyze_technicals",
+            lambda s, lookback_days=150: normal_rsi,
+        )
+        r_normal = generate_trade_setup("NIFTY")
+
+        monkeypatch.setattr(
+            "src.analysis.regime._analyze_technicals",
+            lambda s, lookback_days=150: overbought,
+        )
+        r_overbought = generate_trade_setup("NIFTY")
+
+        assert "error" not in r_overbought
+        assert r_overbought["confidence"] < r_normal["confidence"], (
+            f"Overbought RSI must reduce confidence vs normal bullish RSI. "
+            f"overbought={r_overbought['confidence']}, normal={r_normal['confidence']}"
+        )
+        reasoning = " ".join(r_overbought["reasoning"])
+        assert "overbought" in reasoning.lower()

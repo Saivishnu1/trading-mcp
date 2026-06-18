@@ -11,6 +11,7 @@ Symbol formats accepted everywhere:
 
 import io
 import logging
+import math
 import threading
 from datetime import date, datetime
 
@@ -265,13 +266,20 @@ class MarketService:
             df.columns = df.columns.get_level_values(0)
         records = []
         for ts, row in df.iterrows():
+            o = float(row["Open"])
+            h = float(row["High"])
+            l = float(row["Low"])
+            c = float(row["Close"])
+            if math.isnan(c) or math.isnan(o) or math.isnan(h) or math.isnan(l):
+                continue
+            vol_raw = float(row["Volume"])
             records.append({
                 "date": ts.isoformat(),
-                "open": round(float(row["Open"]), 4),
-                "high": round(float(row["High"]), 4),
-                "low": round(float(row["Low"]), 4),
-                "close": round(float(row["Close"]), 4),
-                "volume": int(row["Volume"]),
+                "open": round(o, 4),
+                "high": round(h, 4),
+                "low": round(l, 4),
+                "close": round(c, 4),
+                "volume": int(vol_raw) if not math.isnan(vol_raw) else 0,
             })
         return records
 
