@@ -16,6 +16,8 @@ dependencies = [
     "yfinance>=0.2.40",       # fallback + historical data
     # auth
     "pyotp>=2.9.0",           # TOTP generation from secret
+    # journal persistence (Linux/Railway only — Windows has no pre-built wheel)
+    "libsql-experimental>=0.0.6; sys_platform == 'linux'",
 ]
 
 [project.scripts]

@@ -549,6 +549,16 @@ wheels = [
 ]
 
 [[package]]
+name = "libsql-experimental"
+version = "0.0.55"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/14/d3eb81673e2096f38eb48f08e38b447f6f2fdc37a50bdb1810d4a225a7aa/libsql_experimental-0.0.55.tar.gz", hash = "sha256:34df13ad6da446e4ccede9b3803af40684da399c8f304848b54ea37e7111b249", size = 31954, upload-time = "2025-06-09T07:26:48.682Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/32/d84a47c7ab5332247be52065aaa6b22e4baae969b33af8daa99fb1a317bf/libsql_experimental-0.0.55-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:60d018dbad48f98ddee49d211618ab6309d4fa2a51beb8d9076de184d1cae9da", size = 5273739, upload-time = "2025-06-09T07:26:35.913Z" },
+    { url = "https://files.pythonhosted.org/packages/70/73/134dc2db0c3805f62953c85778bf93ac2f4a5ad81d49e592be990b012711/libsql_experimental-0.0.55-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7a5dd325f87425546e0a7f0d460d4b6e1852bc4d4194a7b5ad127614ef8b3b10", size = 5273740, upload-time = "2025-06-09T07:26:40.597Z" },
+]
+
+[[package]]
 name = "loguru"
 version = "0.7.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1432,6 +1442,7 @@ dependencies = [
     { name = "httpx" },
     { name = "jugaad-data" },
     { name = "jugaad-trader" },
+    { name = "libsql-experimental", marker = "sys_platform == 'linux'" },
     { name = "mcp", extra = ["cli"] },
     { name = "pyotp" },
     { name = "python-dotenv" },
@@ -1451,6 +1462,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jugaad-data", specifier = ">=0.33.1" },
     { name = "jugaad-trader", specifier = ">=0.20" },
+    { name = "libsql-experimental", marker = "sys_platform == 'linux'", specifier = ">=0.0.6" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.3.0" },
     { name = "pyotp", specifier = ">=2.9.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },

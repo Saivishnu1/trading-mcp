@@ -4,8 +4,10 @@ import threading
 from datetime import datetime, timezone
 
 _DB_PATH = os.environ.get("JOURNAL_DB", "journal.db")
+_TURSO_URL = os.environ.get("TURSO_DATABASE_URL", "")
+_TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 _INIT_LOCK = threading.Lock()
-_conn: sqlite3.Connection | None = None
+_conn = None  # sqlite3.Connection or libsql_experimental connection
 
 _SCHEMA_VERSION = 2
 
@@ -69,7 +71,7 @@ _DDL_INDEXES = [
 ]
 
 
-def _init_schema(conn: sqlite3.Connection) -> None:
+def _init_schema(conn) -> None:
     conn.execute(_DDL_SCHEMA_VERSION)
     conn.execute(_DDL_TRADES)
     for idx_sql in _DDL_INDEXES:
@@ -95,21 +97,25 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _get_schema_version(conn: sqlite3.Connection) -> int | None:
+def _get_schema_version(conn) -> int | None:
     row = conn.execute("SELECT version FROM schema_version").fetchone()
-    return row[0] if row else None
+    return row["version"] if row else None
 
 
-def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, check_same_thread=False)
+def _connect(path: str):
+    if _TURSO_URL:
+        import libsql_experimental as libsql  # type: ignore[import]
+        conn = libsql.connect(_TURSO_URL, auth_token=_TURSO_TOKEN)
+    else:
+        conn = sqlite3.connect(path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
     _init_schema(conn)
     return conn
 
 
-def _get_connection() -> sqlite3.Connection:
+def _get_connection():
     global _conn
     if _conn is None:
         with _INIT_LOCK:
@@ -118,7 +124,7 @@ def _get_connection() -> sqlite3.Connection:
     return _conn
 
 
-def reset_connection(conn: sqlite3.Connection | None = None) -> None:
+def reset_connection(conn=None) -> None:
     """Inject a connection. Used by tests to swap in an in-memory database."""
     global _conn
     _conn = conn
