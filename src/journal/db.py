@@ -143,6 +143,12 @@ class _LibsqlConn:
         self._conn = conn
 
     def execute(self, sql, params=()):
+        # libsql_experimental requires positional params as a tuple and rejects
+        # a list ("'list' object cannot be converted to 'PyTuple'"). sqlite3
+        # accepts both, so callers may pass lists (e.g. dynamically-built
+        # filter params); coerce here to keep the wrapper sqlite3-compatible.
+        if isinstance(params, list):
+            params = tuple(params)
         cur = self._conn.execute(sql, params) if params else self._conn.execute(sql)
         return _LibsqlCursor(cur)
 

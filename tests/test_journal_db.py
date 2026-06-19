@@ -140,3 +140,63 @@ class TestSchemaVersion:
         applied = row[0]
         assert "T" in applied
         assert len(applied) == 19
+
+
+# ---------------------------------------------------------------------------
+# TestLibsqlConnParamCoercion
+# ---------------------------------------------------------------------------
+
+class _RecordingConn:
+    """Stub libsql connection that records the params type it was handed.
+
+    libsql_experimental raises "'list' object cannot be converted to 'PyTuple'"
+    when positional params arrive as a list. This stub lets us assert the
+    _LibsqlConn wrapper coerces lists to tuples before forwarding.
+    """
+
+    def __init__(self):
+        self.received = []
+
+    def execute(self, sql, params=None):
+        if params is not None:
+            self.received.append(params)
+        return _StubCursor()
+
+
+class _StubCursor:
+    description = ()
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+
+class TestLibsqlConnParamCoercion:
+    """Guards the Turso/libsql param-type fix (list -> tuple)."""
+
+    def test_list_params_coerced_to_tuple(self):
+        stub = _RecordingConn()
+        wrapped = journal_db._LibsqlConn(stub)
+        wrapped.execute("SELECT * FROM trades WHERE symbol = ? LIMIT ?", ["IDEA", 50])
+        assert stub.received, "underlying execute was not called with params"
+        forwarded = stub.received[-1]
+        assert isinstance(forwarded, tuple), (
+            f"libsql wrapper must forward a tuple, got {type(forwarded).__name__}"
+        )
+        assert forwarded == ("IDEA", 50)
+
+    def test_tuple_params_passed_through_unchanged(self):
+        stub = _RecordingConn()
+        wrapped = journal_db._LibsqlConn(stub)
+        wrapped.execute("SELECT * FROM trades WHERE id = ?", ("TRD-1234",))
+        assert stub.received[-1] == ("TRD-1234",)
+        assert isinstance(stub.received[-1], tuple)
+
+    def test_empty_params_takes_no_arg_path(self):
+        stub = _RecordingConn()
+        wrapped = journal_db._LibsqlConn(stub)
+        # Empty params must use the no-arg execute branch (records nothing).
+        wrapped.execute("SELECT 1")
+        assert stub.received == []
