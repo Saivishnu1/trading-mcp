@@ -20,17 +20,17 @@ Status:
 
 ## Current State
 
-Current Phase: 20A (complete, committed) — Phase 20B decision pending
+Current Phase: 21 cross-sectional screen (complete) — directional-prediction research PAUSED
 
 Latest Tag:
 phase-19-multiframe-confirmation
-(Phase 20A is a research phase — no git tag; committed as 64539c4)
+(Phases 20A and 21 are research phases — no git tags; committed as 64539c4, a7694d6)
 
 Tool Count:
 63
 
 Test Count:
-1222 (36 test files, 0 failures)
+1232 (37 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -95,7 +95,9 @@ Production deployed on Railway
 
 ✅ Phase 20A — Regime Predictiveness Audit (Research — negative finding)
 
-⬜ Phase 20B — next (decision pending)
+✅ Phase 21 — Cross-Sectional Signal Screen (Research — negative finding; directional prediction paused)
+
+⬜ Next — pivot: risk management / journaling / execution discipline / options-volatility structure
 
 ---
 
@@ -140,6 +142,15 @@ Total: 62
 ---
 
 ## Recent Changes
+
+Phase 21 (cross-sectional screen):
+
+* 0 new MCP tools (63 total); 23 new tests → 1232; no regressions
+* `scripts/cross_sectional_screen.py`: cheap, crude, falsifiable cross-sectional screen over Nifty 50 (48/50 loaded, 96% coverage); RS_6m, RS_12m1 momentum + Vol_63 ranked into quintiles; outcome = forward EXCESS return vs ^NSEI; 46,464 obs / 968 dates
+* **Finding (negative)**: RS_6m 10d Q5−Q1 = −0.286%, RS_12m1 = −0.141%, both non-monotone (hump-shaped = noise). High-vol Q5 outperformance is beta+survivorship, not alpha. No large, monotone, tradeable directional edge.
+* Adversarial review (10 failure modes): P(finding is mostly a bug) ≈ 3–4%. Quintile orientation locked by direct regression test. Backtest bugs fake large positives, not small negatives.
+* **Decision**: built the cheap screen INSTEAD of Audit V2 (effects below the 0.3–0.8% band where rigor changes a decision). Directional-prediction research PAUSED. Pivot to risk / journaling / execution discipline / options-volatility.
+* Design + finding recorded in `docs/research/PHASE_21A_AUDIT_V2_DESIGN.md`. Not tagged (research phase).
 
 Phase 20A:
 
@@ -351,13 +362,19 @@ Phase 9:
 
 ## Current Open Work
 
-Phase 20B decision pending. Options:
-- Forward recommendation logger (log recommendations + outcomes for live edge measurement)
-- Recommendation outcome tracker (retrospective scoring of past recommendations)
+Directional-prediction research PAUSED after two negative findings (Phase 20A regime
+audit, Phase 21 cross-sectional screen). Audit V2 deferred — the measured effects are
+below the 0.3–0.8%/10d band where statistical rigor would change a decision.
 
-Regime engine finding from Phase 20A: EMA20/EMA50 + ADX does not have directional
-predictive value. Regime labels may still be useful for strategy selection and position
-sizing (descriptive use), but should not gate trade entries based on predicted direction.
+Pivot direction (no work started yet):
+- Risk management (hard sizing/heat limits — preventing ruin, not predicting direction)
+- Journaling + calibration repurposed as a behavioral/process-discipline tool
+- Execution discipline / forward recommendation logger (cheap to start; accrues ground truth)
+- Options/volatility structure (IV-percentile premium selling — structural, not directional, edge)
+
+Scoped conclusion (do not overclaim): no large, monotone, tradeable cross-sectional
+momentum or volatility edge on Nifty 50 over 2022–2025. Not a proof momentum never works
+on NSE; a proof no edge is large/stable enough to justify directional-prediction infra now.
 
 ---
 
