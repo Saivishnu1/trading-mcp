@@ -25,7 +25,7 @@ trade planning, options analytics, journal, and trading intelligence —
    - [Run with Docker](#2-run-with-docker)
    - [Run locally with uv](#run-locally-with-uv-no-docker)
 5. [First login](#first-login)
-6. [Add to Claude](#add-to-claude)
+6. [Add to your MCP client](#add-to-your-mcp-client)
 7. [MCP tools reference](#mcp-tools-reference)
 8. [Tool response format](#tool-response-format)
 9. [Environment variables](#environment-variables)
@@ -291,7 +291,16 @@ check_auth_status()
 
 ---
 
-## Add to Claude
+## Add to your MCP client
+
+The server exposes two transports — use whichever your client supports:
+
+| Transport | URL | Use for |
+|-----------|-----|---------|
+| Streamable HTTP | `http://localhost:8000/mcp` | claude.ai web connector, Claude Code, modern MCP clients |
+| SSE | `http://localhost:8000/sse` | Claude Desktop, legacy MCP clients |
+
+Replace `localhost` with your server IP for remote deployments.
 
 ### Claude Desktop
 
@@ -308,7 +317,6 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-Replace `localhost` with your server's IP or hostname for remote deployments.
 Restart Claude Desktop after saving.
 
 ### Claude Code (CLI)
@@ -316,6 +324,37 @@ Restart Claude Desktop after saving.
 ```bash
 claude mcp add zerodha --url http://localhost:8000/sse
 ```
+
+### Any MCP-compatible agent or framework
+
+The server follows the [MCP specification](https://modelcontextprotocol.io) — it works with any
+client or agent framework that speaks MCP over HTTP. Examples:
+
+```python
+# Python MCP client
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+async with streamablehttp_client("http://localhost:8000/mcp") as (read, write, _):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+```
+
+```typescript
+// TypeScript / Node.js
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client({ name: "my-agent", version: "1.0.0" });
+const transport = new StreamableHTTPClientTransport(
+  new URL("http://localhost:8000/mcp")
+);
+await client.connect(transport);
+```
+
+Works with: Claude Desktop, Claude Code, claude.ai web connectors, LangChain MCP adapters,
+LlamaIndex MCP tool loaders, custom agent loops, or any other MCP client.
 
 ---
 
