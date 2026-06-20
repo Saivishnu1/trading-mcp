@@ -107,7 +107,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1366 unit + regression tests across 41 test files (pytest, no live network calls).
+* 1375 unit + regression tests across 41 test files (pytest, no live network calls).
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF / normalize_symbol). Do not add per-module alias tables.
@@ -119,7 +119,7 @@ When generating tests:
 * Journal DB is schema v4. recommendation_log table added. Partition constants in src/recommendation_log/service.py — NEVER flip bootstrap_period/bias_contaminated automatically; only on conscious human decision.
 * `confidence`, `signal`, `trade_quality`, `quality`, `bullish_probability` are DELETED (Phase 22F). Do not add them back.
 * `detect_market_regime` returns `market_structure` (boolean facts + descriptor array), not `regime`/`confidence`. The `regime` key is deleted.
-* `generate_trade_setup` returns `entry/stoploss/target/entry_above/entry_below/bull_target/bear_target/reasoning/_migration` only.
+* `generate_trade_setup` returns `entry/stoploss/target/entry_above/entry_below/bull_target/bear_target/reasoning/market_structure/_migration`. `reasoning` is observation-only — no predictive language.
 * `_migration` block in both tools is TEMPORARY — remove in Phase 23.
 * DB schema v5 in meta layer (`meta["schema_version"] == 5`). Journal DB is still schema v4.
 

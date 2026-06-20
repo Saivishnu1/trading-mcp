@@ -2157,6 +2157,39 @@ Both `detect_market_regime` and `generate_trade_setup` docstrings now cite Phase
 |---|---|---|
 | `tests/test_phase22f.py` | 48 | field deletion, market_structure, booleans, descriptor, indicator_interpretation, _migration, schema_version, forbidden words, docstrings, regressions |
 
+#### Reasoning decontamination (commit `c9a64f6`)
+
+`generate_trade_setup` tool no longer forwards the service-layer reasoning (which contained predictive language like "aligning with bullish setups", "ADX confirms directional conviction"). A new `_generate_reasoning()` function produces 5 observation-only sentences derived from `market_structure`:
+
+```
+"Price (101.0) is above EMA20 (100.00)."
+"EMA20 (100.00) is above EMA50 (90.00)."
+"ADX is 30.00 (above the 25 threshold): trend_present."
+"RSI is 65.00: momentum_elevated."
+"Current market structure includes: price_above_ema20, ema20_above_ema50, adx_above_25, rsi_above_60."
+```
+
+The philosophy comment is encoded directly above the function:
+- **MAY:** describe current state, summarize indicator values, reference descriptors
+- **MAY NOT:** predict future movement, recommend a direction, imply probability, imply edge
+
+`generate_trade_setup` output now includes `market_structure` alongside `entry/stoploss/target`. The tool calls both `regime.generate_trade_setup()` and `regime.detect_market_regime()` — the `_analyze_technicals` TTL cache prevents a second network fetch.
+
+### Files changed (full phase)
+
+| File | Change |
+|---|---|
+| `src/meta.py` | `schema_version: 5` added to `build_meta()` |
+| `src/tools/analysis.py` | `_build_market_structure()`, `_generate_reasoning()`, updated docstrings, tool layer transformation |
+| `tests/test_phase22f.py` | 57 new tests (new file) |
+| `CLAUDE.md` | Phase, test count, constraints updated |
+
+### Test files added
+
+| File | Tests | Coverage |
+|---|---|---|
+| `tests/test_phase22f.py` | 57 | field deletion, market_structure, booleans, descriptor, indicator_interpretation, _migration, schema_version, forbidden words, reasoning decontamination, docstrings, regressions |
+
 ### TODO Phase 23
 - Remove `_migration` block from `detect_market_regime` and `generate_trade_setup` output
 - Rename `bull_target`/`bear_target` → `upside_reference_level`/`downside_reference_level` (deferred from 22F)

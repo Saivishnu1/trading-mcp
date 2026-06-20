@@ -30,7 +30,7 @@ Tool Count:
 68
 
 Test Count:
-1366 (41 test files, 0 failures)
+1375 (41 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
@@ -154,12 +154,11 @@ Total: 68
 
 Phase 22F (field deletion + market_structure):
 
-* 48 new tests → 1366; 0 regressions
-* `src/tools/analysis.py`: `confidence`, `signal`, `trade_quality`, `regime` deleted from tool output; `market_structure` descriptor added with auto-generated boolean facts + descriptor array; `indicator_interpretation` typed as INTERPRETATION/UNVALIDATED
+* 57 new tests → 1375; 0 regressions
+* `src/tools/analysis.py`: `confidence`, `signal`, `trade_quality`, `regime` deleted; `market_structure` descriptor added; `_generate_reasoning()` replaces service-layer reasoning with observation-only strings derived from `market_structure`; `generate_trade_setup` output now includes `market_structure`
 * `src/meta.py`: `schema_version: 5` added to all tool meta responses permanently
 * `_migration` block added (temporary — Phase 23 removes it)
 * Docstrings embed Phase 20A/21 negative findings
-* Reasoning strings containing `NEUTRAL_BULLISH`/`NEUTRAL_BEARISH` removed
 * Not tagged (research-instrumentation phase)
 
 Phase 22 (decision quality measurement):
