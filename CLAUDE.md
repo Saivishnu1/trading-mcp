@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: 21 cross-sectional screen (complete) — directional-prediction research PAUSED; pivot to risk / journaling / execution discipline / options-volatility
+Current Phase: 22 — Decision quality measurement system (complete)
 
-Current Tool Count: 63
+Current Tool Count: 68
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
@@ -107,14 +107,17 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1232 unit + regression tests across 37 test files (pytest, no live network calls).
+* 1318 unit + regression tests across 40 test files (pytest, no live network calls).
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
-* Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF). Do not add per-module alias tables.
+* Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF / normalize_symbol). Do not add per-module alias tables.
 * Shared scoring/signals live in src/common/ (risk_rating, apply_size_factors, signal sets). Reuse them; do not duplicate.
 * Risk/event scores carry confidence/is_degraded — never gate hard on a degraded or low-confidence composite without surfacing a caution.
 * Analysis basis is yfinance EOD adjusted candles (see data_basis); live quotes (NSELive) are a different vendor/level.
 * `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` are schema v2 immutable entry-time snapshots — never recalculate or modify after trade creation.
+* All MCP tool responses are wrapped: `{"data": <output>, "meta": <trust context>}` — see src/meta.py. Tests that call tool wrappers directly must use `result["data"]`, not `result` directly.
+* Journal DB is schema v4. recommendation_log table added. Partition constants in src/recommendation_log/service.py — NEVER flip bootstrap_period/bias_contaminated automatically; only on conscious human decision.
+* `confidence` and `signal` fields in detect_market_regime / generate_trade_setup are DEPRECATED (Phase 22 Commit 5). Do not add new consumers of these fields. Removal is Commit 6.
 
 ---
 

@@ -352,8 +352,10 @@ class TestAnalyzeTechnicalsTool:
         monkeypatch.setattr(tech, "_load_closes", lambda s, l: (closes, highs, lows))
 
         result = analyze("IDEA")
-        assert "error" in result, "any NaN indicator must produce an error, not a NaN-bearing dict"
-        assert "rsi_14" in result["error"]  # affected indicators are named
+        # Tool now returns {"data": {...}, "meta": {...}}
+        data = result.get("data", result)
+        assert "error" in data, "any NaN indicator must produce an error, not a NaN-bearing dict"
+        assert "rsi_14" in data["error"]  # affected indicators are named
 
     def test_tool_returns_values_when_all_clean(self, monkeypatch):
         tech, analyze = self._get_tool()
@@ -363,6 +365,7 @@ class TestAnalyzeTechnicalsTool:
         monkeypatch.setattr(tech, "_load_closes", lambda s, l: (closes, highs, lows))
 
         result = analyze("INFY")
-        assert "error" not in result
-        assert result["rsi_14"] is not None
-        assert result["atr_14"] is not None
+        data = result.get("data", result)
+        assert "error" not in data
+        assert data["rsi_14"] is not None
+        assert data["atr_14"] is not None

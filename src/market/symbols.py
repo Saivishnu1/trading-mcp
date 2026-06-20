@@ -87,3 +87,48 @@ def is_nse_stock(instrument: str) -> bool:
 def is_index(yf_ticker: str) -> bool:
     """True if the resolved yfinance ticker represents a known index."""
     return yf_ticker in INDEX_TICKERS
+
+
+# Per-tool symbol format requirements (Phase 22 — symbol normalizer)
+_TOOL_FORMATS: dict[str, str] = {
+    "get_quote":             "NSE:{symbol}",
+    "get_ohlc":              "NSE:{symbol}",
+    "get_ltp":               "NSE:{symbol}",
+    "analyze_technicals":    "{symbol}.NS",
+    "calculate_rsi":         "{symbol}.NS",
+    "calculate_ema":         "{symbol}.NS",
+    "calculate_macd":        "{symbol}.NS",
+    "calculate_adx":         "{symbol}.NS",
+    "calculate_atr":         "{symbol}.NS",
+    "get_historical_data":   "{symbol}.NS",
+    "detect_market_regime":  "{symbol}",
+    "generate_trade_setup":  "{symbol}.NS",
+    "recommend_strategy":    "{symbol}",
+}
+
+
+def normalize_symbol(symbol: str, tool: str) -> tuple[str, bool]:
+    """Return (normalized_symbol, was_corrected) for the given tool.
+
+    Strips .NS/.BO suffix if present, upper-cases, applies the tool-specific
+    format.  Indices (NIFTY, BANKNIFTY, etc.) are passed through via to_yf
+    regardless of tool format.  Symbols that resolve to a price < 1 are likely
+    USD tickers; callers should set data_quality='INVALID' in that case.
+
+    Returns the original symbol unchanged if the tool is not in the format map.
+    """
+    raw = symbol.strip()
+    _, base = parse(raw)
+    base_upper = base.upper().removesuffix(".NS").removesuffix(".BO")
+
+    # Index aliases pass through canonical resolution
+    if base_upper in INDEX_YF:
+        normalized = INDEX_YF[base_upper]
+        return normalized, (normalized != raw)
+
+    fmt = _TOOL_FORMATS.get(tool)
+    if fmt is None:
+        return raw, False
+
+    normalized = fmt.format(symbol=base_upper)
+    return normalized, (normalized != raw)

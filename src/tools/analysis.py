@@ -1,6 +1,41 @@
 from mcp.server.fastmcp import FastMCP
 
 from src.analysis import regime
+from src import meta as _meta
+
+_INTERP_LIMITATIONS = [
+    "Regime classification has not been backtested for edge.",
+    "Phase 20A: regime-classifier edge not demonstrated on out-of-sample data.",
+    "Phase 21: momentum signals produced negative spreads in cross-sectional screen.",
+]
+
+# Fields deprecated in Phase 22 — present in responses but scheduled for removal.
+# Removal happens in Commit 6 (two weeks after Commit 5).
+_DEPRECATED_FIELDS = ["confidence", "signal"]
+_DEPRECATION_NOTE = (
+    "Fields 'confidence' and 'signal' have no demonstrated predictive validity. "
+    "Phase 20A: regime-classifier edge not demonstrated. "
+    "Phase 21: momentum signals produced negative spreads. "
+    "These fields are present for backward compatibility and will be removed "
+    "in Phase 22 Commit 6. Do not use them for trading decisions."
+)
+
+
+def _interp_meta(data: dict, *, flag_deprecated: bool = False) -> dict:
+    dq = _meta.DQ_INVALID if "error" in data else _meta.DQ_VALID
+    dep_fields = _DEPRECATED_FIELDS if flag_deprecated else []
+    dep_note = _DEPRECATION_NOTE if flag_deprecated else None
+    return _meta.build_meta(
+        type_=_meta.TYPE_INTERPRETATION,
+        validation_status=_meta.VALIDATION_UNVALIDATED,
+        research_status=_meta.RS_EXPERIMENTAL,
+        data_quality=dq,
+        source="yfinance",
+        account_type="MARKET_DATA_ONLY",
+        limitations=_INTERP_LIMITATIONS,
+        deprecated_fields_present=dep_fields,
+        deprecation_note=dep_note,
+    )
 
 
 def register(mcp: FastMCP) -> None:
@@ -17,7 +52,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        return regime.get_regime_alignment(symbol)
+        data = regime.get_regime_alignment(symbol)
+        return _meta.wrap(data, _interp_meta(data))
 
     @mcp.tool()
     def detect_market_regime(symbol: str) -> dict:
@@ -29,7 +65,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        return regime.detect_market_regime(symbol)
+        data = regime.detect_market_regime(symbol)
+        return _meta.wrap(data, _interp_meta(data, flag_deprecated=True))
 
     @mcp.tool()
     def generate_trade_setup(symbol: str) -> dict:
@@ -42,7 +79,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        return regime.generate_trade_setup(symbol)
+        data = regime.generate_trade_setup(symbol)
+        return _meta.wrap(data, _interp_meta(data, flag_deprecated=True))
 
     @mcp.tool()
     def recommend_strategy(symbol: str) -> dict:
@@ -54,7 +92,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        return regime.recommend_strategy(symbol)
+        data = regime.recommend_strategy(symbol)
+        return _meta.wrap(data, _interp_meta(data))
 
     @mcp.tool()
     def calculate_risk_reward(entry: float, stoploss: float, target: float) -> dict:
@@ -65,7 +104,15 @@ def register(mcp: FastMCP) -> None:
             stoploss: Protective stop price.
             target: Profit target price.
         """
-        return regime.calculate_risk_reward(entry, stoploss, target)
+        data = regime.calculate_risk_reward(entry, stoploss, target)
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_COMPUTED,
+            data_quality=_meta.DQ_VALID,
+            source="internal_journal",
+            account_type="MARKET_DATA_ONLY",
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def calculate_position_size(
@@ -82,4 +129,12 @@ def register(mcp: FastMCP) -> None:
             entry: Planned entry price.
             stoploss: Planned stoploss price.
         """
-        return regime.calculate_position_size(capital, risk_percent, entry, stoploss)
+        data = regime.calculate_position_size(capital, risk_percent, entry, stoploss)
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_COMPUTED,
+            data_quality=_meta.DQ_VALID,
+            source="internal_journal",
+            account_type="MARKET_DATA_ONLY",
+        )
+        return _meta.wrap(data, m)

@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from src.market import get_market
 from src.technical import indicators
+from src import meta as _meta
 
 def _load_candles(symbol: str, lookback_days: int, interval: str = "1d") -> list[dict]:
     """Return raw OHLCV candle dicts (each with a 'date'), or [] on failure.
@@ -46,6 +47,24 @@ def _err(symbol: str, msg: str) -> dict:
     return {"symbol": symbol.upper(), "error": msg}
 
 
+def _indicator_meta_for(data: dict, symbol: str) -> dict:
+    dq = _meta.DQ_INVALID if "error" in data else _meta.detect_data_quality(data, symbol=symbol)
+    warning = None
+    if not _meta.is_market_hours():
+        warning = "Outside NSE session. Indicator computed from last available EOD candle."
+    if dq == _meta.DQ_NAN:
+        warning = (warning or "") + " NaN detected — check symbol or data gap."
+    return _meta.build_meta(
+        type_=_meta.TYPE_INDICATOR,
+        validation_status=_meta.VALIDATION_COMPUTED,
+        data_quality=dq,
+        source="yfinance",
+        account_type="MARKET_DATA_ONLY",
+        limitations=["Derived from EOD-adjusted yfinance candles, not tick data."],
+        warning=warning,
+    )
+
+
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
@@ -69,23 +88,26 @@ def register(mcp: FastMCP) -> None:
         """
         closes, _, _ = _load_closes(symbol, lookback_days)
         if not closes:
-            return _err(symbol, "no price data — check the symbol")
+            data = _err(symbol, "no price data — check the symbol")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         value = indicators.rsi(closes, period)
         if value is None:
-            return _err(symbol, f"insufficient data for period {period}")
+            data = _err(symbol, f"insufficient data for period {period}")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         if value >= 70:
             signal = "overbought"
         elif value <= 30:
             signal = "oversold"
         else:
             signal = "neutral"
-        return {
+        data = {
             "symbol": symbol.upper(),
             "indicator": "RSI",
             "period": period,
             "value": value,
             "signal": signal,
         }
+        return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
     @mcp.tool()
     def calculate_ema(
@@ -105,13 +127,15 @@ def register(mcp: FastMCP) -> None:
         """
         closes, _, _ = _load_closes(symbol, lookback_days)
         if not closes:
-            return _err(symbol, "no price data — check the symbol")
+            data = _err(symbol, "no price data — check the symbol")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         value = indicators.ema(closes, period)
         if value is None:
-            return _err(symbol, f"insufficient data for period {period}")
+            data = _err(symbol, f"insufficient data for period {period}")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         last_close = round(closes[-1], 4)
         position = "above" if last_close > value else "below"
-        return {
+        data = {
             "symbol": symbol.upper(),
             "indicator": "EMA",
             "period": period,
@@ -119,6 +143,7 @@ def register(mcp: FastMCP) -> None:
             "last_close": last_close,
             "price_position": position,
         }
+        return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
     @mcp.tool()
     def calculate_macd(symbol: str, lookback_days: int = 120) -> dict:
@@ -135,21 +160,24 @@ def register(mcp: FastMCP) -> None:
         """
         closes, _, _ = _load_closes(symbol, lookback_days)
         if not closes:
-            return _err(symbol, "no price data — check the symbol")
+            data = _err(symbol, "no price data — check the symbol")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         m = indicators.macd(closes)
         if m["macd"] is None:
-            return _err(symbol, "insufficient data for MACD (need ~35+ candles)")
+            data = _err(symbol, "insufficient data for MACD (need ~35+ candles)")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         if m["histogram"] is None:
             crossover = "unknown"
         else:
             crossover = "bullish" if m["histogram"] > 0 else "bearish"
-        return {
+        data = {
             "symbol": symbol.upper(),
             "indicator": "MACD",
             "fast": 12, "slow": 26, "signal_period": 9,
             **m,
             "momentum": crossover,
         }
+        return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
     @mcp.tool()
     def calculate_adx(
@@ -170,23 +198,26 @@ def register(mcp: FastMCP) -> None:
         """
         closes, highs, lows = _load_closes(symbol, lookback_days)
         if not closes:
-            return _err(symbol, "no price data — check the symbol")
+            data = _err(symbol, "no price data — check the symbol")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         a = indicators.adx(highs, lows, closes, period)
         if a["adx"] is None:
-            return _err(symbol, "insufficient data for ADX (need ~2*period candles)")
+            data = _err(symbol, "insufficient data for ADX (need ~2*period candles)")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         if a["adx"] >= 25:
             strength = "trending"
         elif a["adx"] < 20:
             strength = "ranging"
         else:
             strength = "weak trend"
-        return {
+        data = {
             "symbol": symbol.upper(),
             "indicator": "ADX",
             "period": period,
             **a,
             "trend_strength": strength,
         }
+        return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
     @mcp.tool()
     def calculate_atr(
@@ -210,13 +241,15 @@ def register(mcp: FastMCP) -> None:
         """
         closes, highs, lows = _load_closes(symbol, lookback_days)
         if not closes:
-            return _err(symbol, "no price data — check the symbol")
+            data = _err(symbol, "no price data — check the symbol")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         value = indicators.atr(highs, lows, closes, period)
         if value is None:
-            return _err(symbol, f"insufficient data for period {period}")
+            data = _err(symbol, f"insufficient data for period {period}")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
         last_close = round(closes[-1], 4)
         atr_pct = round(100.0 * value / last_close, 2) if last_close else None
-        return {
+        data = {
             "symbol": symbol.upper(),
             "indicator": "ATR",
             "period": period,
@@ -224,6 +257,7 @@ def register(mcp: FastMCP) -> None:
             "last_close": last_close,
             "atr_percent": atr_pct,
         }
+        return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
     @mcp.tool()
     def analyze_technicals(symbol: str, lookback_days: int = 150) -> dict:
@@ -239,7 +273,8 @@ def register(mcp: FastMCP) -> None:
         """
         closes, highs, lows = _load_closes(symbol, lookback_days)
         if not closes:
-            return _err(symbol, "no price data — check the symbol")
+            data = _err(symbol, "no price data — check the symbol")
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
         candles_used = len(closes)
         last_close = round(closes[-1], 4)
@@ -263,13 +298,14 @@ def register(mcp: FastMCP) -> None:
             if isinstance(v, float) and math.isnan(v)
         ]
         if nan_indicators:
-            return _err(
+            data = _err(
                 symbol,
                 f"indicator(s) invalid ({', '.join(nan_indicators)}) — "
                 f"possible data gap in price history ({candles_used} candles fetched)",
             )
+            return _meta.wrap(data, _indicator_meta_for(data, symbol))
 
-        return {
+        data = {
             "symbol": symbol.upper(),
             "last_close": last_close,
             "candles_used": candles_used,
@@ -280,3 +316,4 @@ def register(mcp: FastMCP) -> None:
             "adx_14": adx_val,
             "atr_14": atr_val,
         }
+        return _meta.wrap(data, _indicator_meta_for(data, symbol))

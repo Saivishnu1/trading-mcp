@@ -20,20 +20,23 @@ Status:
 
 ## Current State
 
-Current Phase: 21 cross-sectional screen (complete) — directional-prediction research PAUSED
+Current Phase: 22 — Decision quality measurement system (complete)
 
 Latest Tag:
 phase-19-multiframe-confirmation
-(Phases 20A and 21 are research phases — no git tags; committed as 64539c4, a7694d6)
+(Phases 20A, 21, 22 are research/instrumentation phases — no git tags)
 
 Tool Count:
-63
+68
 
 Test Count:
-1232 (37 test files, 0 failures)
+1318 (40 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
+
+DB Schema Version:
+4 (recommendation_log table added)
 
 ---
 
@@ -97,7 +100,9 @@ Production deployed on Railway
 
 ✅ Phase 21 — Cross-Sectional Signal Screen (Research — negative finding; directional prediction paused)
 
-⬜ Next — pivot: risk management / journaling / execution discipline / options-volatility structure
+✅ Phase 22 — Decision Quality Measurement (trust metadata, recommendation logger, auto-capture, deprecation flags)
+
+⬜ Phase 22 Commit 6 — Delete deprecated fields (confidence, signal); convert to market_structure descriptors (pending 2-week deprecation period)
 
 ---
 
@@ -113,7 +118,7 @@ Options & Derivatives: 8
 
 Technicals: 6
 
-Analysis: 5
+Analysis: 6
 
 Dashboard: 2
 
@@ -137,11 +142,27 @@ Trade Recommendations: 3
 
 Position Sizing: 3
 
-Total: 62
+Decision Quality (Phase 22): 5
+
+Total: 68
 
 ---
 
 ## Recent Changes
+
+Phase 22 (decision quality measurement):
+
+* 5 new MCP tools (63 → 68): log_recommendation, update_recommendation_outcome, get_recommendation_stats, get_full_market_context, detect_recommendation
+* 86 new tests → 1318; 0 regressions
+* `src/meta.py`: trust metadata layer — every tool response wrapped `{"data": ..., "meta": {...}}`; TYPE_FACT/INDICATOR/INTERPRETATION/PREDICTION; NaN detection, market hours, USD ticker guard, staleness check
+* `src/market/symbols.py`: `normalize_symbol(symbol, tool)` per-tool format normalizer
+* `src/journal/db.py`: schema v4 — `recommendation_log` table + 3 partition views (clean_recommendations, baseline_decisions, bootstrap_records)
+* `src/recommendation_log/service.py`: CRUD for recommendation records; partition constants; `get_recommendation_stats()` refuses analysis before 100 clean records
+* `src/recommendation_log/capture.py`: `detect_recommendation(text)` — 40+ trigger phrases, 9 recommendation types, does NOT auto-log
+* `src/tools/recommendation_log.py`: 5 new tools; `get_full_market_context` replaces 6 separate calls
+* `src/tools/analysis.py`: `detect_market_regime` + `generate_trade_setup` flagged with deprecation warnings for `confidence` and `signal` fields
+* 3 existing tests updated for `{"data":...}` envelope (test_journal_service.py, test_technicals.py, test_journal_sync.py schema version)
+* Not tagged (instrumentation phase)
 
 Phase 21 (cross-sectional screen):
 
@@ -362,15 +383,24 @@ Phase 9:
 
 ## Current Open Work
 
-Directional-prediction research PAUSED after two negative findings (Phase 20A regime
-audit, Phase 21 cross-sectional screen). Audit V2 deferred — the measured effects are
-below the 0.3–0.8%/10d band where statistical rigor would change a decision.
+**Phase 22 complete.** Recommendation logger infrastructure is in place.
 
-Pivot direction (no work started yet):
-- Risk management (hard sizing/heat limits — preventing ruin, not predicting direction)
-- Journaling + calibration repurposed as a behavioral/process-discipline tool
-- Execution discipline / forward recommendation logger (cheap to start; accrues ground truth)
-- Options/volatility structure (IV-percentile premium selling — structural, not directional, edge)
+**Immediate next steps (human process, no code):**
+1. Log 10 baseline decisions (`baseline_no_mcp=True`) before logging MCP-assisted ones — control group
+2. Start fresh Claude conversation each trading day (long sessions cause tool context drops)
+3. Sunday weekly review: blind postmortem (read market_snapshot before claude_reasoning_summary)
+4. Do NOT draw conclusions before 100 clean records
+
+**Pending code — Phase 22 Commit 6 (after 2-week deprecation period):**
+- Delete `confidence` and `signal` from `detect_market_regime` + `generate_trade_setup`
+- Convert to `market_structure` descriptor dict (ema20, ema50, adx, descriptor, adx_note)
+
+**What NOT to build until 100 clean records:**
+- Calibration dashboards
+- Options intelligence expansion
+- Volatility analytics
+- New backtests
+- Performance analytics
 
 Scoped conclusion (do not overclaim): no large, monotone, tradeable cross-sectional
 momentum or volatility edge on Nifty 50 over 2022–2025. Not a proof momentum never works

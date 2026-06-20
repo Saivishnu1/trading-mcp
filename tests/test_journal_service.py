@@ -737,6 +737,8 @@ class TestPerformanceAnalyticsTool:
         r0 = log_trade(symbol="INFY", direction="LONG", entry_price=100.0, signal="BUY")
         close_trade(trade_id=r0["trade_id"], exit_price=110.0)
         result = analytics()
-        assert "error" not in result
-        assert result["closed_trades"] == 1
-        assert result["by_signal"]["BUY"]["wins"] == 1
+        # Tool now returns {"data": {...}, "meta": {...}}
+        data = result.get("data", result)
+        assert "error" not in data
+        assert data["closed_trades"] == 1
+        assert data["by_signal"]["BUY"]["wins"] == 1

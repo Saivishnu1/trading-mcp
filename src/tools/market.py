@@ -1,6 +1,7 @@
 from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from src.market import get_market
+from src import meta as _meta
 
 # Valid yfinance intervals and a human-readable alias map
 _YF_INTERVALS = {
@@ -50,7 +51,20 @@ def register(mcp: FastMCP) -> None:
                          Raw yfinance tickers ('^NSEI', 'INFY.NS') also accepted.
         """
         market = get_market()
-        return {inst: market.get_quote(inst) for inst in instruments}
+        data = {inst: market.get_quote(inst) for inst in instruments}
+        dq = _meta.DQ_INVALID if any(
+            isinstance(v, dict) and "error" in v for v in data.values()
+        ) else _meta.DQ_VALID
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=dq,
+            source="NSELive",
+            account_type="MARKET_DATA_ONLY",
+            warning=None if _meta.is_market_hours() else
+                "Outside NSE session. Quote may be last traded price, not live.",
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def get_ohlc(instruments: list[str]) -> dict:
@@ -61,7 +75,17 @@ def register(mcp: FastMCP) -> None:
                          Example: ['NSE:TCS', 'NSE:WIPRO']
         """
         market = get_market()
-        return {inst: market.get_ohlc(inst) for inst in instruments}
+        data = {inst: market.get_ohlc(inst) for inst in instruments}
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_VALID,
+            source="NSELive",
+            account_type="MARKET_DATA_ONLY",
+            warning=None if _meta.is_market_hours() else
+                "Outside NSE session. OHLC is today's session; may be incomplete.",
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def get_ltp(instruments: list[str]) -> dict:
@@ -72,7 +96,17 @@ def register(mcp: FastMCP) -> None:
                          Example: ['NSE:INFY', 'NSE:NIFTY 50']
         """
         market = get_market()
-        return {inst: {"last_price": market.get_ltp(inst)} for inst in instruments}
+        data = {inst: {"last_price": market.get_ltp(inst)} for inst in instruments}
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_VALID,
+            source="NSELive",
+            account_type="MARKET_DATA_ONLY",
+            warning=None if _meta.is_market_hours() else
+                "Outside NSE session. LTP is last traded price before close.",
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def get_historical_data(
@@ -80,7 +114,7 @@ def register(mcp: FastMCP) -> None:
         from_date: str,
         to_date: str,
         interval: str = "1d",
-    ) -> list[dict]:
+    ) -> dict:
         """Return historical OHLCV candle data via Yahoo Finance.
 
         No authentication required. Data goes back years for daily candles;
@@ -97,5 +131,19 @@ def register(mcp: FastMCP) -> None:
                       Kite-style aliases also accepted: 'minute','5minute',
                                        '15minute','30minute','60minute','day'
         """
-        yf_interval = _resolve_interval(interval)
-        return get_market().get_historical(symbol, from_date, to_date, yf_interval)
+        try:
+            yf_interval = _resolve_interval(interval)
+            candles = get_market().get_historical(symbol, from_date, to_date, yf_interval)
+            dq = _meta.DQ_VALID if candles else _meta.DQ_INVALID
+            m = _meta.build_meta(
+                type_=_meta.TYPE_FACT,
+                validation_status=_meta.VALIDATION_VERIFIED,
+                data_quality=dq,
+                source="yfinance",
+                account_type="MARKET_DATA_ONLY",
+                limitations=["EOD-adjusted candles (split/dividend adjusted)."],
+            )
+            return _meta.wrap(candles, m)
+        except ValueError as exc:
+            m = _meta.build_meta(data_quality=_meta.DQ_INVALID)
+            return _meta.wrap({"error": str(exc)}, m)

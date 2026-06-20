@@ -1976,6 +1976,131 @@ The audit framework is retained for evaluating future regime models.
 
 ---
 
+## Phase 22 — Decision Quality Measurement
+
+**Date:** 2026-06-20
+**Tools at end of phase:** 68 (5 new)
+**Tests:** 1318 (86 new, 0 failures)
+**North star:** Measure whether the MCP improves decision quality — not market prediction.
+
+### What was built
+
+#### Hotfix — Symbol Normalizer (`src/market/symbols.py`)
+- `normalize_symbol(symbol, tool) -> (normalized: str, was_corrected: bool)`
+- Per-tool format map (`_TOOL_FORMATS`): `get_quote` → `NSE:{symbol}`, `analyze_technicals` → `{symbol}.NS`, `detect_market_regime` → bare `{symbol}`, etc.
+- Index aliases (NIFTY, BANKNIFTY…) pass through `INDEX_YF` regardless of tool
+- Bug: used `removesuffix` not `rstrip` — `rstrip(".NS")` strips chars, mangling tickers like "TCS" → "TC"
+
+#### Commit 1 — Trust Metadata (`src/meta.py`)
+All MCP tool responses now return `{"data": <existing output>, "meta": <trust context>}`.
+
+**Meta fields:**
+- `type`: FACT | INDICATOR | INTERPRETATION | PREDICTION (PREDICTION = deprecated)
+- `validation.status`: VERIFIED | MATHEMATICALLY_COMPUTED | UNVALIDATED | DEPRECATED
+- `data_quality`: VALID | NaN_DETECTED | STALE | PARTIAL | INVALID
+- `market_hours`: True during NSE session 09:15–15:30 IST
+- `source`: NSELive | yfinance | internal_journal | zerodha_api
+- `account_type`: MARKET_DATA_ONLY | PAPER_JOURNAL
+- `deprecated_fields_present`, `deprecation_note`
+- `symbol_corrected`, `symbol_original`
+- `bootstrap_period`, `warning`, `limitations`, `as_of`
+
+**`detect_data_quality(data)`:** checks for NaN values, USD tickers (price < 1), staleness > 5 days via `data_basis.staleness_days`.
+
+**Wrapped tools:** market (get_quote, get_ohlc, get_ltp, get_historical_data), technicals (all 6), analysis (all 6), journal (all 7).
+
+Existing tests test the service layer directly — no test breakage from wrapping. Only 3 tests that used the tool wrapper layer directly were updated.
+
+#### Commit 2 — DB Schema v4 (`src/journal/db.py`)
+New `recommendation_log` table:
+
+| Column group | Fields |
+|---|---|
+| Always trusted | timestamp, symbol, market_snapshot (JSON), mcp_facts (JSON), user_action, outcome_1d/5d/20d |
+| Claude layer | claude_reasoning_summary, recommendation_type, uncertainty_level |
+| Decision tracking | mcp_changed_decision, would_have_acted_without_mcp |
+| Process quality | decision_quality (JSON: process_followed, risk_defined, position_sized_correctly, exit_plan_defined) |
+| Postmortem | postmortem_helpful, postmortem_why, postmortem_review_questions (JSON: 6 fields) |
+| Partition flags | bootstrap_period=1 (default), bias_contaminated=1 (default), baseline_no_mcp=0 (default), capture_mode |
+
+**Views:** `clean_recommendations` (bootstrap=0, bias=0), `baseline_decisions` (baseline_no_mcp=1), `bootstrap_records` (bootstrap=1 OR bias=1).
+
+**Partition constants:**
+- `BOOTSTRAP_PERIOD_RECORDS = 50`
+- `BASELINE_RECORDS_REQUIRED = 10`
+- `MIN_CLEAN_RECORDS_FOR_ANALYSIS = 100`
+
+Schema version 3 → 4. Migration: `recommendation_log` created via `IF NOT EXISTS` — no ALTER needed for existing DBs.
+
+#### Commit 3 — Logger Service + Tools
+**`src/recommendation_log/service.py`:**
+- `log_recommendation(symbol, user_question, market_snapshot, mcp_facts, claude_reasoning_summary, recommendation_type, uncertainty_level, baseline_no_mcp) → dict`
+  - Returns record with `id` (format: `REC-xxxxxxxx`)
+  - All outcome fields NULL at creation
+  - `bootstrap_period=1`, `bias_contaminated=1` always at creation
+- `update_recommendation_outcome(id, user_action, mcp_changed_decision, ..., postmortem_review_questions) → dict`
+  - Partial updates only (non-None fields only)
+  - Called during weekly review, NOT at trade time
+- `get_recommendation_stats(clean_only=True) → dict`
+  - Returns partition counts + `analysis_ready` bool
+  - `stats=None` until `MIN_CLEAN_RECORDS_FOR_ANALYSIS` + `BASELINE_RECORDS_REQUIRED` met
+- `get_recommendation_by_id(id) → dict`
+
+**`src/tools/recommendation_log.py`** — 5 new MCP tools:
+- `log_recommendation` — capture a Claude recommendation after giving it
+- `update_recommendation_outcome` — fill postmortem during weekly review
+- `get_recommendation_stats` — partition counts + readiness
+- `get_full_market_context(symbol, include_options=False)` — single call replacing 6 separate calls; returns quote + OHLC + technicals + regime + VIX + upcoming events; include_options adds OI S/R levels
+- `detect_recommendation(text)` — scan text for trigger phrases (returns metadata, does NOT auto-log)
+
+#### Commit 4 — Auto-capture (`src/recommendation_log/capture.py`)
+`detect_recommendation(text) → dict` scans for 40+ trigger phrases across 9 recommendation types (ENTER/EXIT/HOLD/AVOID/STAY_CASH/SIZE_REDUCE/TAKE_PROFIT/TIGHTEN_STOP/OBSERVE). Returns `dominant_type`, `triggers_found[]`, `requires_logging`, `capture_mode='auto'`. Does NOT auto-log.
+
+#### Commit 5 — Deprecation Flags
+`detect_market_regime` and `generate_trade_setup` now emit `deprecated_fields_present: ["confidence", "signal"]` and a `deprecation_note` citing Phase 20A and Phase 21 negative findings. Fields remain present for backward compatibility. Removal scheduled for Commit 6 (2 weeks later, manual decision).
+
+### Deprecation plan (Commit 6 — pending)
+```
+DEPRECATED_FIELDS = ["confidence", "signal", "trade_quality", "quality",
+                     "bullish_probability", "HIGH_QUALITY", "recommendation"]
+DEPRECATION_REASON = "No demonstrated predictive validity. Phase 20A and 21 negative findings."
+```
+Commit 6 deletes these fields and converts signals to descriptors:
+```json
+"market_structure": {
+  "ema20": 24500, "ema50": 24100, "adx": 32,
+  "descriptor": "price_above_ema20_above_ema50",
+  "adx_note": "trend_present_above_25"
+}
+```
+
+### Weekly review ritual (human process, not code)
+1. Open `recommendation_log` on Sunday
+2. For each unreviewed record: read `market_snapshot` + `mcp_facts` first
+3. Answer 6 postmortem questions BEFORE reading `claude_reasoning_summary` (blind review)
+4. Fill postmortem fields via `update_recommendation_outcome`
+5. Do NOT draw conclusions before 100 clean records
+
+### New tool registry additions
+
+| Tool | Module | Description |
+|---|---|---|
+| `log_recommendation` | recommendation_log | Log a Claude recommendation for later review |
+| `update_recommendation_outcome` | recommendation_log | Fill postmortem during weekly review |
+| `get_recommendation_stats` | recommendation_log | Partition counts + analysis readiness |
+| `get_full_market_context` | recommendation_log | Single-call market context (replaces 6 calls) |
+| `detect_recommendation` | recommendation_log | Scan text for recommendation triggers |
+
+### Test files added
+
+| File | Tests | Coverage |
+|---|---|---|
+| `tests/test_phase22_meta.py` | 32 | src/meta.py — all public functions |
+| `tests/test_phase22_symbols.py` | 13 | normalize_symbol() |
+| `tests/test_phase22_recommendation_log.py` | 41 | service CRUD, detect_recommendation, stats |
+
+---
+
 ## Key Technical Constraints
 
 | Constraint | Resolution |

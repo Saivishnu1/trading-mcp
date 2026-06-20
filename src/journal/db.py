@@ -9,7 +9,7 @@ _TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 _INIT_LOCK = threading.Lock()
 _conn = None  # sqlite3.Connection or libsql_experimental connection
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -69,6 +69,79 @@ _V3_MIGRATIONS = [
     "ALTER TABLE trades ADD COLUMN external_id TEXT",
 ]
 
+# v3 → v4: recommendation decision-quality logger (Phase 22)
+_DDL_RECOMMENDATION_LOG = """
+CREATE TABLE IF NOT EXISTS recommendation_log (
+    id                          TEXT    PRIMARY KEY,
+
+    -- Always trusted
+    timestamp                   TEXT    NOT NULL,
+    symbol                      TEXT,
+    market_snapshot             TEXT,
+    mcp_facts                   TEXT,
+    user_action                 TEXT,
+    outcome_1d                  REAL,
+    outcome_5d                  REAL,
+    outcome_20d                 REAL,
+
+    -- Claude reasoning layer (stored, partitioned)
+    claude_reasoning_summary    TEXT,
+    recommendation_type         TEXT    CHECK(recommendation_type IN (
+                                    'ENTER','EXIT','HOLD','AVOID',
+                                    'OBSERVE','STAY_CASH','SIZE_REDUCE',
+                                    'TAKE_PROFIT','TIGHTEN_STOP','NONE'
+                                )),
+    uncertainty_level           TEXT    CHECK(uncertainty_level IN (
+                                    'LOW','MEDIUM','HIGH'
+                                )),
+
+    -- Decision tracking (stored, partitioned)
+    mcp_changed_decision        INTEGER,
+    would_have_acted_without_mcp INTEGER,
+
+    -- Process quality (stored, partitioned)
+    decision_quality            TEXT,
+
+    -- Postmortem (stored, partitioned)
+    postmortem_helpful          INTEGER,
+    postmortem_why              TEXT,
+    postmortem_review_questions TEXT,
+
+    -- Partition flags
+    bootstrap_period            INTEGER DEFAULT 1,
+    bias_contaminated           INTEGER DEFAULT 1,
+    baseline_no_mcp             INTEGER DEFAULT 0,
+    capture_mode                TEXT    DEFAULT 'manual' CHECK(capture_mode IN (
+                                    'manual','auto','baseline'
+                                )),
+
+    created_at                  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at                  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+_DDL_RECOMMENDATION_VIEWS = [
+    """
+    CREATE VIEW IF NOT EXISTS clean_recommendations AS
+    SELECT * FROM recommendation_log
+    WHERE bootstrap_period = 0
+    AND bias_contaminated = 0
+    """,
+    """
+    CREATE VIEW IF NOT EXISTS baseline_decisions AS
+    SELECT * FROM recommendation_log
+    WHERE baseline_no_mcp = 1
+    """,
+    """
+    CREATE VIEW IF NOT EXISTS bootstrap_records AS
+    SELECT * FROM recommendation_log
+    WHERE bootstrap_period = 1
+    OR bias_contaminated = 1
+    """,
+]
+
+_V4_MIGRATIONS: list[str] = []  # recommendation_log is new; no ALTER needed
+
 _DDL_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_trades_symbol      ON trades(symbol)",
     "CREATE INDEX IF NOT EXISTS idx_trades_status      ON trades(status)",
@@ -81,6 +154,7 @@ _DDL_INDEXES = [
 def _init_schema(conn) -> None:
     conn.execute(_DDL_SCHEMA_VERSION)
     conn.execute(_DDL_TRADES)
+    conn.execute(_DDL_RECOMMENDATION_LOG)
     # Run migrations before creating indexes so all columns exist first
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     existing_version = _get_schema_version(conn)
@@ -102,12 +176,15 @@ def _init_schema(conn) -> None:
                     conn.execute(sql)
                 except Exception:
                     pass  # column already exists (idempotent)
+        # v4: recommendation_log created above via IF NOT EXISTS — no ALTER needed
         conn.execute(
             "UPDATE schema_version SET version = ?, applied = ?",
             (_SCHEMA_VERSION, now),
         )
     for idx_sql in _DDL_INDEXES:
         conn.execute(idx_sql)
+    for view_sql in _DDL_RECOMMENDATION_VIEWS:
+        conn.execute(view_sql)
     conn.commit()
 
 

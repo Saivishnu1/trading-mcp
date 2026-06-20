@@ -9,6 +9,24 @@ from src.journal.service import (
     get_performance_analytics as _get_performance_analytics,
     sync_zerodha_orders as _sync_zerodha_orders,
 )
+from src import meta as _meta
+
+_JOURNAL_WARNING = (
+    "Internal paper journal only. "
+    "Not connected to real Zerodha account without authenticated login."
+)
+
+
+def _journal_meta(data: dict) -> dict:
+    dq = _meta.DQ_INVALID if "error" in data else _meta.DQ_VALID
+    return _meta.build_meta(
+        type_=_meta.TYPE_FACT,
+        validation_status=_meta.VALIDATION_VERIFIED,
+        data_quality=dq,
+        source="internal_journal",
+        account_type="PAPER_JOURNAL",
+        warning=_JOURNAL_WARNING,
+    )
 
 
 def register(mcp: FastMCP) -> None:
@@ -48,7 +66,7 @@ def register(mcp: FastMCP) -> None:
         Returns the full trade record with a trade_id (format: TRD-xxxxxxxx).
         Use trade_id with close_trade() to finalise the position.
         """
-        return _log_trade(
+        data = _log_trade(
             symbol=symbol,
             direction=direction,
             entry_price=entry_price,
@@ -67,6 +85,7 @@ def register(mcp: FastMCP) -> None:
             tags=tags,
             notes=notes,
         )
+        return _meta.wrap(data, _journal_meta(data))
 
     @mcp.tool()
     def close_trade(
@@ -83,12 +102,13 @@ def register(mcp: FastMCP) -> None:
 
         Returns the closed trade record including pnl, pnl_percent, and holding_days.
         """
-        return _close_trade(
+        data = _close_trade(
             trade_id=trade_id,
             exit_price=exit_price,
             exit_reason=exit_reason,
             notes=notes,
         )
+        return _meta.wrap(data, _journal_meta(data))
 
     @mcp.tool()
     def get_open_trades(symbol: str | None = None) -> dict:
@@ -98,7 +118,8 @@ def register(mcp: FastMCP) -> None:
 
         Response: { count, trades: [ full trade records ] }
         """
-        return _get_open_trades(symbol=symbol)
+        data = _get_open_trades(symbol=symbol)
+        return _meta.wrap(data, _journal_meta(data))
 
     @mcp.tool()
     def get_trade_history(
@@ -119,12 +140,13 @@ def register(mcp: FastMCP) -> None:
           summary: total_trades, win_count, loss_count, win_rate_pct,
                    total_pnl, avg_pnl, avg_holding_days, best_trade, worst_trade
         """
-        return _get_trade_history(
+        data = _get_trade_history(
             symbol=symbol,
             days=days,
             status=status,
             limit=limit,
         )
+        return _meta.wrap(data, _journal_meta(data))
 
     @mcp.tool()
     def get_performance_analytics(
@@ -151,11 +173,12 @@ def register(mcp: FastMCP) -> None:
         Note: confidence buckets require analysis_snapshot.confidence to have
         been stored at log_trade time; otherwise trades fall in the 'unknown' band.
         """
-        return _get_performance_analytics(
+        data = _get_performance_analytics(
             symbol=symbol,
             days=days,
             min_sample=min_sample,
         )
+        return _meta.wrap(data, _journal_meta(data))
 
     @mcp.tool()
     def get_orders(status: str = "complete") -> dict:
@@ -171,9 +194,18 @@ def register(mcp: FastMCP) -> None:
             if status:
                 s = status.upper()
                 orders = [o for o in orders if (o.get("status") or "").upper() == s]
-            return {"count": len(orders), "orders": orders}
+            data = {"count": len(orders), "orders": orders}
         except Exception as exc:
-            return {"error": str(exc)}
+            data = {"error": str(exc)}
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_INVALID if "error" in data else _meta.DQ_VALID,
+            source="zerodha_api",
+            account_type="MARKET_DATA_ONLY",
+            zerodha_connected=True,
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def sync_trades_from_zerodha() -> dict:
@@ -195,6 +227,7 @@ def register(mcp: FastMCP) -> None:
         """
         try:
             orders = _get_broker().orders()
-            return _sync_zerodha_orders(orders)
+            data = _sync_zerodha_orders(orders)
         except Exception as exc:
-            return {"error": str(exc)}
+            data = {"error": str(exc)}
+        return _meta.wrap(data, _journal_meta(data))
