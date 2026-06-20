@@ -9,22 +9,16 @@ _INTERP_LIMITATIONS = [
     "Phase 21: momentum signals produced negative spreads in cross-sectional screen.",
 ]
 
-# Fields deprecated in Phase 22 — present in responses but scheduled for removal.
-# Removal happens in Commit 6 (two weeks after Commit 5).
-_DEPRECATED_FIELDS = ["confidence", "signal"]
-_DEPRECATION_NOTE = (
-    "Fields 'confidence' and 'signal' have no demonstrated predictive validity. "
-    "Phase 20A: regime-classifier edge not demonstrated. "
-    "Phase 21: momentum signals produced negative spreads. "
-    "These fields are present for backward compatibility and will be removed "
-    "in Phase 22 Commit 6. Do not use them for trading decisions."
-)
+# Synthetic conviction fields deleted in Phase 22F (Commit 6).
+# No longer present in any tool output — fully removed, not just deprecated.
+_SETUP_FIELDS_TO_DELETE = {"confidence", "signal", "trade_quality", "quality", "bullish_probability"}
+
+# Regime labels encoding directional bias — removed from reasoning strings in Phase 22F.
+_FORBIDDEN_REGIME_LABELS = {"NEUTRAL_BULLISH", "NEUTRAL_BEARISH"}
 
 
-def _interp_meta(data: dict, *, flag_deprecated: bool = False) -> dict:
+def _interp_meta(data: dict) -> dict:
     dq = _meta.DQ_INVALID if "error" in data else _meta.DQ_VALID
-    dep_fields = _DEPRECATED_FIELDS if flag_deprecated else []
-    dep_note = _DEPRECATION_NOTE if flag_deprecated else None
     return _meta.build_meta(
         type_=_meta.TYPE_INTERPRETATION,
         validation_status=_meta.VALIDATION_UNVALIDATED,
@@ -33,9 +27,113 @@ def _interp_meta(data: dict, *, flag_deprecated: bool = False) -> dict:
         source="yfinance",
         account_type="MARKET_DATA_ONLY",
         limitations=_INTERP_LIMITATIONS,
-        deprecated_fields_present=dep_fields,
-        deprecation_note=dep_note,
     )
+
+
+def _clean_reasoning(reasoning: list) -> list:
+    """Remove reasoning strings that reference regime labels deleted in Phase 22F."""
+    return [r for r in reasoning if not any(label in r for label in _FORBIDDEN_REGIME_LABELS)]
+
+
+def _build_market_structure(raw: dict) -> dict:
+    """
+    Convert raw detect_market_regime service output to market_structure descriptor format.
+
+    Phase 22F: replaces regime/confidence synthetic fields with observed boolean
+    facts and an auto-generated descriptor array that always mirrors the booleans.
+    """
+    if "error" in raw:
+        return raw
+
+    price = raw.get("price") or 0.0
+    ema20 = raw.get("ema20") or 0.0
+    ema50 = raw.get("ema50") or 0.0
+    adx = raw.get("adx") or 0.0
+    rsi = raw.get("rsi") or 0.0
+
+    price_above_ema20 = bool(price > ema20)
+    ema20_above_ema50 = bool(ema20 > ema50)
+    adx_above_25 = bool(adx > 25)
+    rsi_above_60 = bool(rsi > 60)
+
+    # Descriptor must always mirror booleans exactly — never hardcoded.
+    descriptor = []
+    if price_above_ema20:
+        descriptor.append("price_above_ema20")
+    if ema20_above_ema50:
+        descriptor.append("ema20_above_ema50")
+    if adx_above_25:
+        descriptor.append("adx_above_25")
+    if rsi_above_60:
+        descriptor.append("rsi_above_60")
+
+    if adx < 15:
+        adx_note = "trend_absent"
+    elif adx < 25:
+        adx_note = "trend_weak"
+    elif adx < 35:
+        adx_note = "trend_present"
+    else:
+        adx_note = "strong_trend_present"
+
+    if rsi < 30:
+        rsi_note = "oversold"
+    elif rsi < 45:
+        rsi_note = "momentum_low"
+    elif rsi < 55:
+        rsi_note = "momentum_neutral"
+    elif rsi < 70:
+        rsi_note = "momentum_elevated"
+    else:
+        rsi_note = "overbought"
+
+    return {
+        "symbol": raw.get("symbol"),
+        "market_structure": {
+            "price": price,
+            "ema20": ema20,
+            "ema50": ema50,
+            "adx": adx,
+            "rsi": rsi,
+            "price_above_ema20": price_above_ema20,
+            "ema20_above_ema50": ema20_above_ema50,
+            "adx_above_25": adx_above_25,
+            "rsi_above_60": rsi_above_60,
+            "descriptor": descriptor,
+            "indicator_interpretation": {
+                "type": "INTERPRETATION",
+                "validation_status": "UNVALIDATED",
+                "adx_note": adx_note,
+                "rsi_note": rsi_note,
+            },
+        },
+        # TODO Phase 23: remove _migration block from output
+        # Keep only meta["schema_version"] going forward
+        # _migration is temporary compatibility signal only
+        "_migration": {
+            "regime_removed": True,
+            "replacement": "market_structure",
+            "schema_version": 5,
+        },
+    }
+
+
+def _clean_generate_setup(raw: dict) -> dict:
+    """Strip synthetic conviction fields from generate_trade_setup service output."""
+    if "error" in raw:
+        return raw
+    clean = {k: v for k, v in raw.items() if k not in _SETUP_FIELDS_TO_DELETE}
+    if "reasoning" in clean and isinstance(clean["reasoning"], list):
+        clean["reasoning"] = _clean_reasoning(clean["reasoning"])
+    # TODO Phase 23: remove _migration block from output
+    # Keep only meta["schema_version"] going forward
+    # _migration is temporary compatibility signal only
+    clean["_migration"] = {
+        "regime_removed": True,
+        "replacement": "market_structure",
+        "schema_version": 5,
+    }
+    return clean
 
 
 def register(mcp: FastMCP) -> None:
@@ -57,30 +155,51 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def detect_market_regime(symbol: str) -> dict:
-        """Detect the current market regime for a symbol.
+        """Detect market structure for a symbol.
 
-        Reuses the same daily technical snapshot logic as the technical tools
-        and classifies the symbol into a deterministic market regime.
+        ⚠️ IMPORTANT FOR CLAUDE — READ BEFORE USING:
+        Output is a STRUCTURAL DESCRIPTOR not a prediction.
+        'price_above_ema20' = observed fact.
+        'strong_trend_present' = UNVALIDATED indicator note.
+        Phase 20A confirmed no forward return edge
+        across regime classifications on Nifty 50.
+        Do NOT use market_structure as a directional signal.
+        indicator_interpretation.type = INTERPRETATION
+        indicator_interpretation.validation_status = UNVALIDATED
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        data = regime.detect_market_regime(symbol)
-        return _meta.wrap(data, _interp_meta(data, flag_deprecated=True))
+        raw = regime.detect_market_regime(symbol)
+        data = _build_market_structure(raw)
+        return _meta.wrap(data, _interp_meta(data))
 
     @mcp.tool()
     def generate_trade_setup(symbol: str) -> dict:
-        """Generate a deterministic trade setup for a symbol.
+        """Generate trade setup for a symbol.
 
-        Uses the bundled technical analysis plus detected market regime to
-        output BUY, SELL, NEUTRAL, NEUTRAL_BULLISH, or NEUTRAL_BEARISH
-        with deterministic entry zones, targets, and reasoning.
+        ⚠️ IMPORTANT FOR CLAUDE — READ BEFORE USING:
+        This tool has NO demonstrated directional edge.
+        Phase 20A: regime classifier tested walk-forward
+        on Nifty 50 — no edge demonstrated on
+        out-of-sample data.
+        Phase 21: momentum signals produced negative
+        spreads (-0.286%, -0.141% per 10 days).
+
+        Use output as STRUCTURAL CONTEXT only:
+        - entry/stoploss/target = reference levels only
+        - NOT predictions of future price movement
+        - market_structure = observed conditions, not signals
+        - bull_target/bear_target = scenario levels, not signals
+        - indicator_interpretation = UNVALIDATED notes only
+        - All interpretation fields are UNVALIDATED
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        data = regime.generate_trade_setup(symbol)
-        return _meta.wrap(data, _interp_meta(data, flag_deprecated=True))
+        raw = regime.generate_trade_setup(symbol)
+        data = _clean_generate_setup(raw)
+        return _meta.wrap(data, _interp_meta(data))
 
     @mcp.tool()
     def recommend_strategy(symbol: str) -> dict:

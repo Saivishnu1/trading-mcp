@@ -171,6 +171,7 @@ def build_meta(
         "symbol_original": symbol_original,
         "bootstrap_period": bootstrap_period,
         "warning": warning,
+        "schema_version": 5,
     }
     return meta
 

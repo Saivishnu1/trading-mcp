@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 22 — Decision quality measurement system (complete)
+Current Phase: 22F — Field deletion + market_structure conversion (complete)
 
 Current Tool Count: 68
 
@@ -107,7 +107,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1318 unit + regression tests across 40 test files (pytest, no live network calls).
+* 1366 unit + regression tests across 41 test files (pytest, no live network calls).
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF / normalize_symbol). Do not add per-module alias tables.
@@ -117,7 +117,11 @@ When generating tests:
 * `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` are schema v2 immutable entry-time snapshots — never recalculate or modify after trade creation.
 * All MCP tool responses are wrapped: `{"data": <output>, "meta": <trust context>}` — see src/meta.py. Tests that call tool wrappers directly must use `result["data"]`, not `result` directly.
 * Journal DB is schema v4. recommendation_log table added. Partition constants in src/recommendation_log/service.py — NEVER flip bootstrap_period/bias_contaminated automatically; only on conscious human decision.
-* `confidence` and `signal` fields in detect_market_regime / generate_trade_setup are DEPRECATED (Phase 22 Commit 5). Do not add new consumers of these fields. Removal is Commit 6.
+* `confidence`, `signal`, `trade_quality`, `quality`, `bullish_probability` are DELETED (Phase 22F). Do not add them back.
+* `detect_market_regime` returns `market_structure` (boolean facts + descriptor array), not `regime`/`confidence`. The `regime` key is deleted.
+* `generate_trade_setup` returns `entry/stoploss/target/entry_above/entry_below/bull_target/bear_target/reasoning/_migration` only.
+* `_migration` block in both tools is TEMPORARY — remove in Phase 23.
+* DB schema v5 in meta layer (`meta["schema_version"] == 5`). Journal DB is still schema v4.
 
 ---
 
