@@ -96,9 +96,9 @@ class JugaadClient:
                 return False
             Zerodha = self._import_zerodha()
             kite = Zerodha()
-            # jugaad-trader stores the web session token as enctoken
+            # Setting enctoken directly is sufficient for jugaad-trader to
+            # authenticate subsequent requests without needing set_access_token().
             kite.enctoken = token
-            kite.set_access_token()
             self._kite = kite
             logger.info("JugaadClient: session restored from %s", path)
             return True
@@ -107,7 +107,8 @@ class JugaadClient:
             return False
 
     def orders(self) -> list[dict]:
-        raise NotImplementedError("orders() not supported by jugaad backend — use zerodha_web")
+        return self._require_auth().orders()
 
     def trades(self) -> list[dict]:
-        raise NotImplementedError("trades() not supported by jugaad backend — use zerodha_web")
+        return self._require_auth().trades()
+

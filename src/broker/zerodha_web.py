@@ -51,9 +51,9 @@ class ZerodhaWebClient:
 
     def _set_token(self, token: str) -> None:
         self._enctoken = token
-        self._http.headers["Authorization"] = f"enctoken {token}"
-        # Set the enctoken cookie explicitly so both auth mechanisms are active,
-        # matching what a real Kite browser session does.
+        # Zerodha's backend flags the Authorization header as a non-browser client
+        # and returns "not available in frontend proxy mode" for portfolio endpoints.
+        # Real browsers authenticate via cookie only — no Authorization header.
         self._http.cookies.set("enctoken", token, domain="kite.zerodha.com")
 
     def _require_auth(self) -> None:
