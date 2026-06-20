@@ -462,3 +462,113 @@ class TestRegressionKeptFields:
         result = tools["generate_trade_setup"]("NIFTY")
         for field in ["type", "data_quality", "as_of", "validation", "schema_version"]:
             assert field in result["meta"]
+
+    def test_market_structure_present_in_generate_trade_setup(self, patch_analyze):
+        patch_analyze(BULL_TREND_TECH)
+        tools = _get_tools()
+        data = tools["generate_trade_setup"]("NIFTY")["data"]
+        assert "market_structure" in data
+
+
+# ---------------------------------------------------------------------------
+# Reasoning decontamination — observation-only strings, no predictive language
+# ---------------------------------------------------------------------------
+
+class TestReasoningDecontamination:
+    FORBIDDEN = [
+        "bullish", "bearish", "bull_trend", "bear_trend",
+        "conviction", "directional", "favorable for",
+        "aligning with", "supports continuation",
+        "likely", "strong_buy", "strong_sell",
+        "long position", "short position",
+        "setup", "opportunity", "confirms",
+    ]
+
+    def test_reasoning_no_directional_language_bull(self, patch_analyze):
+        patch_analyze(BULL_TREND_TECH)
+        tools = _get_tools()
+        reasoning = " ".join(
+            tools["generate_trade_setup"]("NIFTY")["data"].get("reasoning", [])
+        ).lower()
+        for word in self.FORBIDDEN:
+            assert word not in reasoning, (
+                f"Forbidden word '{word}' found in reasoning: {reasoning}"
+            )
+
+    def test_reasoning_no_directional_language_neutral_bullish(self, patch_analyze):
+        patch_analyze(NEUTRAL_BULLISH_TECH)
+        tools = _get_tools()
+        reasoning = " ".join(
+            tools["generate_trade_setup"]("NIFTY")["data"].get("reasoning", [])
+        ).lower()
+        for word in self.FORBIDDEN:
+            assert word not in reasoning, (
+                f"Forbidden word '{word}' found in reasoning: {reasoning}"
+            )
+
+    def test_reasoning_no_directional_language_neutral_bearish(self, patch_analyze):
+        patch_analyze(NEUTRAL_BEARISH_TECH)
+        tools = _get_tools()
+        reasoning = " ".join(
+            tools["generate_trade_setup"]("NIFTY")["data"].get("reasoning", [])
+        ).lower()
+        for word in self.FORBIDDEN:
+            assert word not in reasoning, (
+                f"Forbidden word '{word}' found in reasoning: {reasoning}"
+            )
+
+    def test_reasoning_references_market_structure(self, patch_analyze):
+        patch_analyze(BULL_TREND_TECH)
+        tools = _get_tools()
+        result = tools["generate_trade_setup"]("NIFTY")
+        reasoning = " ".join(result["data"]["reasoning"]).lower()
+        ms = result["data"]["market_structure"]
+        assert "ema20" in reasoning
+        assert "ema50" in reasoning
+        assert "adx" in reasoning
+        assert "rsi" in reasoning
+        if ms["price_above_ema20"]:
+            assert "price" in reasoning
+        if ms["ema20_above_ema50"]:
+            assert "ema20" in reasoning
+            assert "ema50" in reasoning
+
+    def test_reasoning_references_descriptor(self, patch_analyze):
+        patch_analyze(BULL_TREND_TECH)
+        tools = _get_tools()
+        result = tools["generate_trade_setup"]("NIFTY")
+        reasoning = " ".join(result["data"]["reasoning"])
+        ms = result["data"]["market_structure"]
+        if ms["descriptor"]:
+            assert "market structure" in reasoning.lower()
+
+    def test_reasoning_is_derived_not_separate(self, patch_analyze):
+        patch_analyze(BEAR_TREND_TECH)
+        tools = _get_tools()
+        result = tools["generate_trade_setup"]("NIFTY")
+        ms = result["data"]["market_structure"]
+        reasoning = " ".join(result["data"]["reasoning"]).lower()
+        if not ms["price_above_ema20"]:
+            assert "price" not in reasoning or "below ema20" in reasoning
+
+    def test_reasoning_is_list_of_strings(self, patch_analyze):
+        patch_analyze(BULL_TREND_TECH)
+        tools = _get_tools()
+        reasoning = tools["generate_trade_setup"]("NIFTY")["data"]["reasoning"]
+        assert isinstance(reasoning, list)
+        assert all(isinstance(s, str) for s in reasoning)
+        assert len(reasoning) >= 4
+
+    def test_reasoning_empty_descriptor_handled(self, monkeypatch):
+        from tests.conftest import _tech
+        # All indicators neutral — no boolean True → empty descriptor
+        flat = _tech("NIFTY", rsi=50.0, ema20=100.0, ema50=101.0,
+                     adx=20.0, price=99.0, atr=2.0)
+        monkeypatch.setattr(
+            "src.analysis.regime._analyze_technicals",
+            lambda symbol, lookback_days=150, interval="daily": flat,
+        )
+        tools = _get_tools()
+        reasoning = tools["generate_trade_setup"]("NIFTY")["data"]["reasoning"]
+        combined = " ".join(reasoning).lower()
+        assert "no threshold conditions currently met" in combined

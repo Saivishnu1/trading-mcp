@@ -13,9 +13,6 @@ _INTERP_LIMITATIONS = [
 # No longer present in any tool output — fully removed, not just deprecated.
 _SETUP_FIELDS_TO_DELETE = {"confidence", "signal", "trade_quality", "quality", "bullish_probability"}
 
-# Regime labels encoding directional bias — removed from reasoning strings in Phase 22F.
-_FORBIDDEN_REGIME_LABELS = {"NEUTRAL_BULLISH", "NEUTRAL_BEARISH"}
-
 
 def _interp_meta(data: dict) -> dict:
     dq = _meta.DQ_INVALID if "error" in data else _meta.DQ_VALID
@@ -28,11 +25,6 @@ def _interp_meta(data: dict) -> dict:
         account_type="MARKET_DATA_ONLY",
         limitations=_INTERP_LIMITATIONS,
     )
-
-
-def _clean_reasoning(reasoning: list) -> list:
-    """Remove reasoning strings that reference regime labels deleted in Phase 22F."""
-    return [r for r in reasoning if not any(label in r for label in _FORBIDDEN_REGIME_LABELS)]
 
 
 def _build_market_structure(raw: dict) -> dict:
@@ -118,22 +110,71 @@ def _build_market_structure(raw: dict) -> dict:
     }
 
 
-def _clean_generate_setup(raw: dict) -> dict:
-    """Strip synthetic conviction fields from generate_trade_setup service output."""
-    if "error" in raw:
-        return raw
-    clean = {k: v for k, v in raw.items() if k not in _SETUP_FIELDS_TO_DELETE}
-    if "reasoning" in clean and isinstance(clean["reasoning"], list):
-        clean["reasoning"] = _clean_reasoning(clean["reasoning"])
-    # TODO Phase 23: remove _migration block from output
-    # Keep only meta["schema_version"] going forward
-    # _migration is temporary compatibility signal only
-    clean["_migration"] = {
-        "regime_removed": True,
-        "replacement": "market_structure",
-        "schema_version": 5,
-    }
-    return clean
+def _generate_reasoning(
+    price: float,
+    ema20: float,
+    ema50: float,
+    adx: float,
+    rsi: float,
+    price_above_ema20: bool,
+    ema20_above_ema50: bool,
+    adx_above_25: bool,
+    rsi_above_60: bool,
+    adx_note: str,
+    rsi_note: str,
+    descriptor: list,
+) -> list:
+    # REASONING GENERATION RULES
+    #
+    # Reasoning MAY:
+    # - describe current observed state
+    # - summarize indicator values
+    # - explain threshold crossings
+    # - reference market_structure descriptors
+    #
+    # Reasoning MAY NOT:
+    # - predict future price movement
+    # - recommend a direction
+    # - imply probability of success
+    # - imply edge or conviction
+    # - use synonyms for the above
+    #
+    # Test: could this sentence appear in a physics
+    # textbook describing current state?
+    # If yes → allowed.
+    # If it implies what will happen next → forbidden.
+    reasoning = []
+
+    # Price vs EMA20 — observed fact
+    if price_above_ema20:
+        reasoning.append(f"Price ({price}) is above EMA20 ({ema20:.2f}).")
+    else:
+        reasoning.append(f"Price ({price}) is below EMA20 ({ema20:.2f}).")
+
+    # EMA20 vs EMA50 — observed fact
+    if ema20_above_ema50:
+        reasoning.append(f"EMA20 ({ema20:.2f}) is above EMA50 ({ema50:.2f}).")
+    else:
+        reasoning.append(f"EMA20 ({ema20:.2f}) is below EMA50 ({ema50:.2f}).")
+
+    # ADX — threshold crossing + note only
+    reasoning.append(
+        f"ADX is {adx:.2f} "
+        f"({'above' if adx_above_25 else 'below'} the 25 threshold): {adx_note}."
+    )
+
+    # RSI — classification only
+    reasoning.append(f"RSI is {rsi:.2f}: {rsi_note}.")
+
+    # Descriptor summary — current structure, no interpretation
+    if descriptor:
+        reasoning.append(
+            f"Current market structure includes: {', '.join(descriptor)}."
+        )
+    else:
+        reasoning.append("No threshold conditions currently met.")
+
+    return reasoning
 
 
 def register(mcp: FastMCP) -> None:
@@ -191,14 +232,47 @@ def register(mcp: FastMCP) -> None:
         - NOT predictions of future price movement
         - market_structure = observed conditions, not signals
         - bull_target/bear_target = scenario levels, not signals
-        - indicator_interpretation = UNVALIDATED notes only
+        - reasoning = observed facts only, no directional implication
         - All interpretation fields are UNVALIDATED
 
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        raw = regime.generate_trade_setup(symbol)
-        data = _clean_generate_setup(raw)
+        raw_setup = regime.generate_trade_setup(symbol)
+        if "error" in raw_setup:
+            return _meta.wrap(raw_setup, _interp_meta(raw_setup))
+
+        # Uses cached _analyze_technicals — no second network call
+        raw_regime = regime.detect_market_regime(symbol)
+        ms_data = _build_market_structure(raw_regime)
+        if "error" in ms_data:
+            return _meta.wrap(ms_data, _interp_meta(ms_data))
+
+        ms = ms_data["market_structure"]
+        ii = ms["indicator_interpretation"]
+
+        # Replace old predictive reasoning with observation-only strings
+        reasoning = _generate_reasoning(
+            price=ms["price"],
+            ema20=ms["ema20"],
+            ema50=ms["ema50"],
+            adx=ms["adx"],
+            rsi=ms["rsi"],
+            price_above_ema20=ms["price_above_ema20"],
+            ema20_above_ema50=ms["ema20_above_ema50"],
+            adx_above_25=ms["adx_above_25"],
+            rsi_above_60=ms["rsi_above_60"],
+            adx_note=ii["adx_note"],
+            rsi_note=ii["rsi_note"],
+            descriptor=ms["descriptor"],
+        )
+
+        # Strip synthetic conviction fields; inject market_structure + new reasoning
+        data = {k: v for k, v in raw_setup.items() if k not in _SETUP_FIELDS_TO_DELETE}
+        data["reasoning"] = reasoning
+        data["market_structure"] = ms
+        data["_migration"] = ms_data["_migration"]
+
         return _meta.wrap(data, _interp_meta(data))
 
     @mcp.tool()
