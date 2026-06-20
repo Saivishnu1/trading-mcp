@@ -20,7 +20,7 @@ Status:
 
 ## Current State
 
-Current Phase: 22 — Decision quality measurement system (complete)
+Current Phase: 22F — Field deletion + market_structure conversion (complete)
 
 Latest Tag:
 phase-19-multiframe-confirmation
@@ -30,13 +30,13 @@ Tool Count:
 68
 
 Test Count:
-1318 (40 test files, 0 failures)
+1366 (41 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
 
 DB Schema Version:
-4 (recommendation_log table added)
+4 (recommendation_log table); meta schema_version: 5 (tool response envelope)
 
 ---
 
@@ -102,7 +102,9 @@ DB Schema Version:
 
 ✅ Phase 22 — Decision Quality Measurement (trust metadata, recommendation logger, auto-capture, deprecation flags)
 
-⬜ Phase 22 Commit 6 — Delete deprecated fields (confidence, signal); convert to market_structure descriptors (pending 2-week deprecation period)
+✅ Phase 22F — Field deletion (confidence/signal/trade_quality/regime), market_structure descriptor, schema_version: 5
+
+⬜ Phase 23 — Remove _migration block; rename bull_target/bear_target → upside/downside_reference_level
 
 ---
 
@@ -149,6 +151,16 @@ Total: 68
 ---
 
 ## Recent Changes
+
+Phase 22F (field deletion + market_structure):
+
+* 48 new tests → 1366; 0 regressions
+* `src/tools/analysis.py`: `confidence`, `signal`, `trade_quality`, `regime` deleted from tool output; `market_structure` descriptor added with auto-generated boolean facts + descriptor array; `indicator_interpretation` typed as INTERPRETATION/UNVALIDATED
+* `src/meta.py`: `schema_version: 5` added to all tool meta responses permanently
+* `_migration` block added (temporary — Phase 23 removes it)
+* Docstrings embed Phase 20A/21 negative findings
+* Reasoning strings containing `NEUTRAL_BULLISH`/`NEUTRAL_BEARISH` removed
+* Not tagged (research-instrumentation phase)
 
 Phase 22 (decision quality measurement):
 
@@ -383,7 +395,7 @@ Phase 9:
 
 ## Current Open Work
 
-**Phase 22 complete.** Recommendation logger infrastructure is in place.
+**Phase 22F complete.** All synthetic conviction fields deleted. Structural descriptors in place.
 
 **Immediate next steps (human process, no code):**
 1. Log 10 baseline decisions (`baseline_no_mcp=True`) before logging MCP-assisted ones — control group
@@ -391,9 +403,9 @@ Phase 9:
 3. Sunday weekly review: blind postmortem (read market_snapshot before claude_reasoning_summary)
 4. Do NOT draw conclusions before 100 clean records
 
-**Pending code — Phase 22 Commit 6 (after 2-week deprecation period):**
-- Delete `confidence` and `signal` from `detect_market_regime` + `generate_trade_setup`
-- Convert to `market_structure` descriptor dict (ema20, ema50, adx, descriptor, adx_note)
+**Pending code — Phase 23:**
+- Remove `_migration` block from `detect_market_regime` + `generate_trade_setup` output
+- Rename `bull_target`/`bear_target` → `upside_reference_level`/`downside_reference_level`
 
 **What NOT to build until 100 clean records:**
 - Calibration dashboards

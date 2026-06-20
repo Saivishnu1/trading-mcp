@@ -2101,6 +2101,79 @@ Commit 6 deletes these fields and converts signals to descriptors:
 
 ---
 
+## Phase 22F — Field Deletion + market_structure Conversion
+
+**Date:** 2026-06-20
+**Commit:** `0d849cf`
+**Tools:** 68 (unchanged)
+**Tests:** 1366 (48 new, 0 failures)
+
+### What was built
+
+Phase 22 Commit 6 — the deletion of synthetic conviction fields and conversion to honest structural descriptors. Transformation applied at the **tool layer only**; service layer (`src/analysis/regime.py`) is unchanged, preserving internal consumers (dashboard, planner, recommendations engine).
+
+#### Deleted fields (both tools)
+`confidence`, `signal`, `trade_quality`, `quality`, `bullish_probability`, `regime`
+
+These fields had no demonstrated predictive validity (Phase 20A: no walk-forward edge; Phase 21: negative momentum spreads). Fully removed — not flagged.
+
+#### `detect_market_regime` → `market_structure` descriptor
+
+**Before:**
+```json
+{ "regime": "BULL_TREND", "confidence": 82, ... }
+```
+
+**After:**
+```json
+{
+  "market_structure": {
+    "price": 24512.3, "ema20": 24380.1, "ema50": 24120.8, "adx": 31.4, "rsi": 66.2,
+    "price_above_ema20": true, "ema20_above_ema50": true,
+    "adx_above_25": true, "rsi_above_60": true,
+    "descriptor": ["price_above_ema20", "ema20_above_ema50", "adx_above_25", "rsi_above_60"],
+    "indicator_interpretation": {
+      "type": "INTERPRETATION", "validation_status": "UNVALIDATED",
+      "adx_note": "trend_present", "rsi_note": "momentum_elevated"
+    }
+  },
+  "_migration": { "regime_removed": true, "replacement": "market_structure", "schema_version": 5 }
+}
+```
+
+Descriptor array is **always auto-generated** from booleans — never hardcoded. ADX notes: `trend_absent` (<15), `trend_weak` (<25), `trend_present` (<35), `strong_trend_present` (≥35). RSI notes: `oversold` (<30), `momentum_low` (<45), `momentum_neutral` (<55), `momentum_elevated` (<70), `overbought` (≥70).
+
+#### `generate_trade_setup` — stripped fields
+`confidence` and `signal` deleted. `reasoning` strings containing `NEUTRAL_BULLISH`/`NEUTRAL_BEARISH` removed (they encoded directional bias in prose). Kept: `entry`, `stoploss`, `target`, `entry_above`, `entry_below`, `bull_target`, `bear_target`, `reasoning`, `data_basis`, `_migration`.
+
+#### `schema_version: 5` in meta (permanent)
+Added to every `build_meta()` response. Carried in `result["meta"]["schema_version"]` going forward. `_migration` block in tool data is **temporary** — remove in Phase 23.
+
+#### Docstrings embed research findings
+Both `detect_market_regime` and `generate_trade_setup` docstrings now cite Phase 20A and Phase 21 findings so future Claude sessions cannot forget what was already disproved.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/meta.py` | `schema_version: 5` added to `build_meta()` |
+| `src/tools/analysis.py` | `_build_market_structure()`, `_clean_generate_setup()`, updated docstrings, `flag_deprecated` removed |
+| `tests/test_phase22f.py` | 48 new tests (new file) |
+| `CLAUDE.md` | Phase, test count, constraints updated |
+
+### Test file added
+
+| File | Tests | Coverage |
+|---|---|---|
+| `tests/test_phase22f.py` | 48 | field deletion, market_structure, booleans, descriptor, indicator_interpretation, _migration, schema_version, forbidden words, docstrings, regressions |
+
+### TODO Phase 23
+- Remove `_migration` block from `detect_market_regime` and `generate_trade_setup` output
+- Rename `bull_target`/`bear_target` → `upside_reference_level`/`downside_reference_level` (deferred from 22F)
+- Only `meta["schema_version"]` stays permanently
+
+---
+
 ## Key Technical Constraints
 
 | Constraint | Resolution |
