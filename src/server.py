@@ -1,5 +1,6 @@
 import os
 import logging
+import pyotp
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -10,9 +11,48 @@ from src.tools import auth, portfolio, market, instruments, options, technicals,
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
+logger = logging.getLogger(__name__)
+
 # Restore persisted session so users survive server restarts without re-login
 _session_file = os.environ.get("SESSION_FILE", ".session.json")
-get_broker().load_session(_session_file)
+_session_restored = get_broker().load_session(_session_file)
+
+
+def _maybe_auto_login() -> None:
+    """Auto-login on startup using ZERODHA_* env vars.
+
+    Skipped if a valid session was already restored from disk.
+    Logs a warning (never raises) so the server always starts even when
+    credentials are absent or wrong.
+    """
+    broker = get_broker()
+    # Only make the live HTTP check when a session file was found on disk.
+    # Skips the extra network round-trip (and its 403 noise) on a clean first run.
+    if _session_restored and broker.is_authenticated():
+        logger.info("Startup: active session found — skipping auto-login.")
+        return
+
+    user_id  = os.environ.get("ZERODHA_USER_ID", "").strip()
+    password = os.environ.get("ZERODHA_PASSWORD", "").strip()
+    secret   = os.environ.get("ZERODHA_TOTP_SECRET", "").strip()
+
+    if not (user_id and password and secret):
+        logger.info(
+            "Startup: ZERODHA_USER_ID / ZERODHA_PASSWORD / ZERODHA_TOTP_SECRET not "
+            "fully set — skipping auto-login. Call zerodha_login() manually."
+        )
+        return
+
+    try:
+        totp_code = pyotp.TOTP(secret).now()
+        broker.login(user_id=user_id, password=password, totp=totp_code)
+        broker.save_session(_session_file)
+        logger.info("Startup: auto-login successful for %s", user_id)
+    except Exception as exc:
+        logger.warning("Startup: auto-login failed (%s) — call zerodha_login() manually.", exc)
+
+
+_maybe_auto_login()
 
 _allowed_host = os.environ.get("PUBLIC_HOST", "zerodha-mcp-production.up.railway.app")
 

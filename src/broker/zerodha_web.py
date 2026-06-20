@@ -22,6 +22,9 @@ _HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0 Safari/537.36"
     ),
+    "Referer": "https://kite.zerodha.com/",
+    "Origin": "https://kite.zerodha.com",
+    "Accept": "application/json, text/plain, */*",
 }
 
 
@@ -49,6 +52,9 @@ class ZerodhaWebClient:
     def _set_token(self, token: str) -> None:
         self._enctoken = token
         self._http.headers["Authorization"] = f"enctoken {token}"
+        # Set the enctoken cookie explicitly so both auth mechanisms are active,
+        # matching what a real Kite browser session does.
+        self._http.cookies.set("enctoken", token, domain="kite.zerodha.com")
 
     def _require_auth(self) -> None:
         if not self._enctoken:
@@ -65,7 +71,13 @@ class ZerodhaWebClient:
             raise RuntimeError(
                 f"Zerodha API error: {body.get('message', 'unknown error')}"
             )
-        return body["data"]
+        data = body["data"]
+        # Zerodha occasionally returns a plain string in "data" with status "success"
+        # for restricted endpoints (e.g. "not available in frontend proxy mode").
+        # Catching it here prevents a pydantic type-mismatch from crashing the server.
+        if isinstance(data, str):
+            raise RuntimeError(f"Zerodha API error: {data}")
+        return data
 
     # ------------------------------------------------------------------
     # BrokerClient interface

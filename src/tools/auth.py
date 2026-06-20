@@ -1,5 +1,6 @@
 import os
 import logging
+import pyotp
 from mcp.server.fastmcp import FastMCP
 from src.broker import get_broker
 
@@ -38,7 +39,6 @@ def register(mcp: FastMCP) -> None:
             raise ValueError("Provide either totp_code or totp_secret.")
 
         if not totp_code:
-            import pyotp  # type: ignore[import]
             totp_code = pyotp.TOTP(totp_secret).now()
 
         broker = get_broker()

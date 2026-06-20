@@ -98,7 +98,7 @@ class JugaadClient:
             kite = Zerodha()
             # jugaad-trader stores the web session token as enctoken
             kite.enctoken = token
-            kite.set_access_token(token)
+            kite.set_access_token()
             self._kite = kite
             logger.info("JugaadClient: session restored from %s", path)
             return True
