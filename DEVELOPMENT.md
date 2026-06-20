@@ -2059,20 +2059,10 @@ Schema version 3 → 4. Migration: `recommendation_log` created via `IF NOT EXIS
 #### Commit 5 — Deprecation Flags
 `detect_market_regime` and `generate_trade_setup` now emit `deprecated_fields_present: ["confidence", "signal"]` and a `deprecation_note` citing Phase 20A and Phase 21 negative findings. Fields remain present for backward compatibility. Removal scheduled for Commit 6 (2 weeks later, manual decision).
 
-### Deprecation plan (Commit 6 — pending)
-```
-DEPRECATED_FIELDS = ["confidence", "signal", "trade_quality", "quality",
-                     "bullish_probability", "HIGH_QUALITY", "recommendation"]
-DEPRECATION_REASON = "No demonstrated predictive validity. Phase 20A and 21 negative findings."
-```
-Commit 6 deletes these fields and converts signals to descriptors:
-```json
-"market_structure": {
-  "ema20": 24500, "ema50": 24100, "adx": 32,
-  "descriptor": "price_above_ema20_above_ema50",
-  "adx_note": "trend_present_above_25"
-}
-```
+### Commit 6 — completed in Phase 22F (see Phase 22F section below)
+Field deletion and `market_structure` conversion were completed in commit `0d849cf`.
+`confidence`, `signal`, `trade_quality`, `quality`, `bullish_probability`, `regime` deleted.
+`market_structure` boolean descriptor added. `schema_version: 5` in meta permanently.
 
 ### Weekly review ritual (human process, not code)
 1. Open `recommendation_log` on Sunday
