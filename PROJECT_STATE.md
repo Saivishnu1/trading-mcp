@@ -152,6 +152,15 @@ Total: 68
 
 ## Recent Changes
 
+Phase 22G (browser login — credentials out of agent context):
+
+* No new tools (still 68); 0 new tests; 1375 passing
+* `zerodha_login()` strips all credential params — returns `{authenticated, login_url}` instead
+* `GET /login` serves `ui/login.html`; `POST /login` handles auth server-side; `GET /auth/status` JSON endpoint
+* `ui/login.html` created — HTML template loaded at runtime from file
+* `PUBLIC_URL` env var controls the login URL returned by the tool
+* MCP instructions updated: agents must never request passwords
+
 Phase 22F (field deletion + market_structure):
 
 * 57 new tests → 1375; 0 regressions

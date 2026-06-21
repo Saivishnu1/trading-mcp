@@ -196,48 +196,8 @@ _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
 
 
-_LOGIN_PAGE = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zerodha Login</title>
-<style>
-  body {{ font-family: system-ui, sans-serif; background: #f5f5f5; display: flex;
-          justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
-  .card {{ background: #fff; border-radius: 8px; padding: 2rem; width: 320px;
-           box-shadow: 0 2px 8px rgba(0,0,0,.12); }}
-  h1 {{ margin: 0 0 1.5rem; font-size: 1.25rem; color: #111; }}
-  label {{ display: block; font-size: .85rem; color: #555; margin-bottom: .25rem; }}
-  input {{ width: 100%; box-sizing: border-box; padding: .5rem .75rem; border: 1px solid #ccc;
-           border-radius: 4px; font-size: 1rem; margin-bottom: 1rem; }}
-  input:focus {{ outline: none; border-color: #387ED1; }}
-  button {{ width: 100%; padding: .65rem; background: #387ED1; color: #fff;
-            border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }}
-  button:hover {{ background: #2d6cb8; }}
-  .msg {{ margin-top: 1rem; padding: .75rem; border-radius: 4px; font-size: .9rem; }}
-  .ok  {{ background: #e6f4ea; color: #1e6b34; }}
-  .err {{ background: #fce8e6; color: #b3261e; }}
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>Zerodha Login</h1>
-  {message}
-  <form method="POST" action="/login" autocomplete="off">
-    <label>Client ID</label>
-    <input name="user_id" value="{prefill_user_id}" placeholder="ZK1234" required autocomplete="off">
-    <label>Password</label>
-    <input type="password" name="password" placeholder="Kite password" required autocomplete="new-password">
-    <label>TOTP (6-digit code)</label>
-    <input type="password" name="totp_code" placeholder="123456" maxlength="6" required autocomplete="off">
-    <button type="submit">Log in securely</button>
-  </form>
-</div>
-</body>
-</html>
-"""
+_UI_DIR = os.path.join(os.path.dirname(__file__), "..", "ui")
+_LOGIN_TEMPLATE = open(os.path.join(_UI_DIR, "login.html"), encoding="utf-8").read()
 
 
 async def _read_body(receive) -> bytes:
@@ -268,7 +228,7 @@ async def _send_json(send, status: int, data: dict) -> None:
 
 async def _handle_login_get(send) -> None:
     prefill = os.environ.get("ZERODHA_USER_ID", "")
-    html = _LOGIN_PAGE.format(prefill_user_id=prefill, message="")
+    html = _LOGIN_TEMPLATE.format(prefill_user_id=prefill, message="")
     await _send_html(send, 200, html)
 
 
@@ -282,7 +242,7 @@ async def _handle_login_post(receive, send) -> None:
     if not (user_id and password and totp_code):
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = '<p class="msg err">All fields are required.</p>'
-        await _send_html(send, 400, _LOGIN_PAGE.format(prefill_user_id=prefill, message=msg))
+        await _send_html(send, 400, _LOGIN_TEMPLATE.format(prefill_user_id=prefill, message=msg))
         return
 
     try:
@@ -292,12 +252,12 @@ async def _handle_login_post(receive, send) -> None:
         broker.save_session(session_file)
         logger.info("Browser login successful for %s", user_id)
         msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
-        await _send_html(send, 200, _LOGIN_PAGE.format(prefill_user_id="", message=msg))
+        await _send_html(send, 200, _LOGIN_TEMPLATE.format(prefill_user_id="", message=msg))
     except Exception as exc:
         logger.warning("Browser login failed: %s", exc)
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = f'<p class="msg err">Login failed: {exc}</p>'
-        await _send_html(send, 401, _LOGIN_PAGE.format(prefill_user_id=prefill, message=msg))
+        await _send_html(send, 401, _LOGIN_TEMPLATE.format(prefill_user_id=prefill, message=msg))
 
 
 async def app(scope, receive, send):

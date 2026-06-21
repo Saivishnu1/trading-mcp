@@ -43,11 +43,14 @@ src/
 ├── recommendations/         Trade Recommendation Engine (Phase 13)
 │   └── engine.py            recommend_trade, review_open_trades, get_daily_brief
 ├── tools/                   MCP tool registrations (one file per domain)
-└── server.py                FastMCP server + ASGI app + /health endpoint
+├── ui/                      Static HTML templates (served by server.py ASGI routes)
+│   └── login.html           Browser login form — credentials never pass through the agent
+└── server.py                FastMCP server + ASGI app + /health + /login + /auth/status
 ```
 
 **Transport:** Streamable HTTP at `/mcp` (for claude.ai web connectors) + SSE at `/sse`
 **Auth:** Session file persisted to disk; survives server restarts (~24h lifetime)
+**Login:** Browser-based — `zerodha_login()` MCP tool returns a URL; no credentials in tool params
 **Deployment:** Railway auto-deploys on push to `main`
 
 ---
@@ -2194,6 +2197,65 @@ The philosophy comment is encoded directly above the function:
 - Remove `_migration` block from `detect_market_regime` and `generate_trade_setup` output
 - Rename `bull_target`/`bear_target` → `upside_reference_level`/`downside_reference_level` (deferred from 22F)
 - Only `meta["schema_version"]` stays permanently
+
+---
+
+## Browser Login (Phase 22G)
+
+**Commit:** `e0fc8b0`
+**Tools changed:** 1 (zerodha_login) — no new tools; total stays 68
+**Files changed:** `src/tools/auth.py`, `src/server.py`, `ui/login.html`, `README.md`
+
+### Problem
+
+`zerodha_login(user_id, password, totp_code)` passed credentials as MCP tool parameters.
+Any MCP client (Claude, Cursor, ChatGPT connector, custom agent) could see, log, or include
+them in context history. Credential-in-param is the standard vulnerability in naïve MCP auth.
+
+### Solution
+
+`zerodha_login()` now takes **no parameters**. It returns:
+
+```json
+// When not authenticated:
+{
+  "authenticated": false,
+  "login_url": "https://zerodha-mcp-production.up.railway.app/login",
+  "message": "Open login_url in your browser..."
+}
+
+// When already authenticated:
+{
+  "authenticated": true,
+  "message": "Already authenticated."
+}
+```
+
+The agent tells the user to open the URL. Credentials are typed directly into the server's
+HTML form — they never appear in MCP traffic, agent context, or tool logs.
+
+### Routes added to server.py
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/login` | GET | Serves `ui/login.html` with optional `ZERODHA_USER_ID` pre-fill |
+| `/login` | POST | Parses form, calls `broker.login()`, saves `.session.json`, returns result page |
+| `/auth/status` | GET | JSON `{authenticated, backend}` for non-agent status checks |
+
+### Security properties
+
+- Password and TOTP fields use `<input type="password">` — not echoed to DOM
+- Error responses never repeat submitted field values
+- `PUBLIC_URL` env var controls the login URL the tool returns (defaults to `http://localhost:8000`)
+- Auto-login on startup from `ZERODHA_*` env vars remains — Railway env vars are private to the server
+
+### What did NOT change
+
+- Auto-login from `ZERODHA_USER_ID` + `ZERODHA_PASSWORD` + `ZERODHA_TOTP_SECRET` env vars on startup
+- `.session.json` session persistence
+- `check_auth_status()` MCP tool
+- All 67 other tools
+- All 1375 tests pass
 
 ---
 

@@ -4,7 +4,7 @@
 
 Zerodha Personal MCP
 
-Current Phase: 22F — Field deletion + market_structure conversion (complete)
+Current Phase: 22G — Browser login (credentials never in agent context)
 
 Current Tool Count: 68
 
@@ -101,6 +101,9 @@ When generating tests:
 
 ## Current Known Constraints
 
+* `zerodha_login()` takes NO parameters — returns `{authenticated, login_url}`. Never add credential params back.
+* Login page at `/login` (HTML form) and `/auth/status` (JSON) are ASGI routes in `server.py`, not MCP tools.
+* `ui/login.html` is the template; loaded at runtime via `_LOGIN_TEMPLATE`. Edit the file, not the server string.
 * No Kite Connect subscription.
 * NSE data via jugaad-data + fallback.
 * Pure Python indicators.
