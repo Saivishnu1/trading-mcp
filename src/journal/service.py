@@ -29,13 +29,12 @@ VALID_DIRECTIONS: frozenset[str] = frozenset({"LONG", "SHORT"})
 # ---------------------------------------------------------------------------
 
 def _user_filter(params: list) -> str:
-    """Return SQL fragment scoping to the current user.
-    NULL rows (pre-multi-user data) are shown in single-user mode."""
+    """Return SQL fragment scoping to the current user. No user = no data."""
     uid = _uid()
     if uid:
         params.append(uid)
         return "user_id = ?"
-    return "1=1"  # single-user: show all
+    return "1=0"  # unauthenticated: return nothing
 
 
 def _now_utc() -> str:

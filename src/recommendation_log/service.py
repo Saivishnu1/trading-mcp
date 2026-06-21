@@ -33,7 +33,7 @@ def _user_filter(params: list) -> str:
     if uid:
         params.append(uid)
         return "user_id = ?"
-    return "1=1"
+    return "1=0"  # unauthenticated: return nothing
 
 _WRITE_LOCK = threading.Lock()
 

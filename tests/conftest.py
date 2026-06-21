@@ -10,6 +10,15 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _set_test_user():
+    """Set current_user ContextVar so journal/recommendation queries return data in tests."""
+    from src.broker import current_user
+    token = current_user.set("TEST_USER")
+    yield
+    current_user.reset(token)
+
+
+@pytest.fixture(autouse=True)
 def _clear_analysis_cache():
     """Isolate the _analyze_technicals TTL cache (Phase 14.6 C1) between tests."""
     from src.analysis.regime import clear_analysis_cache
