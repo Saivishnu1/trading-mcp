@@ -190,10 +190,17 @@ async def _send_json(send, status: int, data: dict) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
+def _render_login(prefill_user_id: str, message: str) -> str:
+    return (
+        _LOGIN_TEMPLATE
+        .replace("{prefill_user_id}", prefill_user_id)
+        .replace("{message}", message)
+    )
+
+
 async def _handle_login_get(send) -> None:
     prefill = os.environ.get("ZERODHA_USER_ID", "")
-    html = _LOGIN_TEMPLATE.format(prefill_user_id=prefill, message="")
-    await _send_html(send, 200, html)
+    await _send_html(send, 200, _render_login(prefill, ""))
 
 
 async def _handle_login_post(receive, send) -> None:
@@ -206,7 +213,7 @@ async def _handle_login_post(receive, send) -> None:
     if not (user_id and password and totp_code):
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = '<p class="msg err">All fields are required.</p>'
-        await _send_html(send, 400, _LOGIN_TEMPLATE.format(prefill_user_id=prefill, message=msg))
+        await _send_html(send, 400, _render_login(prefill, msg))
         return
 
     try:
@@ -216,12 +223,12 @@ async def _handle_login_post(receive, send) -> None:
         broker.save_session(session_file)
         logger.info("Browser login successful for %s", user_id)
         msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
-        await _send_html(send, 200, _LOGIN_TEMPLATE.format(prefill_user_id="", message=msg))
+        await _send_html(send, 200, _render_login("", msg))
     except Exception as exc:
         logger.warning("Browser login failed: %s", exc)
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = f'<p class="msg err">Login failed: {exc}</p>'
-        await _send_html(send, 401, _LOGIN_TEMPLATE.format(prefill_user_id=prefill, message=msg))
+        await _send_html(send, 401, _render_login(prefill, msg))
 
 
 async def app(scope, receive, send):

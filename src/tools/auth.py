@@ -25,11 +25,16 @@ def register(mcp: FastMCP) -> None:
         if broker.is_authenticated():
             return {"authenticated": True, "message": "Already authenticated."}
 
-        base_url = os.environ.get("PUBLIC_URL", "http://localhost:8000")
+        # PUBLIC_URL must be set to your Railway/remote URL in production.
+        # Falls back to localhost for local development.
+        base_url = os.environ.get("PUBLIC_URL", "http://localhost:8000").rstrip("/")
         return {
             "authenticated": False,
             "login_url": f"{base_url}/login",
-            "message": "Open login_url in your browser. Credentials are entered directly — they never pass through the agent.",
+            "message": (
+                f"Open this URL in your browser to log in securely: {base_url}/login\n"
+                "Credentials are entered directly into the server — they never pass through the agent."
+            ),
         }
 
     @mcp.tool()
