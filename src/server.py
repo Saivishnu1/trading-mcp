@@ -370,8 +370,8 @@ async def app(scope, receive, send):
         uid = _resolve_user(scope)
         token = current_user.set(uid)
         path = scope.get("path", "")
-        if path in ("/mcp", "/sse"):
-            logger.info("MCP connect: path=%s user_id=%s", path, uid or "unauthenticated")
+        if path in ("/mcp", "/sse") and uid:
+            logger.info("MCP connect: path=%s user_id=%s", path, uid)
         try:
             await _app(scope, receive, send)
         finally:
