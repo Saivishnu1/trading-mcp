@@ -502,8 +502,39 @@ async def _app(scope, receive, send):
 
         if path == "/oauth/authorize" and method == "GET":
             query_str = scope.get("query_string", b"").decode()
+            oauth_params = urllib.parse.parse_qs(query_str, keep_blank_values=False)
+            redirect_uri = (oauth_params.get("redirect_uri", [""])[0]).strip()
+            state = (oauth_params.get("state", [""])[0]).strip()
+            code_challenge = (oauth_params.get("code_challenge", [""])[0]).strip()
+            code_challenge_method = (oauth_params.get("code_challenge_method", ["S256"])[0]).strip()
+
+            # If already logged in (cookie present + active DB session), skip login form
+            uid_cookie = _get_cookie(scope, "mcp_uid")
+            if uid_cookie and redirect_uri:
+                enctoken = session_store.load(uid_cookie)
+                if enctoken:
+                    import secrets as _s, time as _t
+                    api_key, _ = api_key_store.get_or_create(uid_cookie)
+                    code = "auth_" + _s.token_hex(16)
+                    _oauth_codes[code] = {
+                        "user_id": uid_cookie,
+                        "api_key": api_key,
+                        "code_challenge": code_challenge,
+                        "code_challenge_method": code_challenge_method,
+                        "expires_at": _t.time() + 300,
+                    }
+                    redirect_url = f"{redirect_uri}?code={code}"
+                    if state:
+                        redirect_url += f"&state={urllib.parse.quote(state)}"
+                    await send({"type": "http.response.start", "status": 302,
+                                "headers": [[b"location", redirect_url.encode()]]})
+                    await send({"type": "http.response.body", "body": b""})
+                    logger.info("OAuth auto-authorized for %s via existing session", uid_cookie)
+                    return
+
             prefill = os.environ.get("ZERODHA_USER_ID", "")
-            await _send_html(send, 200, _render_login(prefill, "", query_str))
+            msg = f'<p class="msg ok">Already logged in as {uid_cookie}. Enter credentials to confirm.</p>' if uid_cookie else ""
+            await _send_html(send, 200, _render_login(prefill, msg, query_str))
             return
 
         if path == "/oauth/token" and method == "POST":
