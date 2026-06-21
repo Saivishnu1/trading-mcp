@@ -25,9 +25,11 @@ def register(mcp: FastMCP) -> None:
         if broker.is_authenticated():
             return {"authenticated": True, "message": "Already authenticated."}
 
-        # PUBLIC_URL must be set to your Railway/remote URL in production.
-        # Falls back to localhost for local development.
-        base_url = os.environ.get("PUBLIC_URL", "http://localhost:8000").rstrip("/")
+        # PUBLIC_URL overrides everything (any platform).
+        # Falls back to RAILWAY_PUBLIC_DOMAIN if on Railway, then localhost.
+        railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+        default_url = f"https://{railway_domain}" if railway_domain else "http://localhost:8000"
+        base_url = os.environ.get("PUBLIC_URL", default_url).rstrip("/")
         return {
             "authenticated": False,
             "login_url": f"{base_url}/login",
