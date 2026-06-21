@@ -382,6 +382,7 @@
       '    <button class="tab active" onclick="showTab(\'cc\',this)">Claude Code</button>',
       '    <button class="tab" onclick="showTab(\'cd\',this)">Claude Desktop</button>',
       '    <button class="tab" onclick="showTab(\'cur\',this)">Cursor</button>',
+      '    <button class="tab" onclick="showTab(\'pm\',this)">Postman</button>',
       '  </div>',
 
       '  <div id="tab-cc" class="tab-pane active">',
@@ -399,6 +400,13 @@
       '  <div id="tab-cur" class="tab-pane">',
       '    <p>Add to <code style="font-size:.68rem;color:#64748b">.cursor/mcp.json</code> in your project:</p>',
       '    <div class="code-wrap"><div class="code-block" id="blk-cur">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cur\')">Copy</button></div>',
+      '  </div>',
+
+      '  <div id="tab-pm" class="tab-pane">',
+      '    <p>In Postman → <strong>New</strong> → <strong>MCP Server</strong> → select <strong>Streamable HTTP</strong>:<br>',
+      '    &nbsp;• URL: <code style="font-size:.68rem;color:#64748b">' + escHtml(mcpUrl) + '</code><br>',
+      '    &nbsp;• Header: <code style="font-size:.68rem;color:#64748b">Authorization</code> → value below</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-pm">' + escHtml('Bearer ' + apiKey) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-pm\')">Copy</button></div>',
       '  </div>',
       '</div>',
 
