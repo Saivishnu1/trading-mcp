@@ -9,7 +9,7 @@ _TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 _INIT_LOCK = threading.Lock()
 _conn = None  # sqlite3.Connection or libsql_experimental connection
 
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS trades (
     portfolio_heat_at_entry REAL,
     external_id             TEXT,
     created_at              TEXT    NOT NULL,
-    updated_at              TEXT    NOT NULL
+    updated_at              TEXT    NOT NULL,
+    user_id                 TEXT
 )
 """
 
@@ -116,7 +117,8 @@ CREATE TABLE IF NOT EXISTS recommendation_log (
                                 )),
 
     created_at                  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at                  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at                  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    user_id                     TEXT
 )
 """
 
@@ -168,6 +170,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 _V6_MIGRATIONS: list[str] = []  # api_keys table is new; no ALTER needed
 
+# v6 → v7: user_id on trades and recommendation_log for multi-user isolation
+_V7_MIGRATIONS = [
+    "ALTER TABLE trades ADD COLUMN user_id TEXT",
+    "ALTER TABLE recommendation_log ADD COLUMN user_id TEXT",
+]
+
 _DDL_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_trades_symbol      ON trades(symbol)",
     "CREATE INDEX IF NOT EXISTS idx_trades_status      ON trades(status)",
@@ -207,6 +215,12 @@ def _init_schema(conn) -> None:
         # v4: recommendation_log created above via IF NOT EXISTS — no ALTER needed
         # v5: sessions table created above via IF NOT EXISTS — no ALTER needed
         # v6: api_keys table created above via IF NOT EXISTS — no ALTER needed
+        if existing_version < 7:
+            for sql in _V7_MIGRATIONS:
+                try:
+                    conn.execute(sql)
+                except Exception:
+                    pass  # column already exists (idempotent)
         conn.execute(
             "UPDATE schema_version SET version = ?, applied = ?",
             (_SCHEMA_VERSION, now),

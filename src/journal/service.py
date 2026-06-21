@@ -4,6 +4,11 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from src.journal import db as _db
+from src.broker import current_user
+
+
+def _uid() -> str | None:
+    return current_user.get()
 
 _WRITE_LOCK = threading.Lock()
 
@@ -22,6 +27,16 @@ VALID_DIRECTIONS: frozenset[str] = frozenset({"LONG", "SHORT"})
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _user_filter(params: list) -> str:
+    """Return SQL fragment scoping to the current user.
+    NULL rows (pre-multi-user data) are shown in single-user mode."""
+    uid = _uid()
+    if uid:
+        params.append(uid)
+        return "user_id = ?"
+    return "1=1"  # single-user: show all
+
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -182,7 +197,7 @@ def log_trade(
                     regime, signal, risk_score, analysis_snapshot,
                     created_by, status, tags, notes,
                     risk_amount, capital_at_risk, portfolio_heat_at_entry,
-                    external_id, created_at, updated_at
+                    external_id, created_at, updated_at, user_id
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
@@ -190,7 +205,7 @@ def log_trade(
                     ?, ?, ?, ?,
                     ?, 'OPEN', ?, ?,
                     ?, ?, ?,
-                    ?, ?, ?
+                    ?, ?, ?, ?
                 )""",
                 (
                     trade_id, symbol, trade_type, direction, strategy,
@@ -199,7 +214,7 @@ def log_trade(
                     regime, signal, risk_score, snapshot_json,
                     created_by, tags_json, notes,
                     risk_amount, capital_at_risk, portfolio_heat_at_entry,
-                    external_id, now, now,
+                    external_id, now, now, _uid(),
                 ),
             )
             conn.commit()
@@ -282,16 +297,20 @@ def close_trade(
 def get_open_trades(symbol: str | None = None) -> dict:
     try:
         conn = _db._get_connection()
+        params: list = []
+        uf = _user_filter(params)
         if symbol:
+            params.append(symbol.upper().strip())
             rows = conn.execute(
-                "SELECT * FROM trades WHERE status = 'OPEN' AND symbol = ?"
+                f"SELECT * FROM trades WHERE status = 'OPEN' AND {uf} AND symbol = ?"
                 " ORDER BY entry_date DESC, created_at DESC",
-                (symbol.upper().strip(),),
+                params,
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM trades WHERE status = 'OPEN'"
-                " ORDER BY entry_date DESC, created_at DESC"
+                f"SELECT * FROM trades WHERE status = 'OPEN' AND {uf}"
+                " ORDER BY entry_date DESC, created_at DESC",
+                params,
             ).fetchall()
         trades = [_row_to_dict(r) for r in rows]
         return {"count": len(trades), "trades": trades}
@@ -328,10 +347,13 @@ def _product_to_trade_type(product: str, symbol: str) -> str:
 
 def _find_open_long_for_symbol(symbol: str) -> dict | None:
     conn = _db._get_connection()
+    params: list = []
+    uf = _user_filter(params)
+    params.append(symbol.upper())
     row = conn.execute(
-        "SELECT * FROM trades WHERE symbol = ? AND direction = 'LONG' AND status = 'OPEN'"
+        f"SELECT * FROM trades WHERE {uf} AND symbol = ? AND direction = 'LONG' AND status = 'OPEN'"
         " ORDER BY created_at DESC LIMIT 1",
-        (symbol.upper(),),
+        params,
     ).fetchone()
     return _row_to_dict(row) if row else None
 
@@ -530,8 +552,10 @@ def get_performance_analytics(
     """
     try:
         cutoff = (date.today() - timedelta(days=max(days, 0))).isoformat()
-        conditions = ["status = 'CLOSED'", "entry_date >= ?"]
-        params: list = [cutoff]
+        params: list = []
+        uf = _user_filter(params)
+        params.append(cutoff)
+        conditions = [uf, "status = 'CLOSED'", "entry_date >= ?"]
         if symbol:
             conditions.append("symbol = ?")
             params.append(symbol.upper().strip())
@@ -576,8 +600,10 @@ def get_trade_history(
 ) -> dict:
     try:
         cutoff = (date.today() - timedelta(days=max(days, 0))).isoformat()
-        conditions = ["entry_date >= ?"]
-        params: list = [cutoff]
+        params: list = []
+        uf = _user_filter(params)
+        params.append(cutoff)
+        conditions = [uf, "entry_date >= ?"]
 
         if symbol:
             conditions.append("symbol = ?")

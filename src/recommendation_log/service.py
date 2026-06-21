@@ -21,6 +21,19 @@ import uuid
 from datetime import datetime, timezone
 
 from src.journal import db as _db
+from src.broker import current_user
+
+
+def _uid() -> str | None:
+    return current_user.get()
+
+
+def _user_filter(params: list) -> str:
+    uid = _uid()
+    if uid:
+        params.append(uid)
+        return "user_id = ?"
+    return "1=1"
 
 _WRITE_LOCK = threading.Lock()
 
@@ -121,8 +134,8 @@ def log_recommendation(
                 id, timestamp, symbol, market_snapshot, mcp_facts,
                 claude_reasoning_summary, recommendation_type, uncertainty_level,
                 baseline_no_mcp, bootstrap_period, bias_contaminated,
-                capture_mode, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?)
+                capture_mode, created_at, updated_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, ?, ?)
             """,
             (
                 rec_id, now,
@@ -133,7 +146,7 @@ def log_recommendation(
                 rec_type, unc_level,
                 1 if baseline_no_mcp else 0,
                 "baseline" if baseline_no_mcp else "manual",
-                now, now,
+                now, now, _uid(),
             ),
         )
         conn.commit()
@@ -218,29 +231,18 @@ def get_recommendation_stats(clean_only: bool = True) -> dict:
     Refuses to return statistical analysis before MIN_CLEAN_RECORDS.
     """
     conn = _db._get_connection()
+    params: list = []
+    uf = _user_filter(params)
 
-    total = conn.execute(
-        "SELECT COUNT(*) as n FROM recommendation_log"
-    ).fetchone()
-    clean = conn.execute(
-        "SELECT COUNT(*) as n FROM recommendation_log WHERE bootstrap_period=0 AND bias_contaminated=0"
-    ).fetchone()
-    bootstrap = conn.execute(
-        "SELECT COUNT(*) as n FROM recommendation_log WHERE bootstrap_period=1 OR bias_contaminated=1"
-    ).fetchone()
-    baseline = conn.execute(
-        "SELECT COUNT(*) as n FROM recommendation_log WHERE baseline_no_mcp=1"
-    ).fetchone()
+    def _count(extra: str = "") -> int:
+        where = f"WHERE {uf}" + (f" AND {extra}" if extra else "")
+        row = conn.execute(f"SELECT COUNT(*) as n FROM recommendation_log {where}", params).fetchone()
+        return row["n"] if isinstance(row, dict) else (row[0] if row else 0)
 
-    def _n(row) -> int:
-        if row is None:
-            return 0
-        return row["n"] if isinstance(row, dict) else row[0]
-
-    clean_count = _n(clean)
-    bootstrap_count = _n(bootstrap)
-    baseline_count = _n(baseline)
-    total_count = _n(total)
+    total_count = _count()
+    clean_count = _count("bootstrap_period=0 AND bias_contaminated=0")
+    bootstrap_count = _count("bootstrap_period=1 OR bias_contaminated=1")
+    baseline_count = _count("baseline_no_mcp=1")
 
     analysis_ready = (
         clean_count >= MIN_CLEAN_RECORDS_FOR_ANALYSIS
@@ -266,20 +268,21 @@ def get_recommendation_stats(clean_only: bool = True) -> dict:
     }
 
     if analysis_ready and not clean_only:
-        result["stats"] = _compute_stats(conn)
+        result["stats"] = _compute_stats(conn, uf, params)
 
     return result
 
 
-def _compute_stats(conn) -> dict:
+def _compute_stats(conn, uf: str, params: list) -> dict:
     """Compute clean-record statistics. Only called after MIN_CLEAN_RECORDS met."""
     rows = conn.execute(
-        """
+        f"""
         SELECT mcp_changed_decision, would_have_acted_without_mcp,
                postmortem_helpful, outcome_1d, outcome_5d, outcome_20d
         FROM recommendation_log
-        WHERE bootstrap_period=0 AND bias_contaminated=0
-        """
+        WHERE {uf} AND bootstrap_period=0 AND bias_contaminated=0
+        """,
+        params,
     ).fetchall()
 
     changed = sum(1 for r in rows if (r["mcp_changed_decision"] if isinstance(r, dict) else r[0]) == 1)
