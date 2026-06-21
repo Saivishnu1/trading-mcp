@@ -9,7 +9,7 @@ _TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 _INIT_LOCK = threading.Lock()
 _conn = None  # sqlite3.Connection or libsql_experimental connection
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 _DDL_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -155,6 +155,19 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 _V5_MIGRATIONS: list[str] = []  # sessions table is new; no ALTER needed
 
+# v5 → v6: API keys for multi-user MCP client identification
+_DDL_API_KEYS = """
+CREATE TABLE IF NOT EXISTS api_keys (
+    api_key     TEXT    PRIMARY KEY,
+    user_id     TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL,
+    last_used   TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1
+)
+"""
+
+_V6_MIGRATIONS: list[str] = []  # api_keys table is new; no ALTER needed
+
 _DDL_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_trades_symbol      ON trades(symbol)",
     "CREATE INDEX IF NOT EXISTS idx_trades_status      ON trades(status)",
@@ -169,6 +182,7 @@ def _init_schema(conn) -> None:
     conn.execute(_DDL_TRADES)
     conn.execute(_DDL_RECOMMENDATION_LOG)
     conn.execute(_DDL_SESSIONS)
+    conn.execute(_DDL_API_KEYS)
     # Run migrations before creating indexes so all columns exist first
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     existing_version = _get_schema_version(conn)
@@ -192,6 +206,7 @@ def _init_schema(conn) -> None:
                     pass  # column already exists (idempotent)
         # v4: recommendation_log created above via IF NOT EXISTS — no ALTER needed
         # v5: sessions table created above via IF NOT EXISTS — no ALTER needed
+        # v6: api_keys table created above via IF NOT EXISTS — no ALTER needed
         conn.execute(
             "UPDATE schema_version SET version = ?, applied = ?",
             (_SCHEMA_VERSION, now),

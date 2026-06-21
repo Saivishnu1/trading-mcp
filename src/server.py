@@ -6,9 +6,10 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from src.broker import get_broker
+from src.broker import get_broker, current_user
 from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, calibration, recommendation_log
 import src.session_store as session_store
+import src.api_key_store as api_key_store
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -235,22 +236,55 @@ async def _handle_login_post(receive, send) -> None:
         await _send_html(send, 401, _render_login(prefill, msg))
         return
 
-    # Persist session to DB — non-fatal if DB save fails
+    # Persist session + generate API key — non-fatal if DB save fails
     enctoken = broker.get_enctoken()
+    api_key = None
     if enctoken:
         try:
             session_store.save(user_id, enctoken)
+            api_key = api_key_store.generate()
+            api_key_store.save(api_key, user_id)
         except Exception as exc:
-            logger.warning("Could not persist session to DB for %s: %s", user_id, exc)
+            logger.warning("Could not persist session/API key for %s: %s", user_id, exc)
     else:
         logger.warning("Login succeeded for %s but broker returned no enctoken — session not persisted", user_id)
 
     logger.info("Browser login successful for %s", user_id)
-    msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
+    key_html = (
+        f'<div class="api-key-box">'
+        f'<p class="api-key-label">Your MCP API Key <span>(copy once — not shown again)</span></p>'
+        f'<code id="api-key">{api_key}</code>'
+        f'<button type="button" onclick="copyKey()">Copy</button>'
+        f'</div>'
+    ) if api_key else ""
+    msg = f'<p class="msg ok">Logged in successfully.</p>{key_html}'
     await _send_html(send, 200, _render_login("", msg))
 
 
+def _resolve_user(scope) -> str | None:
+    """Read Authorization: Bearer <key> from headers and resolve to user_id."""
+    for name, value in scope.get("headers", []):
+        if name.lower() == b"authorization":
+            val = value.decode("utf-8", errors="ignore").strip()
+            if val.lower().startswith("bearer "):
+                return api_key_store.lookup(val[7:].strip())
+    return None
+
+
 async def app(scope, receive, send):
+    # Resolve user from API key header before any route runs
+    if scope["type"] == "http":
+        uid = _resolve_user(scope)
+        token = current_user.set(uid)
+        try:
+            await _app(scope, receive, send)
+        finally:
+            current_user.reset(token)
+    else:
+        await _app(scope, receive, send)
+
+
+async def _app(scope, receive, send):
     if scope["type"] == "http":
         path = scope.get("path", "")
         method = scope.get("method", "GET")
@@ -276,13 +310,15 @@ async def app(scope, receive, send):
             return
 
         if path == "/logout" and method == "GET":
-            # Single-user: clear the active session; user_id optional for DB cleanup.
-            # TODO: require user_id when multi-user is implemented.
             qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
-            uid = (qs.get("user_id", [""])[0]).strip()
+            uid = (qs.get("user_id", [""])[0]).strip() or current_user.get()
             if uid:
                 session_store.delete(uid)
-            get_broker().clear_enctoken()
+                api_key_store.delete(uid)
+                from src.broker import reset_broker
+                reset_broker(uid)
+            else:
+                get_broker().clear_enctoken()
             logger.info("Logout: %s", uid or "active session")
             await _send_json(send, 200, {"logged_out": True, "user_id": uid or None})
             return

@@ -118,6 +118,38 @@
   .ok  { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.2); }
   .err { background: rgba(239,68,68,.12);  color: #f87171; border: 1px solid rgba(239,68,68,.2);  }
 
+  .api-key-box {
+    margin-top: 1.25rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 1rem;
+  }
+  .api-key-label {
+    font-size: .78rem;
+    color: #94a3b8;
+    margin-bottom: .5rem;
+    font-weight: 500;
+  }
+  .api-key-label span { color: #f59e0b; font-weight: 400; }
+  .api-key-box code {
+    display: block;
+    font-family: monospace;
+    font-size: .8rem;
+    color: #56cfb2;
+    word-break: break-all;
+    margin-bottom: .75rem;
+    line-height: 1.5;
+  }
+  .api-key-box button {
+    width: auto;
+    padding: .4rem .9rem;
+    font-size: .8rem;
+    background: #334155;
+    margin-top: 0;
+  }
+  .api-key-box button:hover { background: #475569; }
+
   .security-note {
     display: flex; align-items: center; gap: .5rem;
     margin-top: 1.5rem;
@@ -192,6 +224,16 @@
 </div>
 
 <script>
+  function copyKey() {
+    var key = document.getElementById('api-key');
+    if (!key) return;
+    navigator.clipboard.writeText(key.textContent).then(function() {
+      var btn = key.nextElementSibling;
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    });
+  }
+
   // Show loading state on submit
   document.getElementById('login-form').addEventListener('submit', function() {
     var btn = document.getElementById('submit-btn');
