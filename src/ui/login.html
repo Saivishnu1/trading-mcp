@@ -132,23 +132,42 @@
     font-weight: 500;
   }
   .api-key-label span { color: #f59e0b; font-weight: 400; }
+  .api-key-row {
+    display: flex; align-items: center; gap: .5rem;
+    margin-bottom: .75rem;
+  }
   .api-key-box code {
-    display: block;
+    flex: 1;
     font-family: monospace;
     font-size: .8rem;
     color: #56cfb2;
     word-break: break-all;
-    margin-bottom: .75rem;
     line-height: 1.5;
+    filter: blur(5px);
+    user-select: none;
+    transition: filter .2s;
   }
-  .api-key-box button {
+  .api-key-box code.visible {
+    filter: none;
+    user-select: text;
+  }
+  .eye-btn {
+    width: 32px; height: 32px; flex-shrink: 0;
+    background: #334155; border: none; border-radius: 6px;
+    color: #94a3b8; cursor: pointer; font-size: 1rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .eye-btn:hover { background: #475569; }
+  .api-key-box .copy-btn {
     width: auto;
     padding: .4rem .9rem;
     font-size: .8rem;
     background: #334155;
     margin-top: 0;
+    flex-shrink: 0;
   }
-  .api-key-box button:hover { background: #475569; }
+  .api-key-box .copy-btn:hover { background: #475569; }
 
   .security-note {
     display: flex; align-items: center; gap: .5rem;
@@ -284,11 +303,19 @@
   function copyKey() {
     var key = document.getElementById('api-key');
     if (!key) return;
-    navigator.clipboard.writeText(key.textContent).then(function() {
-      var btn = key.nextElementSibling;
-      btn.textContent = 'Copied!';
-      setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    navigator.clipboard.writeText(key.textContent.trim()).then(function() {
+      var btn = document.querySelector('.copy-btn') || key.nextElementSibling;
+      if (btn) { btn.textContent = 'Copied!'; setTimeout(function(){ btn.textContent = 'Copy'; }, 2000); }
     });
+  }
+
+  function toggleKey() {
+    var key = document.getElementById('api-key');
+    var btn = document.getElementById('eye-btn');
+    if (!key) return;
+    var visible = key.classList.toggle('visible');
+    btn.innerHTML = visible ? '&#128064;' : '&#128065;';
+    btn.title = visible ? 'Hide key' : 'Show key';
   }
 
   // Show loading state on submit
@@ -328,8 +355,11 @@
       '  <p>Use this key to authenticate your MCP client. Copy it and keep it safe.</p>',
       '  <div class="api-key-box" style="margin-top:.5rem">',
       '    <p class="api-key-label">MCP API Key</p>',
-      '    <code id="api-key">' + escHtml(apiKey) + '</code>',
-      '    <button type="button" onclick="copyKey()">Copy</button>',
+      '    <div class="api-key-row">',
+      '      <code id="api-key">' + escHtml(apiKey) + '</code>',
+      '      <button class="eye-btn" onclick="toggleKey()" id="eye-btn" title="Show/hide key">&#128065;</button>',
+      '      <button class="copy-btn" onclick="copyKey()">Copy</button>',
+      '    </div>',
       '  </div>',
       '</div>',
 
