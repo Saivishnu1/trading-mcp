@@ -13,8 +13,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def save(user_id: str, enctoken: str) -> None:
-    """Upsert an active session for user_id."""
+def save(user_id: str, enctoken: str | None) -> None:
+    """Upsert an active session for user_id. No-op if enctoken is None."""
+    if not enctoken:
+        return
     conn = _get_connection()
     now = _now()
     # Deactivate any existing sessions for this user, then insert fresh

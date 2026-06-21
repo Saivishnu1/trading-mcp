@@ -228,16 +228,26 @@ async def _handle_login_post(receive, send) -> None:
     try:
         broker = get_broker()
         broker.login(user_id=user_id, password=password, totp=totp_code)
-        enctoken = broker.get_enctoken()
-        session_store.save(user_id, enctoken)
-        logger.info("Browser login successful for %s", user_id)
-        msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
-        await _send_html(send, 200, _render_login("", msg))
     except Exception as exc:
         logger.warning("Browser login failed: %s", exc)
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = f'<p class="msg err">Login failed: {exc}</p>'
         await _send_html(send, 401, _render_login(prefill, msg))
+        return
+
+    # Persist session to DB — non-fatal if DB save fails
+    enctoken = broker.get_enctoken()
+    if enctoken:
+        try:
+            session_store.save(user_id, enctoken)
+        except Exception as exc:
+            logger.warning("Could not persist session to DB for %s: %s", user_id, exc)
+    else:
+        logger.warning("Login succeeded for %s but broker returned no enctoken — session not persisted", user_id)
+
+    logger.info("Browser login successful for %s", user_id)
+    msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
+    await _send_html(send, 200, _render_login("", msg))
 
 
 async def app(scope, receive, send):
