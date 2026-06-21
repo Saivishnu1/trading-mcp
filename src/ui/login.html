@@ -274,7 +274,7 @@
 
   <div id="form-section">
     <h1>Sign in</h1>
-    <p class="subtitle">Enter your Kite credentials to authenticate</p>
+    <p class="subtitle">Enter your Kite credentials to authenticate (supports OAuth 2.0 / Claude Web)</p>
 
     {message}
 
@@ -342,6 +342,8 @@
     var apiKey  = (document.getElementById('api-key') || {}).textContent || '';
     apiKey = apiKey.trim();
     var mcpUrl  = window.location.origin + '/mcp';
+    var authUrl = window.location.origin + '/oauth/authorize';
+    var tokenUrl = window.location.origin + '/oauth/token';
 
     var eyeOff = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
     var eyeOn  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -380,6 +382,7 @@
       '  <p>Choose your client and paste the config below — the key is already filled in.</p>',
       '  <div class="tabs" style="margin-top:.6rem">',
       '    <button class="tab active" onclick="showTab(\'cc\',this)">Claude Code</button>',
+      '    <button class="tab" onclick="showTab(\'cw\',this)">Claude Web</button>',
       '    <button class="tab" onclick="showTab(\'cd\',this)">Claude Desktop</button>',
       '    <button class="tab" onclick="showTab(\'cur\',this)">Cursor</button>',
       '    <button class="tab" onclick="showTab(\'pm\',this)">Postman</button>',
@@ -388,6 +391,14 @@
       '  <div id="tab-cc" class="tab-pane active">',
       '    <p>Run once in your terminal:</p>',
       '    <div class="code-wrap"><div class="code-block" id="blk-cc">' + escHtml(codeCmd) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cc\')">Copy</button></div>',
+      '  </div>',
+
+      '  <div id="tab-cw" class="tab-pane">',
+      '    <p>In Claude Web settings → <strong>Connectors</strong> → <strong>Add custom connector</strong>:<br>',
+      '    &nbsp;• Name: <code style="font-size:.68rem;color:#64748b">Zerodha</code><br>',
+      '    &nbsp;• Remote MCP server URL: (copy value below)</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cw">' + escHtml(mcpUrl) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cw\')">Copy</button></div>',
+      '    <p style="margin-top:.5rem;font-size:.72rem;color:#64748b"><em>Note: Claude Web will automatically discover the OAuth endpoints on your server.</em></p>',
       '  </div>',
 
       '  <div id="tab-cd" class="tab-pane">',

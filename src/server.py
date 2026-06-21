@@ -203,11 +203,27 @@ async def _send_json(send, status: int, data: dict) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-def _render_login(prefill_user_id: str, message: str) -> str:
+_oauth_codes = {}
+
+def _verify_pkce(code_verifier: str, code_challenge: str, method: str) -> bool:
+    import hashlib
+    import base64
+    if method == "S256":
+        hashed = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+        calculated = base64.urlsafe_b64encode(hashed).decode("utf-8").rstrip("=")
+        return calculated == code_challenge
+    elif method == "plain" or not method:
+        return code_verifier == code_challenge
+    return False
+
+
+def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> str:
+    action = f"/login?{oauth_query}" if oauth_query else "/login"
     return (
         _LOGIN_TEMPLATE
         .replace("{prefill_user_id}", prefill_user_id)
         .replace("{message}", message)
+        .replace('action="/login"', f'action="{action}"')
     )
 
 
@@ -216,17 +232,25 @@ async def _handle_login_get(send) -> None:
     await _send_html(send, 200, _render_login(prefill, ""))
 
 
-async def _handle_login_post(receive, send) -> None:
+async def _handle_login_post(scope, receive, send) -> None:
     raw = await _read_body(receive)
     params = urllib.parse.parse_qs(raw.decode(), keep_blank_values=False)
     user_id   = (params.get("user_id",   [""])[0]).strip()
     password  = (params.get("password",  [""])[0]).strip()
     totp_code = (params.get("totp_code", [""])[0]).strip()
 
+    # Parse query parameters from scope (contains redirect_uri, state, code_challenge, code_challenge_method)
+    query_str = scope.get("query_string", b"").decode()
+    oauth_params = urllib.parse.parse_qs(query_str, keep_blank_values=False)
+    redirect_uri = (oauth_params.get("redirect_uri", [""])[0]).strip()
+    state = (oauth_params.get("state", [""])[0]).strip()
+    code_challenge = (oauth_params.get("code_challenge", [""])[0]).strip()
+    code_challenge_method = (oauth_params.get("code_challenge_method", ["S256"])[0]).strip()
+
     if not (user_id and password and totp_code):
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = '<p class="msg err">All fields are required.</p>'
-        await _send_html(send, 400, _render_login(prefill, msg))
+        await _send_html(send, 400, _render_login(prefill, msg, query_str))
         return
 
     try:
@@ -236,7 +260,7 @@ async def _handle_login_post(receive, send) -> None:
         logger.warning("Browser login failed: %s", exc)
         prefill = os.environ.get("ZERODHA_USER_ID", "")
         msg = f'<p class="msg err">Login failed: {exc}</p>'
-        await _send_html(send, 401, _render_login(prefill, msg))
+        await _send_html(send, 401, _render_login(prefill, msg, query_str))
         return
 
     # Persist session + generate API key — non-fatal if DB save fails
@@ -252,6 +276,31 @@ async def _handle_login_post(receive, send) -> None:
         logger.warning("Login succeeded for %s but broker returned no enctoken — session not persisted", user_id)
 
     logger.info("Browser login successful for %s", user_id)
+
+    if redirect_uri:
+        # Generate temporary auth code
+        import secrets
+        import time
+        code = "auth_" + secrets.token_hex(16)
+        _oauth_codes[code] = {
+            "user_id": user_id,
+            "api_key": api_key,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+            "expires_at": time.time() + 300
+        }
+        redirect_url = f"{redirect_uri}?code={code}"
+        if state:
+            redirect_url += f"&state={urllib.parse.quote(state)}"
+        
+        await send({
+            "type": "http.response.start",
+            "status": 302,
+            "headers": [[b"location", redirect_url.encode()]]
+        })
+        await send({"type": "http.response.body", "body": b""})
+        return
+
     key_html = (
         f'<div class="api-key-box">'
         f'<p class="api-key-label">Your MCP API Key</p>'
@@ -264,25 +313,46 @@ async def _handle_login_post(receive, send) -> None:
 
 
 def _resolve_user(scope) -> str | None:
-    """Read Authorization: Bearer <key> from headers and resolve to user_id.
+    """Read Authorization header from headers and resolve to user_id.
 
-    Single-user mode: if MCP_API_KEY env var is set and the key matches,
-    resolve to the active session's user_id without a DB lookup.
-    Multi-user mode: DB lookup via api_keys table.
+    Supports:
+    - Bearer <key>
+    - Basic <base64(user_id:token)>
     """
     static_key = os.environ.get("MCP_API_KEY", "").strip()
 
     for name, value in scope.get("headers", []):
         if name.lower() == b"authorization":
             val = value.decode("utf-8", errors="ignore").strip()
-            if not val.lower().startswith("bearer "):
-                continue
-            key = val[7:].strip()
-            if static_key and key == static_key:
-                # Single-user: resolve to the most recent active session
-                uid = session_store.get_active_user_id()
-                return uid or os.environ.get("ZERODHA_USER_ID", "default")
-            return api_key_store.lookup(key)
+            if val.lower().startswith("bearer "):
+                key = val[7:].strip()
+                if static_key and key == static_key:
+                    # Single-user: resolve to the most recent active session
+                    uid = session_store.get_active_user_id()
+                    return uid or os.environ.get("ZERODHA_USER_ID", "default")
+                return api_key_store.lookup(key)
+            elif val.lower().startswith("basic "):
+                import base64
+                try:
+                    encoded = val[6:].strip()
+                    decoded = base64.b64decode(encoded).decode("utf-8")
+                    if ":" not in decoded:
+                        continue
+                    user_id, password = decoded.split(":", 1)
+                    user_id = user_id.strip()
+                    password = password.strip()
+                    if static_key and password == static_key:
+                        uid = session_store.get_active_user_id()
+                        active_uid = uid or os.environ.get("ZERODHA_USER_ID", "default")
+                        if user_id == active_uid:
+                            return active_uid
+                    else:
+                        resolved_uid = api_key_store.lookup(password)
+                        if resolved_uid and resolved_uid == user_id:
+                            return resolved_uid
+                except Exception as exc:
+                    logger.warning("Failed to decode or validate Basic Auth header: %s", exc)
+                    continue
     return None
 
 
@@ -299,6 +369,25 @@ async def app(scope, receive, send):
         await _app(scope, receive, send)
 
 
+def _get_base_url(scope) -> str:
+    public_url = os.environ.get("PUBLIC_URL")
+    if public_url:
+        return public_url.rstrip("/")
+    
+    headers = dict(scope.get("headers", []))
+    host = headers.get(b"host", b"localhost:8000").decode("utf-8")
+    
+    proto = "http"
+    if headers.get(b"x-forwarded-proto"):
+        proto = headers.get(b"x-forwarded-proto").decode("utf-8")
+    elif scope.get("scheme"):
+        proto = scope.get("scheme")
+    elif "443" in host:
+        proto = "https"
+        
+    return f"{proto}://{host}"
+
+
 async def _app(scope, receive, send):
     if scope["type"] == "http":
         path = scope.get("path", "")
@@ -313,12 +402,77 @@ async def _app(scope, receive, send):
             await _send_json(send, 200, {"status": "ok"})
             return
 
+        if path == "/.well-known/oauth-protected-resource":
+            base_url = _get_base_url(scope)
+            await _send_json(send, 200, {
+                "resource": f"{base_url}/mcp",
+                "authorization_servers": [base_url]
+            })
+            return
+
+        if path == "/.well-known/oauth-authorization-server":
+            base_url = _get_base_url(scope)
+            await _send_json(send, 200, {
+                "issuer": base_url,
+                "authorization_endpoint": f"{base_url}/oauth/authorize",
+                "token_endpoint": f"{base_url}/oauth/token",
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code"],
+                "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
+                "code_challenge_methods_supported": ["S256"]
+            })
+            return
+
+        if path == "/oauth/authorize" and method == "GET":
+            query_str = scope.get("query_string", b"").decode()
+            prefill = os.environ.get("ZERODHA_USER_ID", "")
+            await _send_html(send, 200, _render_login(prefill, "", query_str))
+            return
+
+        if path == "/oauth/token" and method == "POST":
+            raw = await _read_body(receive)
+            params = {}
+            try:
+                params = json.loads(raw.decode())
+            except Exception:
+                parsed = urllib.parse.parse_qs(raw.decode(), keep_blank_values=False)
+                params = {k: v[0] for k, v in parsed.items()}
+                
+            code = params.get("code", "").strip()
+            code_verifier = params.get("code_verifier", "").strip()
+            
+            import time
+            if not code or code not in _oauth_codes:
+                await _send_json(send, 400, {"error": "invalid_grant", "error_description": "Invalid authorization code."})
+                return
+                
+            code_data = _oauth_codes[code]
+            if time.time() > code_data["expires_at"]:
+                _oauth_codes.pop(code, None)
+                await _send_json(send, 400, {"error": "invalid_grant", "error_description": "Authorization code expired."})
+                return
+                
+            challenge = code_data.get("code_challenge")
+            challenge_method = code_data.get("code_challenge_method", "S256")
+            if challenge:
+                if not code_verifier or not _verify_pkce(code_verifier, challenge, challenge_method):
+                    await _send_json(send, 400, {"error": "invalid_grant", "error_description": "PKCE verification failed."})
+                    return
+                    
+            _oauth_codes.pop(code, None)
+            await _send_json(send, 200, {
+                "access_token": code_data["api_key"],
+                "token_type": "Bearer",
+                "expires_in": 86400
+            })
+            return
+
         if path == "/login" and method == "GET":
             await _handle_login_get(send)
             return
 
         if path == "/login" and method == "POST":
-            await _handle_login_post(receive, send)
+            await _handle_login_post(scope, receive, send)
             return
 
         if path == "/auth/status":
