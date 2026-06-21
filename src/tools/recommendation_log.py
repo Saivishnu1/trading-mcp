@@ -12,6 +12,7 @@ Auto-capture detection:
 """
 from mcp.server.fastmcp import FastMCP
 
+from src.broker import current_user as _current_user
 from src.recommendation_log import service as _svc
 from src.recommendation_log.capture import detect_recommendation as _detect
 from src import meta as _meta
@@ -132,6 +133,8 @@ def register(mcp: FastMCP) -> None:
 
         Returns record with id (format: REC-xxxxxxxx). Store it for weekly review.
         """
+        if not _current_user.get():
+            raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
         data = _svc.log_recommendation(
             symbol=symbol,
             user_question=user_question,
@@ -192,6 +195,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             id: Record id returned by log_recommendation (format: REC-xxxxxxxx).
         """
+        if not _current_user.get():
+            raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
         data = _svc.update_recommendation_outcome(
             id=id,
             user_action=user_action,
@@ -229,6 +234,8 @@ def register(mcp: FastMCP) -> None:
         Stats are null until analysis_ready — drawing conclusions before 100 clean
         records is the primary risk to avoid.
         """
+        if not _current_user.get():
+            raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
         data = _svc.get_recommendation_stats(clean_only=True)
         m = _meta.build_meta(
             type_=_meta.TYPE_FACT,

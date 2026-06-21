@@ -1,6 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 
-from src.broker import require_broker as _require_broker
+from src.broker import require_broker as _require_broker, current_user as _current_user
+
+def _require_user() -> str:
+    uid = _current_user.get()
+    if not uid:
+        raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
+    return uid
 from src.journal.service import (
     log_trade as _log_trade,
     close_trade as _close_trade,
@@ -66,6 +72,7 @@ def register(mcp: FastMCP) -> None:
         Returns the full trade record with a trade_id (format: TRD-xxxxxxxx).
         Use trade_id with close_trade() to finalise the position.
         """
+        _require_user()
         data = _log_trade(
             symbol=symbol,
             direction=direction,
@@ -102,6 +109,7 @@ def register(mcp: FastMCP) -> None:
 
         Returns the closed trade record including pnl, pnl_percent, and holding_days.
         """
+        _require_user()
         data = _close_trade(
             trade_id=trade_id,
             exit_price=exit_price,
@@ -118,6 +126,7 @@ def register(mcp: FastMCP) -> None:
 
         Response: { count, trades: [ full trade records ] }
         """
+        _require_user()
         data = _get_open_trades(symbol=symbol)
         return _meta.wrap(data, _journal_meta(data))
 
@@ -140,6 +149,7 @@ def register(mcp: FastMCP) -> None:
           summary: total_trades, win_count, loss_count, win_rate_pct,
                    total_pnl, avg_pnl, avg_holding_days, best_trade, worst_trade
         """
+        _require_user()
         data = _get_trade_history(
             symbol=symbol,
             days=days,
@@ -173,6 +183,7 @@ def register(mcp: FastMCP) -> None:
         Note: confidence buckets require analysis_snapshot.confidence to have
         been stored at log_trade time; otherwise trades fall in the 'unknown' band.
         """
+        _require_user()
         data = _get_performance_analytics(
             symbol=symbol,
             days=days,
