@@ -1,8 +1,9 @@
 import os
 import logging
 from mcp.server.fastmcp import FastMCP
-from src.broker import get_broker
+from src.broker import get_broker, reset_broker, current_user
 import src.session_store as session_store
+import src.api_key_store as api_key_store
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +63,17 @@ def register(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
-    def zerodha_logout(user_id: str) -> dict:
-        """Log out a Zerodha user — clears their session from the DB and invalidates the token.
+    def zerodha_logout() -> dict:
+        """Log out the current user — clears their session and invalidates the API key.
 
-        Args:
-            user_id: The Zerodha client ID to log out (e.g. ZK1234).
+        User is identified automatically from the request's API key. No parameters needed.
         """
-        session_store.delete(user_id)
-        broker = get_broker()
-        broker.clear_enctoken()
-        logger.info("MCP logout: %s", user_id)
-        return {"logged_out": True, "user_id": user_id}
+        uid = current_user.get() or session_store.get_active_user_id()
+        if not uid:
+            return {"logged_out": False, "error": "No active session found."}
+        session_store.delete(uid)
+        api_key_store.delete(uid)
+        reset_broker(uid)
+        get_broker().clear_enctoken()
+        logger.info("MCP logout: %s", uid)
+        return {"logged_out": True, "user_id": uid}
