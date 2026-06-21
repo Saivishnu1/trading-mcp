@@ -434,27 +434,39 @@
         <span class="section-title">Supported Clients</span>
       </div>
       <div class="client-row">
-        <div class="client-icon">⌨</div>
-        <div><div class="client-name">Claude Code</div><div class="client-hint">claude mcp add --transport http</div></div>
+        <div class="client-icon">🌐</div>
+        <div>
+          <div class="client-name">claude.ai <span style="font-size:.65rem;background:rgba(56,126,209,.15);color:#60a5fa;border:1px solid rgba(56,126,209,.2);border-radius:4px;padding:.1rem .3rem;margin-left:.3rem;font-weight:600">OAuth · automatic</span></div>
+          <div class="client-hint">Settings → Integrations → Add MCP Server → paste URL below</div>
+          <div class="client-hint" style="color:#4ade80;margin-top:.15rem">✓ No API key needed — login popup appears automatically on first use</div>
+        </div>
       </div>
       <div class="client-row">
-        <div class="client-icon">🌐</div>
-        <div><div class="client-name">Claude Web</div><div class="client-hint">Custom Connectors (OAuth 2.0 + PKCE)</div></div>
+        <div class="client-icon">⌨</div>
+        <div>
+          <div class="client-name">Claude Code</div>
+          <div class="client-hint">claude mcp add --transport http zerodha <span id="cc-url" style="color:#387ED1"></span></div>
+          <div class="client-hint" style="margin-top:.1rem">Then: --header "Authorization: Bearer &lt;your-api-key&gt;"</div>
+        </div>
       </div>
       <div class="client-row">
         <div class="client-icon">🖥</div>
-        <div><div class="client-name">Claude Desktop</div><div class="client-hint">claude_desktop_config.json</div></div>
-      </div>
-      <div class="client-row">
-        <div class="client-icon">⚙</div>
-        <div><div class="client-name">Cursor</div><div class="client-hint">.cursor/mcp.json</div></div>
+        <div>
+          <div class="client-name">Claude Desktop &amp; Cursor</div>
+          <div class="client-hint">claude_desktop_config.json / .cursor/mcp.json</div>
+          <div class="client-hint" style="margin-top:.1rem">mcpServers → url: <span id="cd-url" style="color:#387ED1"></span> + Authorization header</div>
+        </div>
       </div>
       <div class="client-row">
         <div class="client-icon">📮</div>
-        <div><div class="client-name">Postman</div><div class="client-hint">New → MCP Server → Streamable HTTP</div></div>
+        <div>
+          <div class="client-name">Postman</div>
+          <div class="client-hint">New → MCP Server → Streamable HTTP → <span id="pm-url" style="color:#387ED1"></span></div>
+          <div class="client-hint" style="margin-top:.1rem">Header: Authorization → Bearer &lt;your-api-key&gt;</div>
+        </div>
       </div>
       <div class="info-row" style="padding:.65rem 1.25rem">
-        <span style="font-size:.73rem;color:#475569">Log in to get ready-to-paste configs for each client.</span>
+        <span style="font-size:.73rem;color:#475569">Log in to get your API key with ready-to-paste configs for each client.</span>
       </div>
     </div>
   </div>
@@ -465,7 +477,11 @@
 
 </div>
 <script>
-  document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
+  var mcpUrl = window.location.origin + '/mcp';
+  document.getElementById('mcp-url').textContent = mcpUrl;
+  ['cc-url','cd-url','pm-url'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.textContent = mcpUrl;
+  });
 
   (function() {
     var card    = document.getElementById('session-card');

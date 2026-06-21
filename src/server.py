@@ -278,6 +278,13 @@ async def _handle_login_post(scope, receive, send) -> None:
     logger.info("Browser login successful for %s", user_id)
 
     if redirect_uri:
+        # Reject non-HTTPS redirect URIs in production (allow localhost for dev)
+        parsed_uri = urllib.parse.urlparse(redirect_uri)
+        is_local = parsed_uri.hostname in ("localhost", "127.0.0.1")
+        if not is_local and parsed_uri.scheme != "https":
+            await _send_html(send, 400, "<h1>Invalid redirect_uri — HTTPS required</h1>")
+            return
+
         # Generate temporary auth code
         import secrets
         import time
@@ -404,23 +411,33 @@ async def _app(scope, receive, send):
 
         if path == "/.well-known/oauth-protected-resource":
             base_url = _get_base_url(scope)
-            await _send_json(send, 200, {
+            body = json.dumps({
                 "resource": f"{base_url}/mcp",
-                "authorization_servers": [base_url]
-            })
+                "authorization_servers": [base_url],
+            }).encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"access-control-allow-origin", b"*"]]})
+            await send({"type": "http.response.body", "body": body})
             return
 
         if path == "/.well-known/oauth-authorization-server":
             base_url = _get_base_url(scope)
-            await _send_json(send, 200, {
+            body = json.dumps({
                 "issuer": base_url,
                 "authorization_endpoint": f"{base_url}/oauth/authorize",
                 "token_endpoint": f"{base_url}/oauth/token",
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code"],
                 "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
-                "code_challenge_methods_supported": ["S256"]
-            })
+                "code_challenge_methods_supported": ["S256"],
+            }).encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"access-control-allow-origin", b"*"]]})
+            await send({"type": "http.response.body", "body": body})
             return
 
         if path == "/oauth/authorize" and method == "GET":
@@ -437,34 +454,56 @@ async def _app(scope, receive, send):
             except Exception:
                 parsed = urllib.parse.parse_qs(raw.decode(), keep_blank_values=False)
                 params = {k: v[0] for k, v in parsed.items()}
-                
+
+            _cors = [[b"access-control-allow-origin", b"*"],
+                     [b"access-control-allow-headers", b"content-type,authorization"]]
+
+            grant_type = params.get("grant_type", "").strip()
+            if grant_type and grant_type != "authorization_code":
+                await _send_json(send, 400, {"error": "unsupported_grant_type"})
+                return
+
             code = params.get("code", "").strip()
             code_verifier = params.get("code_verifier", "").strip()
-            
+
             import time
             if not code or code not in _oauth_codes:
                 await _send_json(send, 400, {"error": "invalid_grant", "error_description": "Invalid authorization code."})
                 return
-                
+
             code_data = _oauth_codes[code]
             if time.time() > code_data["expires_at"]:
                 _oauth_codes.pop(code, None)
                 await _send_json(send, 400, {"error": "invalid_grant", "error_description": "Authorization code expired."})
                 return
-                
+
             challenge = code_data.get("code_challenge")
             challenge_method = code_data.get("code_challenge_method", "S256")
             if challenge:
                 if not code_verifier or not _verify_pkce(code_verifier, challenge, challenge_method):
                     await _send_json(send, 400, {"error": "invalid_grant", "error_description": "PKCE verification failed."})
                     return
-                    
+
             _oauth_codes.pop(code, None)
-            await _send_json(send, 200, {
+            body = json.dumps({
                 "access_token": code_data["api_key"],
-                "token_type": "Bearer",
-                "expires_in": 86400
-            })
+                "token_type": "bearer",
+                "expires_in": 86400,
+            }).encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()]] + _cors})
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        if path == "/oauth/token" and method == "OPTIONS":
+            # CORS preflight for browser-based OAuth clients
+            await send({"type": "http.response.start", "status": 204,
+                        "headers": [[b"access-control-allow-origin", b"*"],
+                                    [b"access-control-allow-methods", b"POST,OPTIONS"],
+                                    [b"access-control-allow-headers", b"content-type,authorization"],
+                                    [b"access-control-max-age", b"86400"]]})
+            await send({"type": "http.response.body", "body": b""})
             return
 
         if path == "/login" and method == "GET":
@@ -477,9 +516,11 @@ async def _app(scope, receive, send):
 
         if path == "/auth/status":
             broker = get_broker()
+            uid = current_user.get() or session_store.get_active_user_id()
             await _send_json(send, 200, {
                 "authenticated": broker.is_authenticated(),
                 "backend": type(broker).__name__,
+                "user_id": uid,
             })
             return
 
@@ -494,7 +535,10 @@ async def _app(scope, receive, send):
             else:
                 get_broker().clear_enctoken()
             logger.info("Logout: %s", uid or "active session")
-            await _send_json(send, 200, {"logged_out": True, "user_id": uid or None})
+            # Redirect to home so the browser shows updated session status
+            await send({"type": "http.response.start", "status": 302,
+                        "headers": [[b"location", b"/"]]})
+            await send({"type": "http.response.body", "body": b""})
             return
 
         if path == "/sse" or path.startswith("/messages"):
