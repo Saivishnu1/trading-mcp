@@ -5,82 +5,233 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Zerodha Login</title>
 <style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
   body {
-    font-family: system-ui, sans-serif;
-    background: #f5f5f5;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #0f172a;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    margin: 0;
+    padding: 1rem;
   }
+
   .card {
-    background: #fff;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
+    padding: 2.5rem 2rem;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 25px 50px rgba(0,0,0,.5);
+    animation: slideUp .35s ease;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 2rem;
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #387ED1, #56cfb2);
     border-radius: 8px;
-    padding: 2rem;
-    width: 320px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 800; color: #fff;
   }
+  .logo-text { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; }
+  .logo-sub  { font-size: .75rem; color: #64748b; }
+
   h1 {
-    margin: 0 0 1.5rem;
-    font-size: 1.25rem;
-    color: #111;
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: .35rem;
   }
-  label {
-    display: block;
+  .subtitle {
     font-size: .85rem;
-    color: #555;
-    margin-bottom: .25rem;
+    color: #64748b;
+    margin-bottom: 1.75rem;
   }
+
+  .field { margin-bottom: 1.1rem; }
+  label  { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .4rem; font-weight: 500; }
+
   input {
     width: 100%;
-    box-sizing: border-box;
-    padding: .5rem .75rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 1rem;
-    margin-bottom: 1rem;
+    padding: .65rem .9rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    font-size: .95rem;
+    color: #f1f5f9;
+    transition: border-color .2s;
   }
-  input:focus {
-    outline: none;
-    border-color: #387ED1;
-  }
+  input::placeholder { color: #475569; }
+  input:focus { outline: none; border-color: #387ED1; }
+
   button {
     width: 100%;
-    padding: .65rem;
-    background: #387ED1;
+    padding: .75rem;
+    margin-top: .5rem;
+    background: linear-gradient(135deg, #387ED1, #2d6cb8);
     color: #fff;
     border: none;
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: 8px;
+    font-size: .95rem;
+    font-weight: 600;
     cursor: pointer;
+    transition: opacity .2s, transform .1s;
+    position: relative;
   }
-  button:hover {
-    background: #2d6cb8;
+  button:hover   { opacity: .9; }
+  button:active  { transform: scale(.98); }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+
+  .spinner {
+    display: none;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
   }
+  @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
   .msg {
-    margin-top: 1rem;
-    padding: .75rem;
-    border-radius: 4px;
-    font-size: .9rem;
+    display: flex; align-items: flex-start; gap: .6rem;
+    margin-bottom: 1.25rem;
+    padding: .85rem 1rem;
+    border-radius: 8px;
+    font-size: .875rem;
+    line-height: 1.4;
   }
-  .ok  { background: #e6f4ea; color: #1e6b34; }
-  .err { background: #fce8e6; color: #b3261e; }
+  .msg-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: .05rem; }
+  .ok  { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.2); }
+  .err { background: rgba(239,68,68,.12);  color: #f87171; border: 1px solid rgba(239,68,68,.2);  }
+
+  .security-note {
+    display: flex; align-items: center; gap: .5rem;
+    margin-top: 1.5rem;
+    padding: .7rem .9rem;
+    background: rgba(56,126,209,.08);
+    border: 1px solid rgba(56,126,209,.15);
+    border-radius: 8px;
+    font-size: .78rem;
+    color: #64748b;
+  }
+  .security-note span { color: #387ED1; font-size: 1rem; }
+
+  .success-card {
+    text-align: center;
+    padding: 1rem 0;
+  }
+  .success-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    animation: pop .4s ease;
+  }
+  @keyframes pop {
+    0%   { transform: scale(0); }
+    70%  { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+  .success-card h2 { color: #4ade80; font-size: 1.2rem; margin-bottom: .5rem; }
+  .success-card p  { color: #64748b; font-size: .875rem; }
+  .countdown { color: #387ED1; font-weight: 600; }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Zerodha Login</h1>
-  {message}
-  <form method="POST" action="/login" autocomplete="off">
-    <label>Client ID</label>
-    <input name="user_id" value="{prefill_user_id}" placeholder="ZK1234" required autocomplete="off">
-    <label>Password</label>
-    <input type="password" name="password" placeholder="Kite password" required autocomplete="new-password">
-    <label>TOTP (6-digit code)</label>
-    <input type="password" name="totp_code" placeholder="123456" maxlength="6" required autocomplete="off">
-    <button type="submit">Log in securely</button>
-  </form>
+<div class="card" id="main-card">
+  <div class="logo">
+    <div class="logo-icon">Z</div>
+    <div>
+      <div class="logo-text">Zerodha MCP</div>
+      <div class="logo-sub">Personal Trading Server</div>
+    </div>
+  </div>
+
+  <div id="form-section">
+    <h1>Sign in</h1>
+    <p class="subtitle">Enter your Kite credentials to authenticate</p>
+
+    {message}
+
+    <form method="POST" action="/login" autocomplete="off" id="login-form">
+      <div class="field">
+        <label>Client ID</label>
+        <input name="user_id" value="{prefill_user_id}" placeholder="ZK1234" required autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" placeholder="Kite password" required autocomplete="new-password">
+      </div>
+      <div class="field">
+        <label>TOTP (6-digit code)</label>
+        <input type="password" name="totp_code" placeholder="123456" maxlength="6" required autocomplete="off" inputmode="numeric">
+      </div>
+      <button type="submit" id="submit-btn">
+        Log in securely
+        <div class="spinner" id="spinner"></div>
+      </button>
+    </form>
+
+    <div class="security-note">
+      <span>&#128274;</span>
+      Credentials go directly to the server — never through the AI agent
+    </div>
+  </div>
 </div>
+
+<script>
+  // Show loading state on submit
+  document.getElementById('login-form').addEventListener('submit', function() {
+    var btn = document.getElementById('submit-btn');
+    var spinner = document.getElementById('spinner');
+    btn.disabled = true;
+    btn.childNodes[0].textContent = 'Signing in…';
+    spinner.style.display = 'block';
+  });
+
+  // Auto-close on success
+  (function() {
+    var msg = document.querySelector('.msg.ok');
+    if (!msg) return;
+
+    var formSection = document.getElementById('form-section');
+    var card = document.getElementById('main-card');
+
+    var secs = 3;
+    formSection.innerHTML = [
+      '<div class="success-card">',
+      '  <div class="success-icon">&#10003;</div>',
+      '  <h2>Logged in successfully</h2>',
+      '  <p>Closing in <span class="countdown" id="cd">' + secs + '</span>s…</p>',
+      '</div>'
+    ].join('');
+
+    var interval = setInterval(function() {
+      secs--;
+      var el = document.getElementById('cd');
+      if (el) el.textContent = secs;
+      if (secs <= 0) {
+        clearInterval(interval);
+        window.close();
+        // Fallback if browser blocks window.close()
+        if (document.getElementById('cd')) {
+          document.querySelector('.success-card p').textContent = 'You can close this tab.';
+        }
+      }
+    }, 1000);
+  })();
+</script>
 </body>
 </html>
