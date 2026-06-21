@@ -1,6 +1,5 @@
 import os
 import logging
-import pyotp
 from mcp.server.fastmcp import FastMCP
 from src.broker import get_broker
 
@@ -10,45 +9,28 @@ logger = logging.getLogger(__name__)
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
-    def zerodha_login(
-        user_id: str,
-        password: str,
-        totp_code: str | None = None,
-        totp_secret: str | None = None,
-    ) -> dict:
-        """Log in to your personal Zerodha account.
+    def zerodha_login() -> dict:
+        """Check authentication status and return a browser login URL if not authenticated.
 
-        No Kite Connect API subscription required — uses the same web login
-        as the Kite browser app.
+        Credentials are NEVER passed through this tool — they are entered directly
+        in the browser so they never appear in agent context, tool logs, or MCP traffic.
 
-        Provide either:
-          totp_code   — the 6-digit code from your authenticator app right now, OR
-          totp_secret — the base32 TOTP secret (scanned from Zerodha's QR code);
-                        the server generates the code automatically.
+        If already authenticated, returns immediately without requiring a login.
 
-        The session is persisted to disk so subsequent server restarts do not
-        require re-login until the token expires (~24 hours).
-
-        Args:
-            user_id: Your Zerodha client ID (e.g. 'ZK1234').
-            password: Your Zerodha login password.
-            totp_code: Current 6-digit TOTP (mutually exclusive with totp_secret).
-            totp_secret: Base32 TOTP secret for automatic code generation.
+        Returns:
+            authenticated=True  — session is active, no action needed.
+            authenticated=False — open login_url in your browser to log in securely.
         """
-        if not totp_code and not totp_secret:
-            raise ValueError("Provide either totp_code or totp_secret.")
-
-        if not totp_code:
-            totp_code = pyotp.TOTP(totp_secret).now()
-
         broker = get_broker()
-        data = broker.login(user_id=user_id, password=password, totp=totp_code)
+        if broker.is_authenticated():
+            return {"authenticated": True, "message": "Already authenticated."}
 
-        session_file = os.environ.get("SESSION_FILE", ".session.json")
-        broker.save_session(session_file)
-
-        backend = type(broker).__name__
-        return {"status": "authenticated", "backend": backend, **data}
+        base_url = os.environ.get("PUBLIC_URL", "http://localhost:8000")
+        return {
+            "authenticated": False,
+            "login_url": f"{base_url}/login",
+            "message": "Open login_url in your browser. Credentials are entered directly — they never pass through the agent.",
+        }
 
     @mcp.tool()
     def get_profile() -> dict:

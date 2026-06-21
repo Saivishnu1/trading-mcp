@@ -111,8 +111,8 @@ This is the **base32 secret key** behind your Zerodha TOTP authenticator. It is 
 Google Authenticator / Authy encodes as a QR code. Providing this lets the server generate the
 6-digit code automatically — useful for unattended/remote deployments.
 
-> If you prefer to type the 6-digit code manually each time instead, leave `ZERODHA_TOTP_SECRET`
-> blank and pass `totp_code="123456"` when calling `zerodha_login()`.
+> If `ZERODHA_TOTP_SECRET` is not set, you will be prompted for the 6-digit code on the
+> `/login` browser page each time you log in.
 
 #### How to get your TOTP secret (step by step)
 
@@ -230,51 +230,43 @@ uv run zerodha-mcp
 Market data tools work immediately without authentication. Portfolio tools (`get_holdings`,
 `get_positions`, `get_margins`) require a live Zerodha session.
 
-### Option A — Login via Claude (recommended)
+> **Security design:** Credentials never pass through the agent. The `zerodha_login()` MCP tool
+> takes no parameters — it returns a URL. You open the URL in your browser and enter credentials
+> directly into the server's login page. Nothing sensitive appears in agent context, tool logs,
+> or MCP traffic.
 
-Once the server is connected to Claude, just ask:
+### Option A — Via agent (recommended)
+
+Ask any connected agent:
 
 > *"Log in to Zerodha"*
 
-Claude will call `zerodha_login()` automatically. If `ZERODHA_TOTP_SECRET` is set in `.env`,
-no further input is needed. If not, Claude will ask you for the current 6-digit code from your
-authenticator app.
-
-### Option B — Login by calling the tool directly
-
-From any MCP client, call:
-
-```
-zerodha_login(
-  user_id="ZK1234",
-  password="your_password",
-  totp_code="123456"          ← current 6-digit code from your authenticator
-)
-```
-
-Or, if you saved `ZERODHA_TOTP_SECRET`:
-
-```
-zerodha_login(
-  user_id="ZK1234",
-  password="your_password",
-  totp_secret="YOUR_BASE32_SECRET"   ← server generates the code
-)
-```
-
-A successful login returns:
+The agent calls `zerodha_login()` and returns a login URL:
 
 ```json
 {
-  "status": "authenticated",
-  "backend": "ZerodhaWebClient",
-  "user_id": "ZK1234",
-  "user_name": "Sai Vishnu",
-  "email": "you@example.com"
+  "authenticated": false,
+  "login_url": "https://zerodha-mcp-production.up.railway.app/login",
+  "message": "Open login_url in your browser. Credentials are entered directly — they never pass through the agent."
 }
 ```
 
-The session token is saved to `.session.json` and reloaded automatically on the next server start.
+Open that URL in your browser, fill in your Client ID, Kite password, and current TOTP code,
+and click **Log in securely**. The server authenticates with Zerodha and saves the session.
+
+### Option B — Open the login page directly
+
+Navigate to the login page in your browser without involving an agent:
+
+- **Local:** `http://localhost:8000/login`
+- **Railway:** `https://zerodha-mcp-production.up.railway.app/login`
+
+### Option C — Auto-login on server startup
+
+If `ZERODHA_USER_ID`, `ZERODHA_PASSWORD`, and `ZERODHA_TOTP_SECRET` are all set in `.env`
+(or Railway environment variables), the server logs in automatically on startup. This is the
+recommended approach for Railway deployments — credentials stay in Railway's secret manager,
+never in agent context.
 
 ### Check session status
 
@@ -288,6 +280,8 @@ check_auth_status()
   "backend": "ZerodhaWebClient"
 }
 ```
+
+Or hit the JSON status endpoint directly: `GET /auth/status`
 
 ---
 

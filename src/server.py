@@ -1,6 +1,8 @@
+import json
 import os
 import logging
 import pyotp
+import urllib.parse
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -64,9 +66,10 @@ mcp = FastMCP(
     instructions=(
         "Zerodha personal-account MCP server — no paid Kite Connect subscription needed.\n\n"
         "AUTHENTICATION (required for portfolio tools):\n"
-        "  Call zerodha_login(user_id, password, totp_code='123456') once.\n"
-        "  The session is saved to disk and reloaded on restart (~24 h lifetime).\n"
-        "  Alternatively, pass totp_secret instead of totp_code for auto-generation.\n\n"
+        "  Call zerodha_login() — it returns a login_url if not authenticated.\n"
+        "  Tell the user to open that URL in their browser and enter credentials directly.\n"
+        "  NEVER ask for or accept passwords or TOTP codes — credentials must not pass through the agent.\n"
+        "  The session is saved to disk and reloaded on restart (~24 h lifetime).\n\n"
         "PORTFOLIO tools (require active session):\n"
         "  get_holdings()          — demat holdings\n"
         "  get_positions()         — intraday/net positions\n"
@@ -193,19 +196,139 @@ _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
 
 
+_LOGIN_PAGE = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zerodha Login</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #f5f5f5; display: flex;
+          justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
+  .card {{ background: #fff; border-radius: 8px; padding: 2rem; width: 320px;
+           box-shadow: 0 2px 8px rgba(0,0,0,.12); }}
+  h1 {{ margin: 0 0 1.5rem; font-size: 1.25rem; color: #111; }}
+  label {{ display: block; font-size: .85rem; color: #555; margin-bottom: .25rem; }}
+  input {{ width: 100%; box-sizing: border-box; padding: .5rem .75rem; border: 1px solid #ccc;
+           border-radius: 4px; font-size: 1rem; margin-bottom: 1rem; }}
+  input:focus {{ outline: none; border-color: #387ED1; }}
+  button {{ width: 100%; padding: .65rem; background: #387ED1; color: #fff;
+            border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }}
+  button:hover {{ background: #2d6cb8; }}
+  .msg {{ margin-top: 1rem; padding: .75rem; border-radius: 4px; font-size: .9rem; }}
+  .ok  {{ background: #e6f4ea; color: #1e6b34; }}
+  .err {{ background: #fce8e6; color: #b3261e; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Zerodha Login</h1>
+  {message}
+  <form method="POST" action="/login" autocomplete="off">
+    <label>Client ID</label>
+    <input name="user_id" value="{prefill_user_id}" placeholder="ZK1234" required autocomplete="off">
+    <label>Password</label>
+    <input type="password" name="password" placeholder="Kite password" required autocomplete="new-password">
+    <label>TOTP (6-digit code)</label>
+    <input type="password" name="totp_code" placeholder="123456" maxlength="6" required autocomplete="off">
+    <button type="submit">Log in securely</button>
+  </form>
+</div>
+</body>
+</html>
+"""
+
+
+async def _read_body(receive) -> bytes:
+    body = b""
+    more = True
+    while more:
+        msg = await receive()
+        body += msg.get("body", b"")
+        more = msg.get("more_body", False)
+    return body
+
+
+async def _send_html(send, status: int, html: str) -> None:
+    body = html.encode()
+    await send({"type": "http.response.start", "status": status,
+                "headers": [[b"content-type", b"text/html; charset=utf-8"],
+                             [b"content-length", str(len(body)).encode()]]})
+    await send({"type": "http.response.body", "body": body})
+
+
+async def _send_json(send, status: int, data: dict) -> None:
+    body = json.dumps(data).encode()
+    await send({"type": "http.response.start", "status": status,
+                "headers": [[b"content-type", b"application/json"],
+                             [b"content-length", str(len(body)).encode()]]})
+    await send({"type": "http.response.body", "body": body})
+
+
+async def _handle_login_get(send) -> None:
+    prefill = os.environ.get("ZERODHA_USER_ID", "")
+    html = _LOGIN_PAGE.format(prefill_user_id=prefill, message="")
+    await _send_html(send, 200, html)
+
+
+async def _handle_login_post(receive, send) -> None:
+    raw = await _read_body(receive)
+    params = urllib.parse.parse_qs(raw.decode(), keep_blank_values=False)
+    user_id   = (params.get("user_id",   [""])[0]).strip()
+    password  = (params.get("password",  [""])[0]).strip()
+    totp_code = (params.get("totp_code", [""])[0]).strip()
+
+    if not (user_id and password and totp_code):
+        prefill = os.environ.get("ZERODHA_USER_ID", "")
+        msg = '<p class="msg err">All fields are required.</p>'
+        await _send_html(send, 400, _LOGIN_PAGE.format(prefill_user_id=prefill, message=msg))
+        return
+
+    try:
+        broker = get_broker()
+        broker.login(user_id=user_id, password=password, totp=totp_code)
+        session_file = os.environ.get("SESSION_FILE", ".session.json")
+        broker.save_session(session_file)
+        logger.info("Browser login successful for %s", user_id)
+        msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
+        await _send_html(send, 200, _LOGIN_PAGE.format(prefill_user_id="", message=msg))
+    except Exception as exc:
+        logger.warning("Browser login failed: %s", exc)
+        prefill = os.environ.get("ZERODHA_USER_ID", "")
+        msg = f'<p class="msg err">Login failed: {exc}</p>'
+        await _send_html(send, 401, _LOGIN_PAGE.format(prefill_user_id=prefill, message=msg))
+
+
 async def app(scope, receive, send):
     if scope["type"] == "http":
         path = scope.get("path", "")
+        method = scope.get("method", "GET")
+
         if path == "/health":
-            body = b'{"status":"ok"}'
-            await send({"type": "http.response.start", "status": 200,
-                        "headers": [[b"content-type", b"application/json"],
-                                    [b"content-length", str(len(body)).encode()]]})
-            await send({"type": "http.response.body", "body": body})
+            await _send_json(send, 200, {"status": "ok"})
             return
+
+        if path == "/login" and method == "GET":
+            await _handle_login_get(send)
+            return
+
+        if path == "/login" and method == "POST":
+            await _handle_login_post(receive, send)
+            return
+
+        if path == "/auth/status":
+            broker = get_broker()
+            await _send_json(send, 200, {
+                "authenticated": broker.is_authenticated(),
+                "backend": type(broker).__name__,
+            })
+            return
+
         if path == "/sse" or path.startswith("/messages"):
             await _sse_app(scope, receive, send)
             return
+
     # /mcp requests AND lifespan events go to http_app so it can
     # initialize its session manager task group during startup.
     await _http_app(scope, receive, send)
