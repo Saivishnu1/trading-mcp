@@ -504,32 +504,39 @@ async def _app(scope, receive, send):
             code_challenge = (oauth_params.get("code_challenge", [""])[0]).strip()
             code_challenge_method = (oauth_params.get("code_challenge_method", ["S256"])[0]).strip()
 
-            # If already logged in (cookie present + active DB session), skip login form
+            # If already logged in (cookie present + valid live session), skip login form
             uid_cookie = _get_cookie(scope, "mcp_uid")
             if uid_cookie and redirect_uri:
                 enctoken = session_store.load(uid_cookie)
                 if enctoken:
-                    import secrets as _s, time as _t
-                    api_key, _ = api_key_store.get_or_create(uid_cookie)
-                    code = "auth_" + _s.token_hex(16)
-                    _oauth_codes[code] = {
-                        "user_id": uid_cookie,
-                        "api_key": api_key,
-                        "code_challenge": code_challenge,
-                        "code_challenge_method": code_challenge_method,
-                        "expires_at": _t.time() + 300,
-                    }
-                    redirect_url = f"{redirect_uri}?code={code}"
-                    if state:
-                        redirect_url += f"&state={urllib.parse.quote(state)}"
-                    await send({"type": "http.response.start", "status": 302,
-                                "headers": [[b"location", redirect_url.encode()]]})
-                    await send({"type": "http.response.body", "body": b""})
-                    logger.info("OAuth auto-authorized for %s via existing session", uid_cookie)
-                    return
+                    # Validate the enctoken is still accepted by Zerodha before auto-redirecting
+                    live_broker = get_broker(uid_cookie)
+                    if live_broker.is_authenticated():
+                        import secrets as _s, time as _t
+                        api_key, _ = api_key_store.get_or_create(uid_cookie)
+                        code = "auth_" + _s.token_hex(16)
+                        _oauth_codes[code] = {
+                            "user_id": uid_cookie,
+                            "api_key": api_key,
+                            "code_challenge": code_challenge,
+                            "code_challenge_method": code_challenge_method,
+                            "expires_at": _t.time() + 300,
+                        }
+                        redirect_url = f"{redirect_uri}?code={code}"
+                        if state:
+                            redirect_url += f"&state={urllib.parse.quote(state)}"
+                        await send({"type": "http.response.start", "status": 302,
+                                    "headers": [[b"location", redirect_url.encode()]]})
+                        await send({"type": "http.response.body", "body": b""})
+                        logger.info("OAuth auto-authorized for %s via existing session", uid_cookie)
+                        return
+                    # Enctoken in DB is expired — fall through to show login form
 
             prefill = os.environ.get("ZERODHA_USER_ID", "")
-            msg = f'<p class="alert ok">Already logged in as {uid_cookie}. Enter credentials to confirm.</p>' if uid_cookie else ""
+            if uid_cookie:
+                msg = '<p class="alert ok">Your previous session has expired. Log in again to continue.</p>'
+            else:
+                msg = ""
             await _send_html(send, 200, _render_login(prefill, msg, query_str))
             return
 
