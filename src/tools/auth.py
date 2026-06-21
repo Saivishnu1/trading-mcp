@@ -51,12 +51,15 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def check_auth_status() -> dict:
-        """Check whether the server has an active Zerodha session.
+        """Check whether this client has an active Zerodha session.
 
-        Returns the backend name and auth status without making a live
-        profile API call.
+        Returns authenticated=True only if the request carries a valid API key
+        and the associated session is active.
         """
-        broker = get_broker()
+        uid = current_user.get()
+        if not uid:
+            return {"authenticated": False, "backend": None}
+        broker = get_broker(uid)
         return {
             "authenticated": broker.is_authenticated(),
             "backend": type(broker).__name__,
