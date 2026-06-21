@@ -17,21 +17,21 @@ def register(mcp: FastMCP) -> None:
         Credentials are NEVER passed through this tool — they are entered directly
         in the browser so they never appear in agent context, tool logs, or MCP traffic.
 
-        If already authenticated, returns immediately without requiring a login.
+        If already authenticated (valid API key in request), returns immediately.
+        Otherwise returns a login URL — open it in your browser to authenticate.
 
         Returns:
-            authenticated=True  — session is active, no action needed.
+            authenticated=True  — this client has a valid session, no action needed.
             authenticated=False — open login_url in your browser to log in securely.
         """
-        broker = get_broker()
-        if broker.is_authenticated():
-            return {"authenticated": True, "message": "Already authenticated."}
-
-        # PUBLIC_URL overrides everything (any platform).
-        # Falls back to RAILWAY_PUBLIC_DOMAIN if on Railway, then localhost.
+        uid = current_user.get()
         railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
         default_url = f"https://{railway_domain}" if railway_domain else "http://localhost:8000"
         base_url = os.environ.get("PUBLIC_URL", default_url).rstrip("/")
+
+        if uid and get_broker(uid).is_authenticated():
+            return {"authenticated": True, "message": "Already authenticated."}
+
         return {
             "authenticated": False,
             "login_url": f"{base_url}/login",
