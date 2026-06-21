@@ -10,6 +10,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --no-install-project --no-dev --frozen
 
 COPY src/ src/
+COPY ui/ ui/
 RUN uv sync --no-dev --frozen
 
 EXPOSE 8000
