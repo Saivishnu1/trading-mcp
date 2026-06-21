@@ -4,6 +4,7 @@ import logging
 import urllib.parse
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker, current_user
 from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, calibration, recommendation_log
@@ -31,8 +32,13 @@ except Exception as exc:
 
 
 
+_public_host = os.environ.get("PUBLIC_HOST", "zerodha-mcp-production.up.railway.app")
+
 mcp = FastMCP(
     name="Zerodha Personal MCP",
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=[_public_host, f"{_public_host}:443", "localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000"],
+    ),
     instructions=(
         "Zerodha personal-account MCP server — no paid Kite Connect subscription needed.\n\n"
         "AUTHENTICATION (required for portfolio tools):\n"
