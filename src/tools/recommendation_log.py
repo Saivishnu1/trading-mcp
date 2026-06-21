@@ -134,7 +134,7 @@ def register(mcp: FastMCP) -> None:
         Returns record with id (format: REC-xxxxxxxx). Store it for weekly review.
         """
         if not _current_user.get():
-            raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
+            return _meta.wrap({"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}, _meta.build_meta(type_=_meta.TYPE_FACT, validation_status=_meta.VALIDATION_VERIFIED, data_quality=_meta.DQ_INVALID, source="internal_journal", account_type="PAPER_JOURNAL"))
         data = _svc.log_recommendation(
             symbol=symbol,
             user_question=user_question,
@@ -196,7 +196,7 @@ def register(mcp: FastMCP) -> None:
             id: Record id returned by log_recommendation (format: REC-xxxxxxxx).
         """
         if not _current_user.get():
-            raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
+            return _meta.wrap({"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}, _meta.build_meta(type_=_meta.TYPE_FACT, validation_status=_meta.VALIDATION_VERIFIED, data_quality=_meta.DQ_INVALID, source="internal_journal", account_type="PAPER_JOURNAL"))
         data = _svc.update_recommendation_outcome(
             id=id,
             user_action=user_action,
@@ -235,7 +235,7 @@ def register(mcp: FastMCP) -> None:
         records is the primary risk to avoid.
         """
         if not _current_user.get():
-            raise PermissionError("Authentication required. Add your API key as Authorization: Bearer <key>.")
+            return _meta.wrap({"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}, _meta.build_meta(type_=_meta.TYPE_FACT, validation_status=_meta.VALIDATION_VERIFIED, data_quality=_meta.DQ_INVALID, source="internal_journal", account_type="PAPER_JOURNAL"))
         data = _svc.get_recommendation_stats(clean_only=True)
         m = _meta.build_meta(
             type_=_meta.TYPE_FACT,

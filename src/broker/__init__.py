@@ -62,7 +62,7 @@ def require_broker() -> BrokerClient:
     """
     uid = current_user.get()
     if not uid:
-        raise PermissionError("Authentication required. Call zerodha_login() to get a login URL, then add your API key as a Bearer token.")
+        raise PermissionError("not_authenticated: Call zerodha_login() to get a login URL, then ask the user to open it in their browser.")
     return get_broker(uid)
 
 
