@@ -116,7 +116,7 @@ async def test_oauth_login_post_success(monkeypatch):
     
     assert status == 302
     location = headers[b"location"].decode()
-    assert location.startswith("http://callback?code=auth_")
+    assert location.startswith("https://callback?code=auth_")
     assert "&state=xyz" in location
     
     # Verify the code is stored in server-side map
