@@ -230,7 +230,8 @@ def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> 
 
 async def _handle_login_get(send) -> None:
     prefill = os.environ.get("ZERODHA_USER_ID", "")
-    await _send_html(send, 200, _render_login(prefill, ""))
+    msg = "A session is already active. Log in again to refresh it." if get_broker().is_authenticated() else ""
+    await _send_html(send, 200, _render_login(prefill, msg))
 
 
 async def _handle_login_post(scope, receive, send) -> None:
