@@ -395,6 +395,20 @@ async def app(scope, receive, send):
         path = scope.get("path", "")
         if path in ("/mcp", "/sse") and uid:
             logger.info("MCP connect: path=%s user_id=%s", path, uid)
+        if path in ("/mcp", "/sse") and not uid:
+            # Return 401 so clients trigger OAuth discovery via /.well-known/
+            base_url = _get_base_url(scope)
+            www_auth = (
+                f'Bearer realm="{base_url}",'
+                f' error="invalid_token",'
+                f' error_description="Authentication required"'
+            )
+            await send({"type": "http.response.start", "status": 401,
+                        "headers": [[b"www-authenticate", www_auth.encode()],
+                                    [b"content-length", b"0"]]})
+            await send({"type": "http.response.body", "body": b""})
+            current_user.reset(token)
+            return
         try:
             await _app(scope, receive, send)
         finally:
