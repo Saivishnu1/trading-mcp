@@ -175,7 +175,7 @@ _UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
 _LOGIN_TEMPLATE = open(os.path.join(_UI_DIR, "login.html"), encoding="utf-8").read()
 _HOME_TEMPLATE  = open(os.path.join(_UI_DIR, "home.html"),  encoding="utf-8").read()
 
-_TOOL_COUNT = len([t for t in dir(mcp) if not t.startswith("_")])
+_TOOL_COUNT = len(mcp._tool_manager.list_tools())
 
 
 async def _read_body(receive) -> bytes:
