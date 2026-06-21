@@ -20,17 +20,40 @@ def generate() -> str:
     return "sess_" + secrets.token_hex(24)
 
 
-def save(api_key: str, user_id: str) -> None:
-    """Store a new API key mapped to user_id. Deactivates previous keys for the user."""
+def get_or_create(user_id: str) -> tuple[str, bool]:
+    """
+    Return (api_key, is_new) for a user.
+    If an active key already exists, return it unchanged — API keys survive re-logins.
+    Only creates a new key on first login or after explicit rotation/logout.
+    """
     conn = _get_connection()
-    now = _now()
+    row = conn.execute(
+        "SELECT api_key FROM api_keys WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    if row:
+        existing = row["api_key"] if isinstance(row, dict) else row[0]
+        return existing, False
+    # No active key — generate one
+    api_key = generate()
+    conn.execute(
+        "INSERT INTO api_keys (api_key, user_id, created_at, is_active) VALUES (?, ?, ?, 1)",
+        (api_key, user_id, _now()),
+    )
+    conn.commit()
+    return api_key, True
+
+
+def save(api_key: str, user_id: str) -> None:
+    """Force-insert a new API key, deactivating previous ones. Use for explicit rotation."""
+    conn = _get_connection()
     conn.execute(
         "UPDATE api_keys SET is_active = 0 WHERE user_id = ?",
         (user_id,),
     )
     conn.execute(
         "INSERT INTO api_keys (api_key, user_id, created_at, is_active) VALUES (?, ?, ?, 1)",
-        (api_key, user_id, now),
+        (api_key, user_id, _now()),
     )
     conn.commit()
 

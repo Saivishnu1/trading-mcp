@@ -239,11 +239,13 @@ async def _handle_login_post(receive, send) -> None:
     # Persist session + generate API key — non-fatal if DB save fails
     enctoken = broker.get_enctoken()
     api_key = None
+    api_key = None
     if enctoken:
         try:
             session_store.save(user_id, enctoken)
-            api_key = api_key_store.generate()
-            api_key_store.save(api_key, user_id)
+            key, is_new = api_key_store.get_or_create(user_id)
+            if is_new:
+                api_key = key  # only show on first login
         except Exception as exc:
             logger.warning("Could not persist session/API key for %s: %s", user_id, exc)
     else:
@@ -252,11 +254,11 @@ async def _handle_login_post(receive, send) -> None:
     logger.info("Browser login successful for %s", user_id)
     key_html = (
         f'<div class="api-key-box">'
-        f'<p class="api-key-label">Your MCP API Key <span>(copy once — not shown again)</span></p>'
+        f'<p class="api-key-label">Your MCP API Key <span>(copy now — shown only once)</span></p>'
         f'<code id="api-key">{api_key}</code>'
         f'<button type="button" onclick="copyKey()">Copy</button>'
         f'</div>'
-    ) if api_key else ""
+    ) if api_key else '<p style="color:#64748b;font-size:.85rem;margin-top:1rem;">Session refreshed — your existing API key is unchanged.</p>'
     msg = f'<p class="msg ok">Logged in successfully.</p>{key_html}'
     await _send_html(send, 200, _render_login("", msg))
 
