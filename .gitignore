@@ -11,4 +11,4 @@ dist/
 .uv-cache/
 .coverage
 htmlcov/
-journal.db
+journal.db*
