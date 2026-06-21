@@ -20,23 +20,23 @@ Status:
 
 ## Current State
 
-Current Phase: 22F — Field deletion + market_structure conversion (complete)
+Current Phase: 22H — OAuth 2.0 + PKCE, multi-user isolation, security model (complete)
 
 Latest Tag:
 phase-19-multiframe-confirmation
 (Phases 20A, 21, 22 are research/instrumentation phases — no git tags)
 
 Tool Count:
-68
+69
 
 Test Count:
-1375 (41 test files, 0 failures)
+1397 (41 test files, 0 failures)
 
 Deployment Status:
 Production deployed on Railway
 
 DB Schema Version:
-4 (recommendation_log table); meta schema_version: 5 (tool response envelope)
+v7 (user_id in trades + recommendation_log); meta schema_version: 5 (tool response envelope)
 
 ---
 
@@ -104,6 +104,10 @@ DB Schema Version:
 
 ✅ Phase 22F — Field deletion (confidence/signal/trade_quality/regime), market_structure descriptor, schema_version: 5
 
+✅ Phase 22G — Browser login (credentials never in agent context)
+
+✅ Phase 22H — OAuth 2.0 + PKCE, multi-user isolation (user_id ContextVar + _user_filter), require_broker() / _require_user() security model, DB schema v7, home page Quick Start + security callout
+
 ⬜ Phase 23 — Remove _migration block; rename bull_target/bear_target → upside/downside_reference_level
 
 ---
@@ -146,11 +150,21 @@ Position Sizing: 3
 
 Decision Quality (Phase 22): 5
 
-Total: 68
+Total: 69
 
 ---
 
 ## Recent Changes
+
+Phase 22H (OAuth 2.0 + PKCE, multi-user isolation, security model):
+
+* 1 new tool (68 → 69); 22 new tests; 1397 passing (41 files)
+* Multi-user isolation: `current_user` ContextVar + `_user_filter()` in all DB queries; schema v7 adds `user_id` to `trades` and `recommendation_log`
+* `require_broker()` guards all personal Zerodha data tools; `_require_user()` for journal/recommendation tools
+* OAuth 2.0 + PKCE endpoints: `/oauth/authorize`, `/oauth/token`, `/oauth/register`; discovery at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`
+* `mcp_uid` cookie: browser display only (not auth); set on login, cleared on logout
+* Home page rewritten: MCP endpoint banner with copy button, Quick Start tabs (5 clients), security callout, improved session card
+* `check_auth_status()` and `zerodha_login()` scoped to caller's Bearer token
 
 Phase 22G (browser login — credentials out of agent context):
 

@@ -2275,3 +2275,55 @@ HTML form — they never appear in MCP traffic, agent context, or tool logs.
 | Dashboard intelligence failure isolation | `_intelligence_section()` wrapped in try/except; `null` returned on failure without breaking other sections |
 | PCR interpretation in risk score | Substring match against exact analytics.py strings — not raw PCR values — keeps semantics consistent if thresholds change |
 | Static events schedule expiry | `SCHEDULE_VALID_UNTIL = 2027-03-31` triggers log WARNING 30 days before — update `_STATIC` in `events.py` by that date |
+
+---
+
+## Phase 22H — OAuth 2.0 + PKCE, multi-user isolation, security model
+
+**Tools added:** 1 (1 net new tool; total 69) **Tests:** 1397 (41 files, 0 failures)
+
+### What was built
+
+**Multi-user isolation**
+- `current_user` ContextVar set per request from Bearer token
+- `_user_filter()` in journal/recommendation queries returns `1=0` when unauthenticated — users can never see each other's data
+- DB schema v7: `user_id TEXT` column added to `trades` and `recommendation_log` tables; migration is idempotent
+
+**Auth guard functions**
+- `require_broker()` — raises PermissionError if no Bearer token; all personal data tools (portfolio, profile, orders, margins, positions) use this. Never use bare `get_broker()` for personal data.
+- `_require_user()` — returns structured `{"status": "not_authenticated", "message": "call zerodha_login() first"}` for journal/recommendation tools; no exception raised.
+- Unauthenticated clients get empty results or a clear message, never a server error.
+
+**OAuth 2.0 + PKCE (MCP spec)**
+- `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` — standard discovery endpoints
+- `/oauth/authorize` — PKCE authorization endpoint; auto-completes if browser has `mcp_uid` cookie
+- `/oauth/token` — token exchange endpoint
+- `/oauth/register` — RFC 7591 dynamic client registration
+- CORS headers on all OAuth endpoints
+- `redirect_uri` HTTPS validation (localhost allowed for dev)
+- Railway hostname added to `TransportSecuritySettings` to prevent 421 errors
+
+**Browser login enhancements**
+- `mcp_uid` cookie set on successful login (display only — not used for auth)
+- Login page shows API key with blur + eye toggle + copy button
+- Setup guide tabs: Claude Code, Claude Desktop, Cursor, Postman
+- Shows "Welcome back, {uid}" if cookie present; "session already active" if broker authenticated
+
+**Home page rewrite**
+- MCP endpoint banner with one-click copy button
+- Quick Start section with tabs for claude.ai, Claude Code, Claude Desktop, Cursor, Postman
+- Actual commands/JSON configs generated client-side from `window.location.origin`
+- Session card shows three states: fully authenticated (Bearer token), cookie-only (browser visitor), no session
+- Security callout explaining free vs auth-required tools and that Bearer token stays server-side
+- DB schema v7 and SSE endpoint shown in Server Info
+- Tool count stays dynamic via `{tool_count}` placeholder
+
+**Logout**
+- `POST /logout` requires Bearer token; browser logout button prompts for API key
+- `mcp_uid` cookie cleared on logout
+
+### Key decisions
+
+- Cookie is display-only: it lets the home page show a "connect your client" message to returning browser users, but auth always requires a Bearer header — never the cookie.
+- `require_broker()` vs `_require_user()`: broker tools raise hard (portfolio calls fail visibly if unauthenticated); journal/recommendation tools return a soft "not_authenticated" dict so the agent can surface a clear message rather than an exception.
+- OAuth PKCE chosen over simpler bearer-only to support claude.ai's automatic OAuth flow — no API key copy/paste needed for that client.

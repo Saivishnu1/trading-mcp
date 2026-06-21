@@ -35,7 +35,7 @@
 
   .page {
     position: relative; z-index: 1;
-    max-width: 860px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 3.5rem 2rem 5rem;
   }
@@ -96,45 +96,99 @@
     100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
 
-  /* ── How it works ── */
+  /* ── Section label ── */
   .section-label {
     font-size: .7rem; font-weight: 700; letter-spacing: .1em;
     text-transform: uppercase; color: #475569;
     text-align: center; margin-bottom: 1.25rem;
   }
 
-  .steps {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
-    background: rgba(51,65,85,.4);
-    border: 1px solid rgba(51,65,85,.4);
-    border-radius: 14px; overflow: hidden;
+  /* ── MCP endpoint banner ── */
+  .endpoint-banner {
+    background: rgba(15,23,42,.8); border: 1px solid rgba(56,126,209,.25);
+    border-radius: 14px; padding: 1.1rem 1.5rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    margin-bottom: 2rem;
+    animation: fadeUp .5s .05s ease both;
+  }
+  .endpoint-label { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #387ED1; margin-bottom: .3rem; }
+  .endpoint-url {
+    font-family: monospace; font-size: .9rem; color: #e2e8f0;
+    word-break: break-all;
+  }
+  .copy-btn {
+    flex-shrink: 0; padding: .45rem 1rem; border-radius: 8px;
+    background: rgba(56,126,209,.15); border: 1px solid rgba(56,126,209,.3);
+    color: #60a5fa; font-size: .78rem; font-weight: 600; cursor: pointer;
+    transition: background .15s, color .15s; white-space: nowrap;
+  }
+  .copy-btn:hover { background: rgba(56,126,209,.28); color: #93c5fd; }
+  .copy-btn.copied { background: rgba(74,222,128,.12); border-color: rgba(74,222,128,.25); color: #4ade80; }
+
+  /* ── Quick Start ── */
+  .quickstart {
+    background: rgba(15,23,42,.7); border: 1px solid rgba(51,65,85,.7);
+    border-radius: 14px; overflow: hidden; backdrop-filter: blur(6px);
     margin-bottom: 1.25rem;
     animation: fadeUp .5s .1s ease both;
   }
 
-  .step {
-    background: rgba(15,23,42,.7);
-    padding: 1.5rem 1.25rem;
-    backdrop-filter: blur(6px);
+  .qs-header {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .85rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.5);
   }
+  .qs-icon {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: rgba(56,126,209,.1); border: 1px solid rgba(56,126,209,.2);
+    display: flex; align-items: center; justify-content: center; font-size: .78rem;
+  }
+  .qs-title { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #387ED1; }
 
-  .step-num {
-    width: 28px; height: 28px; border-radius: 8px;
+  /* tab strip */
+  .tab-strip {
+    display: flex; border-bottom: 1px solid rgba(51,65,85,.5);
+    overflow-x: auto;
+  }
+  .tab-btn {
+    padding: .6rem 1.1rem; font-size: .78rem; font-weight: 600; cursor: pointer;
+    background: transparent; border: none; color: #475569;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .15s, border-color .15s; white-space: nowrap;
+  }
+  .tab-btn:hover { color: #94a3b8; }
+  .tab-btn.active { color: #60a5fa; border-bottom-color: #387ED1; }
+
+  .tab-panel { display: none; padding: 1.25rem; }
+  .tab-panel.active { display: block; }
+
+  .qs-step {
+    display: flex; gap: .85rem; margin-bottom: 1rem;
+  }
+  .qs-step:last-child { margin-bottom: 0; }
+  .qs-num {
+    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0; margin-top: .05rem;
     background: rgba(56,126,209,.12); border: 1px solid rgba(56,126,209,.2);
     display: flex; align-items: center; justify-content: center;
-    font-size: .75rem; font-weight: 700; color: #387ED1;
-    margin-bottom: .85rem;
+    font-size: .7rem; font-weight: 700; color: #387ED1;
+  }
+  .qs-text { font-size: .82rem; color: #94a3b8; line-height: 1.6; }
+  .qs-text strong { color: #e2e8f0; font-weight: 600; }
+  .qs-badge {
+    display: inline-flex; align-items: center; gap: .25rem;
+    font-size: .68rem; font-weight: 700; padding: .12rem .45rem; border-radius: 4px;
+    background: rgba(74,222,128,.1); color: #4ade80; border: 1px solid rgba(74,222,128,.2);
+    margin-left: .25rem;
   }
 
-  .step h3 { font-size: .9rem; font-weight: 600; color: #e2e8f0; margin-bottom: .4rem; }
-  .step p  { font-size: .78rem; color: #64748b; line-height: 1.6; }
-
-  .step-example {
-    margin-top: .75rem;
-    background: rgba(56,126,209,.06); border: 1px solid rgba(56,126,209,.12);
-    border-radius: 7px; padding: .5rem .7rem;
-    font-size: .72rem; color: #60a5fa; font-style: italic; line-height: 1.5;
+  pre.qs-code {
+    margin-top: .5rem;
+    background: rgba(2,6,23,.7); border: 1px solid rgba(51,65,85,.5);
+    border-radius: 8px; padding: .65rem .85rem;
+    font-size: .74rem; color: #93c5fd; line-height: 1.7;
+    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
   }
+  pre.qs-code .kw { color: #e879f9; }
+  pre.qs-code .val { color: #4ade80; }
 
   /* ── Access split ── */
   .access-split {
@@ -186,6 +240,24 @@
   .btn-green { background: rgba(74,222,128,.1); color: #4ade80; border: 1px solid rgba(74,222,128,.2); }
   .btn-blue  { background: linear-gradient(135deg, #387ED1, #2d6cb8); color: #fff; border: none; box-shadow: 0 4px 16px rgba(56,126,209,.3); }
 
+  /* ── Security callout ── */
+  .security-callout {
+    background: rgba(15,23,42,.7); border: 1px solid rgba(51,65,85,.5);
+    border-left: 3px solid #387ED1;
+    border-radius: 12px; padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    animation: fadeUp .5s .25s ease both;
+  }
+  .security-callout-title {
+    font-size: .75rem; font-weight: 700; color: #60a5fa;
+    letter-spacing: .05em; text-transform: uppercase; margin-bottom: .65rem;
+  }
+  .security-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem;
+  }
+  .security-item { font-size: .78rem; color: #94a3b8; line-height: 1.5; }
+  .security-item strong { display: block; color: #e2e8f0; font-weight: 600; margin-bottom: .15rem; }
+
   /* ── Session card ── */
   .session-card {
     border-radius: 14px; border: 1px solid rgba(51,65,85,.7);
@@ -212,6 +284,7 @@
   .session-card.active  .session-status { color: #4ade80; }
   .session-card.expired .session-status { color: #fbbf24; }
   .session-user { font-size: .74rem; color: #475569; margin-top: .1rem; }
+  .session-hint { font-size: .74rem; color: #387ED1; margin-top: .25rem; font-style: italic; }
 
   .session-actions { display: flex; gap: .5rem; flex-shrink: 0; }
   .btn-sm { padding: .38rem .85rem; font-size: .77rem; font-weight: 500; border-radius: 8px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; transition: border-color .15s, color .15s; }
@@ -253,17 +326,24 @@
   .info-value a:hover { background: rgba(56,126,209,.18); }
 
   .client-row {
-    display: flex; align-items: center; gap: .65rem;
-    padding: .6rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.3);
+    display: flex; align-items: flex-start; gap: .65rem;
+    padding: .65rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.3);
   }
   .client-row:last-child { border-bottom: none; }
-  .client-icon { width: 28px; height: 28px; flex-shrink: 0; background: #0f172a; border: 1px solid #1e293b; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: .78rem; }
-  .client-name { font-size: .8rem; font-weight: 500; color: #e2e8f0; }
-  .client-hint { font-size: .68rem; color: #475569; font-family: monospace; }
+  .client-icon { width: 28px; height: 28px; flex-shrink: 0; background: #0f172a; border: 1px solid #1e293b; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: .78rem; margin-top: .1rem; }
+  .client-name { font-size: .8rem; font-weight: 500; color: #e2e8f0; line-height: 1.4; }
+  .client-hint { font-size: .68rem; color: #475569; font-family: monospace; margin-top: .1rem; }
+  .client-hint-plain { font-size: .68rem; color: #475569; margin-top: .1rem; }
+  .oauth-badge { font-size: .65rem; background: rgba(56,126,209,.15); color: #60a5fa; border: 1px solid rgba(56,126,209,.2); border-radius: 4px; padding: .1rem .3rem; margin-left: .3rem; font-weight: 600; font-family: system-ui; }
 
   /* Footer */
   .footer { text-align: center; font-size: .73rem; color: #334155; margin-top: 2rem; animation: fadeUp .5s .4s ease both; }
   .footer span { margin: 0 .5rem; color: #1e293b; }
+
+  @media (max-width: 640px) {
+    .access-split, .bottom-grid, .security-grid { grid-template-columns: 1fr; }
+    .endpoint-banner { flex-direction: column; align-items: flex-start; }
+  }
 </style>
 </head>
 <body>
@@ -287,30 +367,152 @@
     </div>
   </div>
 
-  <!-- How it works -->
-  <div class="section-label">How it works</div>
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <h3>Connect your agent</h3>
-      <p>Add this server to Claude Code, Claude Desktop, Cursor, or Postman using the MCP endpoint. Takes 30 seconds.</p>
-      <div class="step-example">"Just paste the URL and your API key — your agent is ready."</div>
+  <!-- MCP endpoint banner -->
+  <div class="endpoint-banner">
+    <div>
+      <div class="endpoint-label">MCP Endpoint</div>
+      <div class="endpoint-url" id="mcp-url-display"></div>
     </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <h3>Ask in plain English</h3>
-      <p>No API calls, no code. Ask your AI agent about markets, positions, options, or trade setups naturally.</p>
-      <div class="step-example">"What's the Nifty trend today and should I hedge my IT positions?"</div>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <h3>Trade with context</h3>
-      <p>Get regime-aware analysis, live OI data, your portfolio risk, and logged recommendations — all in one conversation.</p>
-      <div class="step-example">"Size this trade for 1% portfolio risk given my current heat."</div>
-    </div>
+    <button class="copy-btn" id="copy-endpoint-btn" onclick="copyEndpoint()">Copy URL</button>
   </div>
 
-  <!-- Free vs Auth — the key message -->
+  <!-- Quick Start -->
+  <div class="section-label">Quick start — 3 ways to connect</div>
+  <div class="quickstart">
+    <div class="qs-header">
+      <div class="qs-icon">⚡</div>
+      <span class="qs-title">Connect your AI client</span>
+    </div>
+
+    <div class="tab-strip">
+      <button class="tab-btn active" onclick="showTab('claudeai')">claude.ai</button>
+      <button class="tab-btn" onclick="showTab('claudecode')">Claude Code</button>
+      <button class="tab-btn" onclick="showTab('desktop')">Claude Desktop</button>
+      <button class="tab-btn" onclick="showTab('cursor')">Cursor</button>
+      <button class="tab-btn" onclick="showTab('postman')">Postman</button>
+    </div>
+
+    <div id="tab-claudeai" class="tab-panel active">
+      <div class="qs-step">
+        <div class="qs-num">1</div>
+        <div class="qs-text">
+          <strong>Open claude.ai</strong> and go to <strong>Settings → Integrations → Add MCP Server</strong>.
+          <span class="qs-badge">OAuth · automatic</span>
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">2</div>
+        <div class="qs-text">
+          <strong>Paste the MCP endpoint URL</strong> (shown above). No API key needed at this step.
+          <pre class="qs-code" id="qs-claudeai-url"></pre>
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">3</div>
+        <div class="qs-text">
+          <strong>A login popup appears automatically.</strong> Sign in with your Zerodha credentials.
+          Claude receives an OAuth token — your credentials never pass through the agent or appear in chat.
+          Done. Market tools are available immediately; portfolio tools unlock after login.
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-claudecode" class="tab-panel">
+      <div class="qs-step">
+        <div class="qs-num">1</div>
+        <div class="qs-text">
+          <strong>Get your API key</strong> — log in at <a href="/login" style="color:#387ED1">/login</a>,
+          then copy the key shown on that page.
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">2</div>
+        <div class="qs-text">
+          <strong>Add the server</strong> with a single command:
+          <pre class="qs-code" id="qs-cc-cmd"></pre>
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">3</div>
+        <div class="qs-text">
+          <strong>Start a conversation</strong> — ask "What's the Nifty trend today?" or "Show my portfolio risk."
+          Session status is shown in the card below.
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-desktop" class="tab-panel">
+      <div class="qs-step">
+        <div class="qs-num">1</div>
+        <div class="qs-text">
+          <strong>Get your API key</strong> from <a href="/login" style="color:#387ED1">/login</a>.
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">2</div>
+        <div class="qs-text">
+          <strong>Edit <code style="color:#e2e8f0">claude_desktop_config.json</code></strong>
+          (macOS: <code style="color:#64748b">~/Library/Application Support/Claude/</code>,
+          Windows: <code style="color:#64748b">%APPDATA%\Claude\</code>):
+          <pre class="qs-code" id="qs-desktop-json"></pre>
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">3</div>
+        <div class="qs-text">
+          <strong>Restart Claude Desktop.</strong> An OAuth popup may appear on first connection — follow the prompts.
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-cursor" class="tab-panel">
+      <div class="qs-step">
+        <div class="qs-num">1</div>
+        <div class="qs-text">
+          <strong>Get your API key</strong> from <a href="/login" style="color:#387ED1">/login</a>.
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">2</div>
+        <div class="qs-text">
+          <strong>Create or edit <code style="color:#e2e8f0">.cursor/mcp.json</code></strong> in your project root:
+          <pre class="qs-code" id="qs-cursor-json"></pre>
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">3</div>
+        <div class="qs-text">
+          <strong>Reload Cursor.</strong> The Zerodha MCP server will appear in your MCP tool list.
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-postman" class="tab-panel">
+      <div class="qs-step">
+        <div class="qs-num">1</div>
+        <div class="qs-text">
+          <strong>Open Postman</strong> and click <strong>New → MCP Server → Streamable HTTP</strong>.
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">2</div>
+        <div class="qs-text">
+          <strong>Paste the MCP endpoint URL.</strong> Free market data tools work with no auth header.
+          For portfolio tools, add <code style="color:#60a5fa">Authorization: Bearer &lt;your-api-key&gt;</code>.
+          <pre class="qs-code" id="qs-postman-url"></pre>
+        </div>
+      </div>
+      <div class="qs-step">
+        <div class="qs-num">3</div>
+        <div class="qs-text">
+          <strong>Connect and start calling tools.</strong> No agent session required for exploration.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Free vs Auth -->
   <div class="section-label" style="margin-top:2rem">What's available</div>
   <div class="access-split">
 
@@ -386,6 +588,25 @@
 
   </div>
 
+  <!-- Security callout -->
+  <div class="security-callout">
+    <div class="security-callout-title">Security model</div>
+    <div class="security-grid">
+      <div class="security-item">
+        <strong>Free tools — no auth</strong>
+        Market data, technicals, options analytics, dashboards. Any agent can call them with no credentials.
+      </div>
+      <div class="security-item">
+        <strong>Personal tools — API key</strong>
+        Portfolio, orders, journal, recommendations. Require your Bearer token. Each user sees only their own data.
+      </div>
+      <div class="security-item">
+        <strong>Token stays server-side</strong>
+        Your Bearer token is sent in the HTTP header, not in chat or tool arguments. The AI model never sees it.
+      </div>
+    </div>
+  </div>
+
   <!-- Session status -->
   <div class="session-card loading" id="session-card">
     <div class="session-left">
@@ -394,6 +615,7 @@
         <div class="session-label">Zerodha session</div>
         <div class="session-status" id="session-status">Checking…</div>
         <div class="session-user" id="session-user"></div>
+        <div class="session-hint" id="session-hint"></div>
       </div>
     </div>
     <div class="session-actions" id="session-actions"></div>
@@ -411,12 +633,16 @@
         <span class="info-value" id="mcp-url"></span>
       </div>
       <div class="info-row">
+        <span class="info-label">SSE endpoint</span>
+        <span class="info-value" id="sse-url"></span>
+      </div>
+      <div class="info-row">
         <span class="info-label">Transport</span>
-        <span class="info-value">Streamable HTTP</span>
+        <span class="info-value">Streamable HTTP + SSE</span>
       </div>
       <div class="info-row">
         <span class="info-label">Auth methods</span>
-        <span class="info-value">Bearer | Basic | OAuth 2.0</span>
+        <span class="info-value">Bearer · OAuth 2.0 + PKCE</span>
       </div>
       <div class="info-row">
         <span class="info-label">Health</span>
@@ -425,6 +651,10 @@
       <div class="info-row">
         <span class="info-label">Session status</span>
         <span class="info-value"><a href="/auth/status">/auth/status</a></span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">DB schema</span>
+        <span class="info-value">v7 (user_id isolation)</span>
       </div>
     </div>
 
@@ -436,58 +666,103 @@
       <div class="client-row">
         <div class="client-icon">🌐</div>
         <div>
-          <div class="client-name">claude.ai <span style="font-size:.65rem;background:rgba(56,126,209,.15);color:#60a5fa;border:1px solid rgba(56,126,209,.2);border-radius:4px;padding:.1rem .3rem;margin-left:.3rem;font-weight:600">OAuth · automatic</span></div>
-          <div class="client-hint">Settings → Integrations → Add MCP Server → paste URL below</div>
-          <div class="client-hint" style="color:#4ade80;margin-top:.15rem">✓ No API key needed — login popup appears automatically on first use</div>
+          <div class="client-name">claude.ai <span class="oauth-badge">OAuth · automatic</span></div>
+          <div class="client-hint-plain">Settings → Integrations → Add MCP Server → paste URL</div>
+          <div class="client-hint-plain" style="color:#4ade80;margin-top:.15rem">Login popup appears — no API key needed</div>
         </div>
       </div>
       <div class="client-row">
         <div class="client-icon">⌨</div>
         <div>
           <div class="client-name">Claude Code</div>
-          <div class="client-hint">claude mcp add --transport http zerodha <span id="cc-url" style="color:#387ED1"></span></div>
-          <div class="client-hint" style="margin-top:.1rem">Then: --header "Authorization: Bearer &lt;your-api-key&gt;"</div>
+          <div class="client-hint">claude mcp add --transport http zerodha &lt;url&gt;/mcp</div>
+          <div class="client-hint" style="margin-top:.1rem">--header "Authorization: Bearer &lt;api-key&gt;"</div>
         </div>
       </div>
       <div class="client-row">
         <div class="client-icon">🖥</div>
         <div>
-          <div class="client-name">Claude Desktop &amp; Cursor</div>
-          <div class="client-hint">claude_desktop_config.json / .cursor/mcp.json</div>
-          <div class="client-hint" style="margin-top:.1rem">mcpServers → url: <span id="cd-url" style="color:#387ED1"></span> + Authorization header</div>
+          <div class="client-name">Claude Desktop <span class="oauth-badge">OAuth popup</span></div>
+          <div class="client-hint">claude_desktop_config.json → mcpServers → url: &lt;url&gt;/sse</div>
+          <div class="client-hint" style="margin-top:.1rem">+ Authorization header or use OAuth popup</div>
+        </div>
+      </div>
+      <div class="client-row">
+        <div class="client-icon">✦</div>
+        <div>
+          <div class="client-name">Cursor</div>
+          <div class="client-hint">.cursor/mcp.json → url + Authorization header</div>
         </div>
       </div>
       <div class="client-row">
         <div class="client-icon">📮</div>
         <div>
           <div class="client-name">Postman</div>
-          <div class="client-hint">New → MCP Server → Streamable HTTP → <span id="pm-url" style="color:#387ED1"></span></div>
-          <div class="client-hint" style="margin-top:.1rem">Header: Authorization → Bearer &lt;your-api-key&gt;</div>
+          <div class="client-hint">New → MCP Server → Streamable HTTP → &lt;url&gt;/mcp</div>
         </div>
       </div>
       <div class="info-row" style="padding:.65rem 1.25rem">
-        <span style="font-size:.73rem;color:#475569">Log in to get your API key with ready-to-paste configs for each client.</span>
+        <span style="font-size:.73rem;color:#475569">Log in to get your API key with ready-to-paste configs.</span>
       </div>
     </div>
   </div>
 
   <div class="footer">
-    Zerodha session ~24h &nbsp;<span>·</span>&nbsp; API key persists across re-logins &nbsp;<span>·</span>&nbsp; Multi-user &amp; OAuth 2.0 supported &nbsp;<span>·</span>&nbsp; No Kite Connect subscription needed
+    Zerodha session ~24h &nbsp;<span>·</span>&nbsp; API key persists across re-logins &nbsp;<span>·</span>&nbsp; Multi-user &amp; OAuth 2.0 + PKCE &nbsp;<span>·</span>&nbsp; No Kite Connect subscription needed
   </div>
 
 </div>
 <script>
-  var mcpUrl = window.location.origin + '/mcp';
-  document.getElementById('mcp-url').textContent = mcpUrl;
-  ['cc-url','cd-url','pm-url'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.textContent = mcpUrl;
-  });
+  var origin = window.location.origin;
+  var mcpUrl = origin + '/mcp';
+  var sseUrl = origin + '/sse';
 
+  // Populate static URL references
+  document.getElementById('mcp-url-display').textContent = mcpUrl;
+  document.getElementById('mcp-url').textContent = mcpUrl;
+  document.getElementById('sse-url').textContent = sseUrl;
+
+  // Quick-start tab code snippets
+  document.getElementById('qs-claudeai-url').textContent = mcpUrl;
+  document.getElementById('qs-cc-cmd').textContent =
+    'claude mcp add --transport http zerodha ' + mcpUrl + ' \\\n  --header "Authorization: Bearer <your-api-key>"';
+  document.getElementById('qs-desktop-json').textContent =
+    '{\n  "mcpServers": {\n    "zerodha": {\n      "url": "' + sseUrl + '",\n      "headers": { "Authorization": "Bearer <your-api-key>" }\n    }\n  }\n}';
+  document.getElementById('qs-cursor-json').textContent =
+    '{\n  "mcpServers": {\n    "zerodha": {\n      "url": "' + mcpUrl + '",\n      "headers": { "Authorization": "Bearer <your-api-key>" }\n    }\n  }\n}';
+  document.getElementById('qs-postman-url').textContent = mcpUrl;
+
+  // Copy endpoint
+  function copyEndpoint() {
+    var btn = document.getElementById('copy-endpoint-btn');
+    navigator.clipboard.writeText(mcpUrl).then(function() {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = 'Copy URL';
+        btn.classList.remove('copied');
+      }, 2000);
+    }).catch(function() {
+      btn.textContent = 'Copy failed';
+      setTimeout(function() { btn.textContent = 'Copy URL'; }, 2000);
+    });
+  }
+
+  // Tab switching
+  function showTab(id) {
+    document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
+    document.getElementById('tab-' + id).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  // Session status
   (function() {
     var card    = document.getElementById('session-card');
     var dot     = document.getElementById('session-dot');
     var status  = document.getElementById('session-status');
     var user    = document.getElementById('session-user');
+    var hint    = document.getElementById('session-hint');
     var actions = document.getElementById('session-actions');
 
     function getCookie(name) {
@@ -500,22 +775,26 @@
       .then(function(d) {
         var uid = d.user_id || getCookie('mcp_uid');
         card.classList.remove('loading');
-        if (d.authenticated || uid) {
+
+        if (d.authenticated) {
+          // Bearer token present in this request — fully authenticated
           card.classList.add('active');
           dot.textContent = '✓';
           status.textContent = 'Session active — portfolio tools unlocked';
-          user.textContent = uid ? 'Logged in as ' + uid : 'Session active';
+          if (uid) user.textContent = 'Logged in as ' + uid;
           actions.innerHTML =
             '<a href="/login" class="btn-sm">Refresh session</a>' +
             '<button class="btn-sm" onclick="doLogout()">Log out</button>';
-
-          window.doLogout = function() {
-            var key = prompt('Enter your API key to confirm logout:');
-            if (!key) return;
-            fetch('/logout', {method:'POST', headers:{'Authorization':'Bearer '+key.trim()}})
-              .then(function(r){ r.ok ? location.reload() : alert('Invalid API key'); })
-              .catch(function(){ alert('Logout failed'); });
-          };
+        } else if (uid) {
+          // Cookie present — browser has been here before
+          card.classList.add('active');
+          dot.textContent = '✓';
+          status.textContent = 'Session active — connect your AI client';
+          user.textContent = 'Browser session for ' + uid;
+          hint.textContent = 'Paste the MCP URL into your AI client to start using portfolio tools.';
+          actions.innerHTML =
+            '<a href="/login" class="btn-sm">Refresh session</a>' +
+            '<button class="btn-sm" onclick="doLogout()">Log out</button>';
         } else {
           card.classList.add('expired');
           dot.textContent = '!';
@@ -523,6 +802,14 @@
           user.textContent = 'Log in to unlock portfolio tools — market data works without it';
           actions.innerHTML = '<a href="/login" class="btn-sm-primary">Log in →</a>';
         }
+
+        window.doLogout = function() {
+          var key = prompt('Enter your API key to confirm logout:');
+          if (!key) return;
+          fetch('/logout', {method:'POST', headers:{'Authorization':'Bearer '+key.trim()}})
+            .then(function(r){ r.ok ? location.reload() : alert('Invalid API key'); })
+            .catch(function(){ alert('Logout failed'); });
+        };
       })
       .catch(function() {
         card.classList.remove('loading');

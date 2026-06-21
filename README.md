@@ -5,7 +5,7 @@ Gives Claude (or any MCP client) live access to your portfolio, NSE market data,
 trade planning, options analytics, journal, and trading intelligence —
 **no paid Kite Connect subscription required**.
 
-> **68 tools across 18 domains.** All responses are wrapped with a trust metadata envelope
+> **69 tools across 18 domains.** All responses are wrapped with a trust metadata envelope
 > that labels data type (FACT / INDICATOR / INTERPRETATION), validation status, data quality,
 > and market hours. Analysis tools embed Phase 20A and Phase 21 research findings directly
 > in their docstrings so Claude cannot mistake structural descriptors for directional signals.
@@ -58,6 +58,10 @@ so any MCP-compatible client (Claude Desktop, Claude Code, claude.ai web connect
 - A **Zerodha trading account** (free, at [zerodha.com](https://zerodha.com))
 - **2-Factor Authentication (TOTP)** enabled on your Zerodha account
 - Docker + Docker Compose **or** Python 3.12+ with [uv](https://github.com/astral-sh/uv)
+
+> **Using the hosted Railway deployment?** No env vars, Docker, or credentials setup needed.
+> Visit `https://zerodha-mcp-production.up.railway.app`, log in through the browser UI,
+> and connect your AI client. Skip to [Add to your MCP client](#add-to-your-mcp-client).
 
 ---
 
@@ -291,10 +295,42 @@ The server exposes two transports — use whichever your client supports:
 
 | Transport | URL | Use for |
 |-----------|-----|---------|
-| Streamable HTTP | `http://localhost:8000/mcp` | claude.ai web connector, Claude Code, modern MCP clients |
-| SSE | `http://localhost:8000/sse` | Claude Desktop, legacy MCP clients |
+| Streamable HTTP | `/mcp` | claude.ai, Claude Code, Cursor, Postman, modern MCP clients |
+| SSE | `/sse` | Claude Desktop, legacy MCP clients |
 
-Replace `localhost` with your server IP for remote deployments.
+Replace `localhost:8000` with your Railway URL for the hosted deployment.
+
+### Security model
+
+| Tool category | Auth required | How |
+|---------------|---------------|-----|
+| Market data, technicals, options, dashboards | No | No header needed |
+| Portfolio, orders, journal, recommendations | Yes | `Authorization: Bearer <api-key>` |
+
+Your Bearer token travels in the HTTP header — it is never visible in chat or tool arguments.
+The AI model never sees it.
+
+### claude.ai (OAuth — no API key needed)
+
+1. Open claude.ai → **Settings → Integrations → Add MCP Server**
+2. Paste the MCP endpoint URL: `https://zerodha-mcp-production.up.railway.app/mcp`
+3. A login popup appears automatically (OAuth 2.0 + PKCE). Sign in with Zerodha credentials.
+4. Done — the token is managed automatically. No API key to copy or paste.
+
+### Claude Code (CLI)
+
+```bash
+# Get your API key from /login first, then:
+claude mcp add --transport http zerodha https://zerodha-mcp-production.up.railway.app/mcp \
+  --header "Authorization: Bearer <your-api-key>"
+```
+
+For local development:
+
+```bash
+claude mcp add --transport http zerodha http://localhost:8000/mcp \
+  --header "Authorization: Bearer <your-api-key>"
+```
 
 ### Claude Desktop
 
@@ -305,19 +341,35 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 {
   "mcpServers": {
     "zerodha": {
-      "url": "http://localhost:8000/sse"
+      "url": "https://zerodha-mcp-production.up.railway.app/sse",
+      "headers": { "Authorization": "Bearer <your-api-key>" }
     }
   }
 }
 ```
 
-Restart Claude Desktop after saving.
+Restart Claude Desktop after saving. An OAuth popup may appear on first connection.
 
-### Claude Code (CLI)
+### Cursor
 
-```bash
-claude mcp add zerodha --url http://localhost:8000/sse
+Create or edit `.cursor/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "zerodha": {
+      "url": "https://zerodha-mcp-production.up.railway.app/mcp",
+      "headers": { "Authorization": "Bearer <your-api-key>" }
+    }
+  }
+}
 ```
+
+### Postman
+
+**New → MCP Server → Streamable HTTP** → paste the `/mcp` endpoint URL.
+Free market data tools work with no auth header. For portfolio tools, add
+`Authorization: Bearer <your-api-key>`.
 
 ### Any MCP-compatible agent or framework
 

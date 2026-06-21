@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: 22G — Browser login (credentials never in agent context)
+Current Phase: 22H — OAuth 2.0 + PKCE, multi-user isolation, security model
 
-Current Tool Count: 68
+Current Tool Count: 69
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
@@ -110,7 +110,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1375 unit + regression tests across 41 test files (pytest, no live network calls).
+* 1397 unit + regression tests across 41 test files (pytest, no live network calls).
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF / normalize_symbol). Do not add per-module alias tables.
@@ -119,12 +119,16 @@ When generating tests:
 * Analysis basis is yfinance EOD adjusted candles (see data_basis); live quotes (NSELive) are a different vendor/level.
 * `risk_amount`, `capital_at_risk`, `portfolio_heat_at_entry` are schema v2 immutable entry-time snapshots — never recalculate or modify after trade creation.
 * All MCP tool responses are wrapped: `{"data": <output>, "meta": <trust context>}` — see src/meta.py. Tests that call tool wrappers directly must use `result["data"]`, not `result` directly.
-* Journal DB is schema v4. recommendation_log table added. Partition constants in src/recommendation_log/service.py — NEVER flip bootstrap_period/bias_contaminated automatically; only on conscious human decision.
+* Journal DB is schema v7. `user_id` column in `trades` and `recommendation_log` tables. Multi-user isolation via `current_user` ContextVar + `_user_filter()`. Partition constants in src/recommendation_log/service.py — NEVER flip bootstrap_period/bias_contaminated automatically; only on conscious human decision.
 * `confidence`, `signal`, `trade_quality`, `quality`, `bullish_probability` are DELETED (Phase 22F). Do not add them back.
 * `detect_market_regime` returns `market_structure` (boolean facts + descriptor array), not `regime`/`confidence`. The `regime` key is deleted.
 * `generate_trade_setup` returns `entry/stoploss/target/entry_above/entry_below/bull_target/bear_target/reasoning/market_structure/_migration`. `reasoning` is observation-only — no predictive language.
 * `_migration` block in both tools is TEMPORARY — remove in Phase 23.
-* DB schema v5 in meta layer (`meta["schema_version"] == 5`). Journal DB is still schema v4.
+* DB schema v5 in meta layer (`meta["schema_version"] == 5`). Journal DB is schema v7 (user_id isolation).
+* `require_broker()` must be used for all personal Zerodha data tools (portfolio, profile, orders, positions, margins). `_require_user()` for journal/recommendation tools. NEVER use `get_broker()` directly for personal data access — it bypasses the auth check.
+* OAuth 2.0 + PKCE endpoints: `/oauth/authorize`, `/oauth/token`, `/oauth/register`. Well-known metadata at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
+* `mcp_uid` cookie is for browser display only — set on login, cleared on logout. It is NOT an auth token. Auth is always via Bearer token in HTTP header.
+* `check_auth_status()` and `zerodha_login()` are scoped to caller's Bearer token, not global. Unauthenticated requests get empty results or a clear "call zerodha_login() first" message — never a 401 error from tool calls.
 
 ---
 
