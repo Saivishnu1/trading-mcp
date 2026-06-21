@@ -196,11 +196,11 @@ async def _send_html(send, status: int, html: str) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-async def _send_json(send, status: int, data: dict) -> None:
+async def _send_json(send, status: int, data: dict, extra_headers: list = []) -> None:
     body = json.dumps(data).encode()
-    await send({"type": "http.response.start", "status": status,
-                "headers": [[b"content-type", b"application/json"],
-                             [b"content-length", str(len(body)).encode()]]})
+    headers = [[b"content-type", b"application/json"],
+               [b"content-length", str(len(body)).encode()]] + extra_headers
+    await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
 
 
@@ -218,6 +218,16 @@ def _verify_pkce(code_verifier: str, code_challenge: str, method: str) -> bool:
     return False
 
 
+def _get_cookie(scope, name: str) -> str | None:
+    for key, val in scope.get("headers", []):
+        if key == b"cookie":
+            for part in val.decode().split(";"):
+                k, _, v = part.strip().partition("=")
+                if k.strip() == name:
+                    return v.strip() or None
+    return None
+
+
 def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> str:
     action = f"/login?{oauth_query}" if oauth_query else "/login"
     return (
@@ -228,9 +238,15 @@ def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> 
     )
 
 
-async def _handle_login_get(send) -> None:
+async def _handle_login_get(scope, send) -> None:
     prefill = os.environ.get("ZERODHA_USER_ID", "")
-    msg = "A session is already active. Log in again to refresh it." if get_broker().is_authenticated() else ""
+    uid_cookie = _get_cookie(scope, "mcp_uid")
+    if uid_cookie:
+        msg = f'<p class="msg ok">Welcome back, {uid_cookie}. Log in again to refresh your session.</p>'
+    elif get_broker().is_authenticated():
+        msg = '<p class="msg ok">A session is already active. Log in again to refresh it.</p>'
+    else:
+        msg = ""
     await _send_html(send, 200, _render_login(prefill, msg))
 
 
@@ -318,7 +334,13 @@ async def _handle_login_post(scope, receive, send) -> None:
         f'</div>'
     ) if api_key else ''
     msg = f'<p class="msg ok">Logged in successfully.</p>{key_html}'
-    await _send_html(send, 200, _render_login("", msg))
+    html = _render_login("", msg).encode()
+    cookie = f"mcp_uid={user_id}; Path=/; Max-Age=86400; SameSite=Strict"
+    await send({"type": "http.response.start", "status": 200,
+                "headers": [[b"content-type", b"text/html; charset=utf-8"],
+                            [b"content-length", str(len(html)).encode()],
+                            [b"set-cookie", cookie.encode()]]})
+    await send({"type": "http.response.body", "body": html})
 
 
 def _resolve_user(scope) -> str | None:
@@ -512,7 +534,7 @@ async def _app(scope, receive, send):
             return
 
         if path == "/login" and method == "GET":
-            await _handle_login_get(send)
+            await _handle_login_get(scope, send)
             return
 
         if path == "/login" and method == "POST":
@@ -547,10 +569,8 @@ async def _app(scope, receive, send):
             reset_broker(uid)
             get_broker().clear_enctoken()
             logger.info("Logout: %s", uid)
-            # Redirect to home so the browser shows updated session status
-            await send({"type": "http.response.start", "status": 302,
-                        "headers": [[b"location", b"/"]]})
-            await send({"type": "http.response.body", "body": b""})
+            await _send_json(send, 200, {"logged_out": True, "user_id": uid},
+                             extra_headers=[[b"set-cookie", b"mcp_uid=; Path=/; Max-Age=0; SameSite=Strict"]])
             return
 
         if path == "/sse" or path.startswith("/messages"):

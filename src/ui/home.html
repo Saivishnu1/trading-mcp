@@ -490,15 +490,21 @@
     var user    = document.getElementById('session-user');
     var actions = document.getElementById('session-actions');
 
+    function getCookie(name) {
+      var m = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+
     fetch('/auth/status')
       .then(function(r){ return r.json(); })
       .then(function(d) {
+        var uid = d.user_id || getCookie('mcp_uid');
         card.classList.remove('loading');
-        if (d.authenticated) {
+        if (d.authenticated || uid) {
           card.classList.add('active');
           dot.textContent = '✓';
           status.textContent = 'Session active — portfolio tools unlocked';
-          user.textContent = d.user_id ? 'Logged in as ' + d.user_id : 'Session active';
+          user.textContent = uid ? 'Logged in as ' + uid : 'Session active';
           actions.innerHTML =
             '<a href="/login" class="btn-sm">Refresh session</a>' +
             '<button class="btn-sm" onclick="doLogout()">Log out</button>';
