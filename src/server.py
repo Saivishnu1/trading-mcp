@@ -469,6 +469,7 @@ async def _app(scope, receive, send):
                 "issuer": base_url,
                 "authorization_endpoint": f"{base_url}/oauth/authorize",
                 "token_endpoint": f"{base_url}/oauth/token",
+                "registration_endpoint": f"{base_url}/oauth/register",
                 "response_types_supported": ["code"],
                 "grant_types_supported": ["authorization_code"],
                 "token_endpoint_auth_methods_supported": ["none", "client_secret_post", "client_secret_basic"],
@@ -479,6 +480,37 @@ async def _app(scope, receive, send):
                                     [b"content-length", str(len(body)).encode()],
                                     [b"access-control-allow-origin", b"*"]]})
             await send({"type": "http.response.body", "body": body})
+            return
+
+        if path == "/oauth/register" and method == "POST":
+            import secrets as _secrets
+            raw = await _read_body(receive)
+            try:
+                meta = json.loads(raw.decode()) if raw else {}
+            except Exception:
+                meta = {}
+            client_id = meta.get("client_id") or "client_" + _secrets.token_hex(8)
+            body = json.dumps({
+                "client_id": client_id,
+                "client_secret": None,
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code"],
+                "response_types": ["code"],
+                "redirect_uris": meta.get("redirect_uris", []),
+            }).encode()
+            await send({"type": "http.response.start", "status": 201,
+                        "headers": [[b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"access-control-allow-origin", b"*"]]})
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        if path == "/oauth/register" and method == "OPTIONS":
+            await send({"type": "http.response.start", "status": 204,
+                        "headers": [[b"access-control-allow-origin", b"*"],
+                                    [b"access-control-allow-methods", b"POST,OPTIONS"],
+                                    [b"access-control-allow-headers", b"content-type"]]})
+            await send({"type": "http.response.body", "body": b""})
             return
 
         if path == "/oauth/authorize" and method == "GET":
