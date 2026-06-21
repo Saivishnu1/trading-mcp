@@ -9,151 +9,266 @@
 
   body {
     font-family: system-ui, -apple-system, sans-serif;
-    background: #0f172a;
+    background: #080e1a;
     color: #f1f5f9;
     min-height: 100vh;
-    padding: 2rem 1rem;
+    overflow-x: hidden;
   }
 
-  .container {
-    max-width: 640px;
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(56,126,209,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(56,126,209,.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  /* Top glow */
+  body::after {
+    content: '';
+    position: fixed; top: -200px; left: 50%; transform: translateX(-50%);
+    width: 700px; height: 400px;
+    background: radial-gradient(ellipse, rgba(56,126,209,.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .page {
+    position: relative; z-index: 1;
+    max-width: 680px;
     margin: 0 auto;
+    padding: 3rem 1.5rem 4rem;
   }
 
-  /* Header */
-  .header {
-    display: flex; align-items: center; gap: .75rem;
-    margin-bottom: 2.5rem;
+  /* ── Hero ── */
+  .hero {
+    text-align: center;
+    margin-bottom: 3rem;
+    animation: fadeUp .5s ease both;
   }
-  .logo-icon {
-    width: 42px; height: 42px;
-    background: linear-gradient(135deg, #387ED1, #56cfb2);
-    border-radius: 10px;
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .logo-wrap {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 64px; height: 64px;
+    background: linear-gradient(135deg, #387ED1 0%, #56cfb2 100%);
+    border-radius: 18px;
+    box-shadow: 0 0 40px rgba(56,126,209,.4), 0 8px 32px rgba(0,0,0,.4);
+    font-size: 1.8rem; font-weight: 800; color: #fff;
+    margin-bottom: 1.25rem;
+  }
+
+  .hero h1 {
+    font-size: 2rem; font-weight: 700; letter-spacing: -.02em;
+    background: linear-gradient(135deg, #f1f5f9 30%, #94a3b8);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: .4rem;
+  }
+
+  .hero p {
+    font-size: .9rem; color: #64748b; margin-bottom: 1.25rem;
+  }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: .45rem;
+    padding: .3rem .9rem;
+    background: rgba(74,222,128,.08);
+    border: 1px solid rgba(74,222,128,.2);
+    border-radius: 99px;
+    font-size: .75rem; font-weight: 600; color: #4ade80;
+  }
+  .pulse {
+    width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
+    box-shadow: 0 0 0 0 rgba(74,222,128,.6);
+    animation: pulse 2s ease infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.6); }
+    70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  }
+
+  /* ── CTA ── */
+  .cta-card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, rgba(56,126,209,.14) 0%, rgba(86,207,178,.07) 100%);
+    border: 1px solid rgba(56,126,209,.35);
+    border-radius: 16px;
+    padding: 1.75rem 2rem;
+    margin-bottom: 1.25rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+    animation: fadeUp .5s .1s ease both;
+  }
+  .cta-card::before {
+    content: '';
+    position: absolute; top: -60px; right: -60px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(56,126,209,.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-label {
+    font-size: .68rem; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: #387ED1; margin-bottom: .35rem;
+  }
+  .cta-card h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: .3rem; }
+  .cta-card p  { font-size: .82rem; color: #64748b; }
+  .cta-btn {
+    flex-shrink: 0;
+    padding: .65rem 1.5rem;
+    background: linear-gradient(135deg, #387ED1, #2d6cb8);
+    color: #fff; font-size: .875rem; font-weight: 600;
+    border: none; border-radius: 10px; cursor: pointer;
+    text-decoration: none; display: inline-block;
+    box-shadow: 0 4px 16px rgba(56,126,209,.35);
+    transition: transform .15s, box-shadow .15s, opacity .15s;
+  }
+  .cta-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(56,126,209,.45); }
+  .cta-btn:active { transform: translateY(0); }
+
+  /* ── Section ── */
+  .section {
+    background: rgba(30,41,59,.6);
+    border: 1px solid rgba(51,65,85,.8);
+    border-radius: 14px;
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+    animation: fadeUp .5s .2s ease both;
+    backdrop-filter: blur(4px);
+  }
+  .section + .section { animation-delay: .25s; }
+  .section + .section + .section { animation-delay: .3s; }
+
+  .section-header {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .9rem 1.5rem;
+    border-bottom: 1px solid rgba(51,65,85,.6);
+  }
+  .section-icon {
+    width: 26px; height: 26px;
+    background: rgba(56,126,209,.12);
+    border: 1px solid rgba(56,126,209,.2);
+    border-radius: 7px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 1.2rem; font-weight: 800; color: #fff; flex-shrink: 0;
+    font-size: .8rem;
   }
-  .logo-text { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; }
-  .logo-sub  { font-size: .78rem; color: #64748b; margin-top: .1rem; }
-
-  /* Status badge */
-  .status-row {
-    display: flex; align-items: center; gap: .5rem;
-    margin-bottom: 2rem;
-  }
-  .badge {
-    display: inline-flex; align-items: center; gap: .4rem;
-    padding: .3rem .75rem;
-    border-radius: 99px; font-size: .75rem; font-weight: 600;
-  }
-  .badge-green { background: rgba(74,222,128,.12); color: #4ade80; border: 1px solid rgba(74,222,128,.25); }
-  .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-
-  /* Cards */
-  .card {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 12px;
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 1rem;
-  }
-  .card-title {
-    font-size: .7rem; font-weight: 600; letter-spacing: .06em;
-    text-transform: uppercase; color: #387ED1; margin-bottom: .75rem;
+  .section-title {
+    font-size: .72rem; font-weight: 600; letter-spacing: .07em;
+    text-transform: uppercase; color: #387ED1;
   }
 
   /* Info rows */
   .info-row {
     display: flex; justify-content: space-between; align-items: center;
-    padding: .45rem 0;
-    border-bottom: 1px solid #1e293b;
-    font-size: .85rem;
+    padding: .7rem 1.5rem;
+    border-bottom: 1px solid rgba(51,65,85,.4);
+    font-size: .84rem; gap: 1rem;
   }
   .info-row:last-child { border-bottom: none; }
-  .info-label { color: #64748b; }
-  .info-value { color: #e2e8f0; font-family: monospace; font-size: .8rem; }
-  .info-value a { color: #387ED1; text-decoration: none; }
-  .info-value a:hover { text-decoration: underline; }
+  .info-label { color: #64748b; white-space: nowrap; }
+  .info-value {
+    color: #cbd5e1; font-family: monospace; font-size: .78rem;
+    text-align: right; word-break: break-all;
+  }
+  .info-value a {
+    color: #387ED1; text-decoration: none;
+    padding: .15rem .4rem;
+    background: rgba(56,126,209,.08);
+    border: 1px solid rgba(56,126,209,.15);
+    border-radius: 4px;
+    transition: background .15s;
+  }
+  .info-value a:hover { background: rgba(56,126,209,.18); }
 
-  /* Login CTA */
-  .cta {
-    background: linear-gradient(135deg, rgba(56,126,209,.15), rgba(86,207,178,.08));
-    border: 1px solid rgba(56,126,209,.3);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  /* Client rows */
+  .client-row {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .7rem 1.5rem;
+    border-bottom: 1px solid rgba(51,65,85,.4);
   }
-  .cta-text h3 { font-size: .95rem; font-weight: 600; margin-bottom: .25rem; }
-  .cta-text p  { font-size: .8rem; color: #64748b; }
-  .cta-btn {
-    flex-shrink: 0;
-    padding: .55rem 1.25rem;
-    background: linear-gradient(135deg, #387ED1, #2d6cb8);
-    color: #fff; font-size: .85rem; font-weight: 600;
-    border: none; border-radius: 8px; cursor: pointer;
-    text-decoration: none; display: inline-block;
-    transition: opacity .2s;
-  }
-  .cta-btn:hover { opacity: .88; }
-
-  /* Tools grid */
-  .tools-grid {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem;
-  }
-  .tool-chip {
+  .client-row:last-child { border-bottom: none; }
+  .client-icon {
+    width: 30px; height: 30px; flex-shrink: 0;
     background: #0f172a; border: 1px solid #334155;
-    border-radius: 7px; padding: .4rem .7rem;
-    font-size: .75rem; color: #94a3b8;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .85rem;
   }
-  .tool-chip strong { color: #e2e8f0; display: block; font-size: .78rem; }
+  .client-name { font-size: .84rem; font-weight: 500; color: #e2e8f0; }
+  .client-hint { font-size: .74rem; color: #475569; font-family: monospace; }
+
+  /* Capabilities */
+  .caps-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+  }
+  .cap-item {
+    padding: .8rem 1.5rem;
+    border-bottom: 1px solid rgba(51,65,85,.4);
+    border-right: 1px solid rgba(51,65,85,.4);
+  }
+  .cap-item:nth-child(even) { border-right: none; }
+  .cap-item:nth-last-child(-n+2) { border-bottom: none; }
+  .cap-name {
+    font-size: .82rem; font-weight: 600; color: #e2e8f0;
+    margin-bottom: .15rem;
+  }
+  .cap-desc { font-size: .73rem; color: #475569; }
 
   /* Footer */
   .footer {
-    margin-top: 2rem; font-size: .75rem; color: #475569; text-align: center;
+    margin-top: 2.5rem; text-align: center;
+    font-size: .75rem; color: #334155;
+    display: flex; align-items: center; justify-content: center; gap: .75rem;
   }
+  .footer span { color: #1e293b; }
 </style>
 </head>
 <body>
-<div class="container">
+<div class="page">
 
-  <div class="header">
-    <div class="logo-icon">Z</div>
-    <div>
-      <div class="logo-text">Zerodha MCP</div>
-      <div class="logo-sub">Personal Trading Intelligence Server</div>
-    </div>
-  </div>
-
-  <div class="status-row">
-    <span class="badge badge-green"><span class="badge-dot"></span>Server online</span>
+  <!-- Hero -->
+  <div class="hero">
+    <div class="logo-wrap">Z</div>
+    <h1>Zerodha MCP</h1>
+    <p>Personal Trading Intelligence · Model Context Protocol Server</p>
+    <div class="status-pill"><span class="pulse"></span>Online &amp; ready</div>
   </div>
 
   <!-- Login CTA -->
-  <div class="cta">
-    <div class="cta-text">
-      <h3>Authenticate with Zerodha</h3>
-      <p>Log in to activate portfolio tools and live market access.</p>
+  <div class="cta-card">
+    <div>
+      <div class="cta-label">Authentication required</div>
+      <h2>Connect your Zerodha account</h2>
+      <p>Log in to activate portfolio tools, live data, and get your MCP API key.</p>
     </div>
-    <a href="/login" class="cta-btn">Log in</a>
+    <a href="/login" class="cta-btn">Log in →</a>
   </div>
 
-  <!-- Server info -->
-  <div class="card">
-    <div class="card-title">Server Info</div>
+  <!-- Server Info -->
+  <div class="section" style="animation-delay:.15s">
+    <div class="section-header">
+      <div class="section-icon">⚡</div>
+      <span class="section-title">Server Info</span>
+    </div>
     <div class="info-row">
       <span class="info-label">MCP endpoint</span>
-      <span class="info-value"><span id="mcp-url"></span></span>
+      <span class="info-value" id="mcp-url"></span>
     </div>
     <div class="info-row">
       <span class="info-label">Transport</span>
       <span class="info-value">Streamable HTTP</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Auth</span>
-      <span class="info-value">Authorization: Bearer &lt;api-key&gt;</span>
+      <span class="info-label">Auth header</span>
+      <span class="info-value">Authorization: Bearer &lt;key&gt;</span>
     </div>
     <div class="info-row">
-      <span class="info-label">Health check</span>
+      <span class="info-label">Health</span>
       <span class="info-value"><a href="/health">/health</a></span>
     </div>
     <div class="info-row">
@@ -162,46 +277,90 @@
     </div>
   </div>
 
-  <!-- How to connect -->
-  <div class="card">
-    <div class="card-title">How to connect</div>
-    <div class="info-row">
-      <span class="info-label">Claude Code</span>
-      <span class="info-value" style="font-size:.72rem">claude mcp add --transport http …</span>
+  <!-- Connect -->
+  <div class="section" style="animation-delay:.2s">
+    <div class="section-header">
+      <div class="section-icon">🔌</div>
+      <span class="section-title">Supported Clients</span>
     </div>
-    <div class="info-row">
-      <span class="info-label">Claude Desktop</span>
-      <span class="info-value" style="font-size:.72rem">claude_desktop_config.json</span>
+    <div class="client-row">
+      <div class="client-icon">⌨</div>
+      <div>
+        <div class="client-name">Claude Code</div>
+        <div class="client-hint">claude mcp add --transport http …</div>
+      </div>
     </div>
-    <div class="info-row">
-      <span class="info-label">Cursor</span>
-      <span class="info-value" style="font-size:.72rem">.cursor/mcp.json</span>
+    <div class="client-row">
+      <div class="client-icon">🖥</div>
+      <div>
+        <div class="client-name">Claude Desktop</div>
+        <div class="client-hint">claude_desktop_config.json</div>
+      </div>
     </div>
-    <div class="info-row">
-      <span class="info-label">Postman</span>
-      <span class="info-value" style="font-size:.72rem">New → MCP Server → Streamable HTTP</span>
+    <div class="client-row">
+      <div class="client-icon">⚙</div>
+      <div>
+        <div class="client-name">Cursor</div>
+        <div class="client-hint">.cursor/mcp.json</div>
+      </div>
     </div>
-    <div class="info-row" style="padding-top:.75rem">
-      <span style="font-size:.78rem;color:#64748b">Log in above to get your API key and ready-to-paste configs for each client.</span>
+    <div class="client-row">
+      <div class="client-icon">📮</div>
+      <div>
+        <div class="client-name">Postman</div>
+        <div class="client-hint">New → MCP Server → Streamable HTTP</div>
+      </div>
+    </div>
+    <div class="info-row" style="padding:.75rem 1.5rem">
+      <span style="font-size:.78rem;color:#475569">Log in to get your API key with ready-to-paste configs for each client.</span>
     </div>
   </div>
 
   <!-- Capabilities -->
-  <div class="card">
-    <div class="card-title">Capabilities ({tool_count} tools)</div>
-    <div class="tools-grid">
-      <div class="tool-chip"><strong>Portfolio</strong>Holdings, positions, margins</div>
-      <div class="tool-chip"><strong>Market Data</strong>Quotes, OHLCV, historical</div>
-      <div class="tool-chip"><strong>Options</strong>Chains, OI, PCR, max pain</div>
-      <div class="tool-chip"><strong>Technicals</strong>RSI, EMA, MACD, ADX, ATR</div>
-      <div class="tool-chip"><strong>Intelligence</strong>Regime, signals, news</div>
-      <div class="tool-chip"><strong>Trade Journal</strong>Log, review, analytics</div>
-      <div class="tool-chip"><strong>Recommendations</strong>Plans, sizing, strategy</div>
-      <div class="tool-chip"><strong>Dashboard</strong>Nifty, BankNifty, risk</div>
+  <div class="section" style="animation-delay:.25s">
+    <div class="section-header">
+      <div class="section-icon">🧠</div>
+      <span class="section-title">Capabilities &nbsp;·&nbsp; {tool_count} tools</span>
+    </div>
+    <div class="caps-grid">
+      <div class="cap-item">
+        <div class="cap-name">Portfolio</div>
+        <div class="cap-desc">Holdings, positions, margins</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Market Data</div>
+        <div class="cap-desc">Quotes, OHLCV, historical</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Options</div>
+        <div class="cap-desc">Chains, OI, PCR, max pain</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Technicals</div>
+        <div class="cap-desc">RSI, EMA, MACD, ADX, ATR</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Intelligence</div>
+        <div class="cap-desc">Regime detection, signals, news</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Trade Journal</div>
+        <div class="cap-desc">Log, review, analytics</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Recommendations</div>
+        <div class="cap-desc">Plans, sizing, strategy</div>
+      </div>
+      <div class="cap-item">
+        <div class="cap-name">Dashboard</div>
+        <div class="cap-desc">Nifty, BankNifty, risk scores</div>
+      </div>
     </div>
   </div>
 
-  <div class="footer">Session expires ~24h after login &nbsp;·&nbsp; API key persists across re-logins</div>
+  <div class="footer">
+    Session ~24h &nbsp;<span>·</span>&nbsp; API key persists across re-logins &nbsp;<span>·</span>&nbsp; Multi-user supported
+  </div>
 
 </div>
 <script>
