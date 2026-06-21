@@ -189,7 +189,7 @@ class TestSyncEdgeCases:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()}
         assert "external_id" in cols
 
-    def test_schema_version_is_4(self):
+    def test_schema_version_is_5(self):
         conn = journal_db._get_connection()
         version = conn.execute("SELECT version FROM schema_version").fetchone()["version"]
-        assert version == 4
+        assert version == 5

@@ -8,15 +8,25 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker
 from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, calibration, recommendation_log
+import src.session_store as session_store
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 logger = logging.getLogger(__name__)
 
-# Restore persisted session so users survive server restarts without re-login
-_session_file = os.environ.get("SESSION_FILE", ".session.json")
-get_broker().load_session(_session_file)
+# Restore persisted session from DB so users survive server restarts without re-login
+def _restore_session() -> None:
+    enctoken = session_store.load()
+    if enctoken:
+        broker = get_broker()
+        broker._set_token(enctoken)  # type: ignore[attr-defined]
+        logger.info("Session restored from DB")
+
+try:
+    _restore_session()
+except Exception as exc:
+    logger.warning("Could not restore session from DB: %s", exc)
 
 
 
@@ -219,8 +229,8 @@ async def _handle_login_post(receive, send) -> None:
     try:
         broker = get_broker()
         broker.login(user_id=user_id, password=password, totp=totp_code)
-        session_file = os.environ.get("SESSION_FILE", ".session.json")
-        broker.save_session(session_file)
+        enctoken = broker._enctoken  # type: ignore[attr-defined]
+        session_store.save(user_id, enctoken)
         logger.info("Browser login successful for %s", user_id)
         msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
         await _send_html(send, 200, _render_login("", msg))
@@ -254,6 +264,17 @@ async def app(scope, receive, send):
                 "authenticated": broker.is_authenticated(),
                 "backend": type(broker).__name__,
             })
+            return
+
+        if path == "/logout" and method == "GET":
+            qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+            uid = (qs.get("user_id", [""])[0]).strip()
+            if uid:
+                session_store.delete(uid)
+            broker = get_broker()
+            broker._enctoken = None  # type: ignore[attr-defined]
+            logger.info("Logout: %s", uid or "unknown")
+            await _send_json(send, 200, {"logged_out": True, "user_id": uid or None})
             return
 
         if path == "/sse" or path.startswith("/messages"):
