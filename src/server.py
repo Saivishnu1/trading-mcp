@@ -534,20 +534,18 @@ async def _app(scope, receive, send):
                 })
             return
 
-        if path == "/logout" and method == "GET":
-            qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
-            uid = (
-                (qs.get("user_id", [""])[0]).strip()
-                or current_user.get()
-                or session_store.get_active_user_id()
-            )
-            if uid:
-                session_store.delete(uid)
-                api_key_store.delete(uid)
-                from src.broker import reset_broker
-                reset_broker(uid)
-                get_broker().clear_enctoken()
-            logger.info("Logout: %s", uid or "none")
+        if path == "/logout" and method == "POST":
+            # Requires valid Bearer token — prevents unauthenticated DoS logout
+            uid = current_user.get()
+            if not uid:
+                await _send_json(send, 401, {"error": "unauthorized"})
+                return
+            session_store.delete(uid)
+            api_key_store.delete(uid)
+            from src.broker import reset_broker
+            reset_broker(uid)
+            get_broker().clear_enctoken()
+            logger.info("Logout: %s", uid)
             # Redirect to home so the browser shows updated session status
             await send({"type": "http.response.start", "status": 302,
                         "headers": [[b"location", b"/"]]})

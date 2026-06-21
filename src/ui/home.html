@@ -501,8 +501,15 @@
           user.textContent = d.user_id ? 'Logged in as ' + d.user_id : 'Session active';
           actions.innerHTML =
             '<a href="/login" class="btn-sm">Refresh session</a>' +
-            '<a href="/logout" class="btn-sm"' +
-            ' onclick="return confirm(\'Log out and deactivate session?\')">Log out</a>';
+            '<button class="btn-sm" onclick="doLogout()">Log out</button>';
+
+          window.doLogout = function() {
+            var key = prompt('Enter your API key to confirm logout:');
+            if (!key) return;
+            fetch('/logout', {method:'POST', headers:{'Authorization':'Bearer '+key.trim()}})
+              .then(function(r){ r.ok ? location.reload() : alert('Invalid API key'); })
+              .catch(function(){ alert('Logout failed'); });
+          };
         } else {
           card.classList.add('expired');
           dot.textContent = '!';
