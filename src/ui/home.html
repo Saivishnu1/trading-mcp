@@ -367,10 +367,10 @@
     </div>
   </div>
 
-  <!-- MCP endpoint banner -->
+  <!-- SSE endpoint banner -->
   <div class="endpoint-banner">
     <div>
-      <div class="endpoint-label">MCP Endpoint</div>
+      <div class="endpoint-label">SSE Endpoint</div>
       <div class="endpoint-url" id="mcp-url-display"></div>
     </div>
     <button class="copy-btn" id="copy-endpoint-btn" onclick="copyEndpoint()">Copy URL</button>
@@ -403,7 +403,7 @@
       <div class="qs-step">
         <div class="qs-num">2</div>
         <div class="qs-text">
-          <strong>Paste the MCP endpoint URL</strong> (shown above). No API key needed at this step.
+          <strong>Paste the SSE endpoint URL</strong> (shown above). No API key needed at this step.
           <pre class="qs-code" id="qs-claudeai-url"></pre>
         </div>
       </div>
@@ -491,13 +491,13 @@
       <div class="qs-step">
         <div class="qs-num">1</div>
         <div class="qs-text">
-          <strong>Open Postman</strong> and click <strong>New → MCP Server → Streamable HTTP</strong>.
+          <strong>Open Postman</strong> and click <strong>New → MCP Server → SSE</strong>.
         </div>
       </div>
       <div class="qs-step">
         <div class="qs-num">2</div>
         <div class="qs-text">
-          <strong>Paste the MCP endpoint URL.</strong> Free market data tools work with no auth header.
+          <strong>Paste the SSE endpoint URL.</strong> Free market data tools work with no auth header.
           For portfolio tools, add <code style="color:#60a5fa">Authorization: Bearer &lt;your-api-key&gt;</code>.
           <pre class="qs-code" id="qs-postman-url"></pre>
         </div>
@@ -698,7 +698,7 @@
         <div class="client-icon">📮</div>
         <div>
           <div class="client-name">Postman</div>
-          <div class="client-hint">New → MCP Server → Streamable HTTP → &lt;url&gt;/mcp</div>
+          <div class="client-hint">New → MCP Server → SSE → &lt;url&gt;/sse</div>
         </div>
       </div>
       <div class="info-row" style="padding:.65rem 1.25rem">
@@ -718,24 +718,24 @@
   var sseUrl = origin + '/sse';
 
   // Populate static URL references
-  document.getElementById('mcp-url-display').textContent = mcpUrl;
+  document.getElementById('mcp-url-display').textContent = sseUrl;
   document.getElementById('mcp-url').textContent = mcpUrl;
   document.getElementById('sse-url').textContent = sseUrl;
 
   // Quick-start tab code snippets
-  document.getElementById('qs-claudeai-url').textContent = mcpUrl;
+  document.getElementById('qs-claudeai-url').textContent = sseUrl;
   document.getElementById('qs-cc-cmd').textContent =
-    'claude mcp add --transport http zerodha ' + mcpUrl + ' \\\n  --header "Authorization: Bearer <your-api-key>"';
+    'claude mcp add --transport sse zerodha ' + sseUrl + ' \\\n  --header "Authorization: Bearer <your-api-key>"';
   document.getElementById('qs-desktop-json').textContent =
     '{\n  "mcpServers": {\n    "zerodha": {\n      "url": "' + sseUrl + '",\n      "headers": { "Authorization": "Bearer <your-api-key>" }\n    }\n  }\n}';
   document.getElementById('qs-cursor-json').textContent =
-    '{\n  "mcpServers": {\n    "zerodha": {\n      "url": "' + mcpUrl + '",\n      "headers": { "Authorization": "Bearer <your-api-key>" }\n    }\n  }\n}';
-  document.getElementById('qs-postman-url').textContent = mcpUrl;
+    '{\n  "mcpServers": {\n    "zerodha": {\n      "url": "' + sseUrl + '",\n      "headers": { "Authorization": "Bearer <your-api-key>" }\n    }\n  }\n}';
+  document.getElementById('qs-postman-url').textContent = sseUrl;
 
   // Copy endpoint
   function copyEndpoint() {
     var btn = document.getElementById('copy-endpoint-btn');
-    navigator.clipboard.writeText(mcpUrl).then(function() {
+    navigator.clipboard.writeText(sseUrl).then(function() {
       btn.textContent = 'Copied!';
       btn.classList.add('copied');
       setTimeout(function() {
