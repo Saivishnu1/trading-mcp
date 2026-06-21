@@ -152,13 +152,13 @@
     user-select: text;
   }
   .eye-btn {
-    width: 32px; height: 32px; flex-shrink: 0;
-    background: #334155; border: none; border-radius: 6px;
-    color: #94a3b8; cursor: pointer; font-size: 1rem;
+    width: 30px; height: 30px; flex-shrink: 0; margin-top: 0; padding: 0;
+    background: transparent; border: 1px solid #334155; border-radius: 6px;
+    color: #64748b; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    transition: background .15s;
+    transition: border-color .15s, color .15s;
   }
-  .eye-btn:hover { background: #475569; }
+  .eye-btn:hover { border-color: #475569; color: #94a3b8; }
   .api-key-box .copy-btn {
     width: auto;
     padding: .4rem .9rem;
@@ -214,11 +214,12 @@
   .step p { font-size: .8rem; color: #94a3b8; margin-bottom: .5rem; }
 
   .tabs {
-    display: flex; gap: .35rem; margin-bottom: .5rem; flex-wrap: wrap;
+    display: flex; gap: .35rem; margin-bottom: .75rem; flex-wrap: wrap;
   }
   .tab {
-    font-size: .72rem; padding: .25rem .6rem;
-    border-radius: 5px; border: 1px solid #334155;
+    width: auto; margin-top: 0; padding: .3rem .75rem;
+    font-size: .75rem; font-weight: 500;
+    border-radius: 6px; border: 1px solid #334155;
     background: #0f172a; color: #64748b; cursor: pointer;
     transition: all .15s;
   }
@@ -229,23 +230,27 @@
   .tab-pane { display: none; }
   .tab-pane.active { display: block; }
 
+  .code-wrap {
+    position: relative;
+  }
   .code-block {
     background: #0f172a;
     border: 1px solid #334155;
     border-radius: 8px;
-    padding: .75rem;
+    padding: .7rem .7rem 2.2rem;
     font-family: monospace; font-size: .72rem;
     color: #e2e8f0; line-height: 1.6;
     overflow-x: auto; white-space: pre;
-    position: relative;
   }
   .copy-code-btn {
-    position: absolute; top: .5rem; right: .5rem;
-    font-size: .68rem; padding: .2rem .5rem;
-    background: #1e293b; border: 1px solid #334155;
-    border-radius: 4px; color: #64748b; cursor: pointer;
+    position: absolute; bottom: .5rem; right: .5rem;
+    width: auto; margin-top: 0; padding: .2rem .6rem;
+    font-size: .68rem; font-weight: 500;
+    background: #334155; border: 1px solid #475569;
+    border-radius: 4px; color: #94a3b8; cursor: pointer;
+    transition: background .15s;
   }
-  .copy-code-btn:hover { color: #94a3b8; }
+  .copy-code-btn:hover { background: #475569; color: #f1f5f9; }
 
   .close-btn {
     display: block; width: 100%; margin-top: 1.5rem;
@@ -309,12 +314,15 @@
     });
   }
 
+  var _eyeOff = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  var _eyeOn  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+
   function toggleKey() {
     var key = document.getElementById('api-key');
     var btn = document.getElementById('eye-btn');
     if (!key) return;
     var visible = key.classList.toggle('visible');
-    btn.innerHTML = visible ? '&#128064;' : '&#128065;';
+    btn.innerHTML = visible ? _eyeOn : _eyeOff;
     btn.title = visible ? 'Hide key' : 'Show key';
   }
 
@@ -334,6 +342,9 @@
     var apiKey  = (document.getElementById('api-key') || {}).textContent || '';
     apiKey = apiKey.trim();
     var mcpUrl  = window.location.origin + '/mcp';
+
+    var eyeOff = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    var eyeOn  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 
     var cfgJson = JSON.stringify({
       mcpServers: { zerodha: { url: mcpUrl, headers: { Authorization: 'Bearer ' + apiKey } } }
@@ -357,7 +368,7 @@
       '    <p class="api-key-label">MCP API Key</p>',
       '    <div class="api-key-row">',
       '      <code id="api-key">' + escHtml(apiKey) + '</code>',
-      '      <button class="eye-btn" onclick="toggleKey()" id="eye-btn" title="Show/hide key">&#128065;</button>',
+      '      <button class="eye-btn" onclick="toggleKey()" id="eye-btn" title="Show key">'+eyeOff+'</button>',
       '      <button class="copy-btn" onclick="copyKey()">Copy</button>',
       '    </div>',
       '  </div>',
@@ -375,19 +386,19 @@
 
       '  <div id="tab-cc" class="tab-pane active">',
       '    <p>Run once in your terminal:</p>',
-      '    <div class="code-block" id="blk-cc">' + escHtml(codeCmd) + '<button class="copy-code-btn" onclick="copyCode(\'blk-cc\')">Copy</button></div>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cc">' + escHtml(codeCmd) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cc\')">Copy</button></div>',
       '  </div>',
 
       '  <div id="tab-cd" class="tab-pane">',
       '    <p>Add to <strong>claude_desktop_config.json</strong><br>',
       '    Mac: <code style="font-size:.68rem;color:#64748b">~/Library/Application Support/Claude/</code><br>',
       '    Win: <code style="font-size:.68rem;color:#64748b">%APPDATA%\\Claude\\</code></p>',
-      '    <div class="code-block" id="blk-cd">' + escHtml(cfgJson) + '<button class="copy-code-btn" onclick="copyCode(\'blk-cd\')">Copy</button></div>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cd">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cd\')">Copy</button></div>',
       '  </div>',
 
       '  <div id="tab-cur" class="tab-pane">',
       '    <p>Add to <code style="font-size:.68rem;color:#64748b">.cursor/mcp.json</code> in your project:</p>',
-      '    <div class="code-block" id="blk-cur">' + escHtml(cfgJson) + '<button class="copy-code-btn" onclick="copyCode(\'blk-cur\')">Copy</button></div>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cur">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cur\')">Copy</button></div>',
       '  </div>',
       '</div>',
 
@@ -409,9 +420,8 @@
 
   function copyCode(id) {
     var el = document.getElementById(id);
-    var text = el.childNodes[0].textContent;
-    navigator.clipboard.writeText(text.trim()).then(function() {
-      var btn = el.querySelector('.copy-code-btn');
+    var btn = el.parentElement.querySelector('.copy-code-btn');
+    navigator.clipboard.writeText(el.textContent.trim()).then(function() {
       btn.textContent = 'Copied!';
       setTimeout(function(){ btn.textContent = 'Copy'; }, 2000);
     });
