@@ -20,6 +20,7 @@ class JugaadClient:
 
     def __init__(self) -> None:
         self._kite = None  # jugaad_trader.Zerodha, imported lazily
+        self._enctoken: str | None = None  # cached after login
 
     def _import_zerodha(self):
         try:
@@ -45,6 +46,12 @@ class JugaadClient:
         kite = Zerodha(user_id=user_id, password=password, twofa=totp)
         kite.login()
         self._kite = kite
+        # Cache the token now while it's fresh — jugaad exposes it inconsistently
+        self._enctoken = (
+            getattr(kite, "enctoken", None)
+            or getattr(kite, "access_token", None)
+            or getattr(getattr(kite, "session", None), "enctoken", None)
+        )
         logger.info("JugaadClient: login successful for %s", user_id)
         try:
             return kite.profile()
@@ -64,18 +71,18 @@ class JugaadClient:
         return self._require_auth().margins(segment=segment)
 
     def get_enctoken(self) -> str | None:
-        if self._kite is None:
-            return None
-        return getattr(self._kite, "enctoken", None) or getattr(self._kite, "access_token", None)
+        return self._enctoken
 
     def set_enctoken(self, token: str) -> None:
         Zerodha = self._import_zerodha()
         kite = Zerodha()
         kite.enctoken = token
         self._kite = kite
+        self._enctoken = token
 
     def clear_enctoken(self) -> None:
         self._kite = None
+        self._enctoken = None
 
     def is_authenticated(self) -> bool:
         if self._kite is None:
