@@ -526,15 +526,18 @@ async def _app(scope, receive, send):
 
         if path == "/logout" and method == "GET":
             qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
-            uid = (qs.get("user_id", [""])[0]).strip() or current_user.get()
+            uid = (
+                (qs.get("user_id", [""])[0]).strip()
+                or current_user.get()
+                or session_store.get_active_user_id()
+            )
             if uid:
                 session_store.delete(uid)
                 api_key_store.delete(uid)
                 from src.broker import reset_broker
                 reset_broker(uid)
-            else:
                 get_broker().clear_enctoken()
-            logger.info("Logout: %s", uid or "active session")
+            logger.info("Logout: %s", uid or "none")
             # Redirect to home so the browser shows updated session status
             await send({"type": "http.response.start", "status": 302,
                         "headers": [[b"location", b"/"]]})
