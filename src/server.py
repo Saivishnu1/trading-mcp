@@ -520,11 +520,11 @@ async def _app(scope, receive, send):
 
         if path == "/auth/status":
             broker = get_broker()
-            uid = current_user.get() or session_store.get_active_user_id()
+            uid = current_user.get()  # only set if request carries a valid Bearer token
             await _send_json(send, 200, {
                 "authenticated": broker.is_authenticated(),
                 "backend": type(broker).__name__,
-                "user_id": uid,
+                "user_id": uid,  # None for unauthenticated browser requests
             })
             return
 

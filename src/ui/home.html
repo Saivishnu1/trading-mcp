@@ -498,7 +498,7 @@
           card.classList.add('active');
           dot.textContent = '✓';
           status.textContent = 'Session active — portfolio tools unlocked';
-          if (d.user_id) user.textContent = 'Logged in as ' + d.user_id;
+          user.textContent = d.user_id ? 'Logged in as ' + d.user_id : 'Session active';
           actions.innerHTML =
             '<a href="/login" class="btn-sm">Refresh session</a>' +
             '<a href="/logout" class="btn-sm"' +
