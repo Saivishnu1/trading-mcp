@@ -160,7 +160,7 @@ _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
 
 
-_UI_DIR = os.path.join(os.path.dirname(__file__), "..", "ui")
+_UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
 _LOGIN_TEMPLATE = open(os.path.join(_UI_DIR, "login.html"), encoding="utf-8").read()
 
 
