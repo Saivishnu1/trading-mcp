@@ -278,12 +278,13 @@ async def app(scope, receive, send):
         if path == "/logout" and method == "GET":
             qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
             uid = (qs.get("user_id", [""])[0]).strip()
-            if uid:
-                session_store.delete(uid)
-            broker = get_broker()
-            broker.clear_enctoken()
-            logger.info("Logout: %s", uid or "unknown")
-            await _send_json(send, 200, {"logged_out": True, "user_id": uid or None})
+            if not uid:
+                await _send_json(send, 400, {"error": "user_id is required"})
+                return
+            session_store.delete(uid)
+            get_broker().clear_enctoken()
+            logger.info("Logout: %s", uid)
+            await _send_json(send, 200, {"logged_out": True, "user_id": uid})
             return
 
         if path == "/sse" or path.startswith("/messages"):
