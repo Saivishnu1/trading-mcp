@@ -23,7 +23,7 @@
     border-radius: 14px;
     padding: 2.5rem 2rem;
     width: 100%;
-    max-width: 380px;
+    max-width: 480px;
     box-shadow: 0 25px 50px rgba(0,0,0,.5);
     animation: slideUp .35s ease;
   }
@@ -162,13 +162,18 @@
   }
   .security-note span { color: #387ED1; font-size: 1rem; }
 
-  .success-card {
-    text-align: center;
-    padding: 1rem 0;
+  .success-card { padding: .5rem 0; }
+  .success-header {
+    display: flex; align-items: center; gap: .75rem;
+    margin-bottom: 1.5rem;
   }
   .success-icon {
-    font-size: 3rem;
-    margin-bottom: 1rem;
+    width: 40px; height: 40px; flex-shrink: 0;
+    background: rgba(74,222,128,.15);
+    border: 1px solid rgba(74,222,128,.3);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
     animation: pop .4s ease;
   }
   @keyframes pop {
@@ -176,9 +181,61 @@
     70%  { transform: scale(1.15); }
     100% { transform: scale(1); }
   }
-  .success-card h2 { color: #4ade80; font-size: 1.2rem; margin-bottom: .5rem; }
-  .success-card p  { color: #64748b; font-size: .875rem; }
-  .countdown { color: #387ED1; font-weight: 600; }
+  .success-header h2 { color: #4ade80; font-size: 1.05rem; margin: 0; }
+  .success-header p  { color: #64748b; font-size: .78rem; margin: .15rem 0 0; }
+
+  .setup-steps { margin-top: 1.25rem; }
+  .step {
+    margin-bottom: 1.25rem;
+  }
+  .step-label {
+    font-size: .72rem; font-weight: 600; letter-spacing: .05em;
+    color: #387ED1; text-transform: uppercase; margin-bottom: .5rem;
+  }
+  .step p { font-size: .8rem; color: #94a3b8; margin-bottom: .5rem; }
+
+  .tabs {
+    display: flex; gap: .35rem; margin-bottom: .5rem; flex-wrap: wrap;
+  }
+  .tab {
+    font-size: .72rem; padding: .25rem .6rem;
+    border-radius: 5px; border: 1px solid #334155;
+    background: #0f172a; color: #64748b; cursor: pointer;
+    transition: all .15s;
+  }
+  .tab.active {
+    background: rgba(56,126,209,.15); border-color: rgba(56,126,209,.4);
+    color: #387ED1;
+  }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  .code-block {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: .75rem;
+    font-family: monospace; font-size: .72rem;
+    color: #e2e8f0; line-height: 1.6;
+    overflow-x: auto; white-space: pre;
+    position: relative;
+  }
+  .copy-code-btn {
+    position: absolute; top: .5rem; right: .5rem;
+    font-size: .68rem; padding: .2rem .5rem;
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 4px; color: #64748b; cursor: pointer;
+  }
+  .copy-code-btn:hover { color: #94a3b8; }
+
+  .close-btn {
+    display: block; width: 100%; margin-top: 1.5rem;
+    padding: .65rem; font-size: .875rem;
+    background: rgba(56,126,209,.1); border: 1px solid rgba(56,126,209,.25);
+    border-radius: 8px; color: #387ED1; cursor: pointer;
+    transition: background .15s;
+  }
+  .close-btn:hover { background: rgba(56,126,209,.2); }
 </style>
 </head>
 <body>
@@ -243,37 +300,112 @@
     spinner.style.display = 'block';
   });
 
-  // Auto-close on success
+  // Setup guide on success
   (function() {
     var msg = document.querySelector('.msg.ok');
     if (!msg) return;
 
-    var formSection = document.getElementById('form-section');
-    var card = document.getElementById('main-card');
+    var apiKeyEl = document.getElementById('api-key');
+    var apiKey   = apiKeyEl ? apiKeyEl.textContent.trim() : 'YOUR_API_KEY';
+    var baseUrl  = window.location.origin;
+    var mcpUrl   = baseUrl + '/mcp';
 
-    var secs = 3;
-    formSection.innerHTML = [
-      '<div class="success-card">',
-      '  <div class="success-icon">&#10003;</div>',
-      '  <h2>Logged in successfully</h2>',
-      '  <p>Closing in <span class="countdown" id="cd">' + secs + '</span>s…</p>',
-      '</div>'
-    ].join('');
-
-    var interval = setInterval(function() {
-      secs--;
-      var el = document.getElementById('cd');
-      if (el) el.textContent = secs;
-      if (secs <= 0) {
-        clearInterval(interval);
-        window.close();
-        // Fallback if browser blocks window.close()
-        if (document.getElementById('cd')) {
-          document.querySelector('.success-card p').textContent = 'You can close this tab.';
+    var desktopJson = JSON.stringify({
+      mcpServers: {
+        zerodha: {
+          url: mcpUrl,
+          headers: { Authorization: 'Bearer ' + apiKey }
         }
       }
-    }, 1000);
+    }, null, 2);
+
+    var codeCmd = 'claude mcp add --transport http zerodha ' + mcpUrl + ' \\\n  --header "Authorization: Bearer ' + apiKey + '"';
+
+    var cursorJson = JSON.stringify({
+      mcpServers: {
+        zerodha: {
+          url: mcpUrl,
+          headers: { Authorization: 'Bearer ' + apiKey }
+        }
+      }
+    }, null, 2);
+
+    var section = document.getElementById('form-section');
+    section.innerHTML = [
+      '<div class="success-card">',
+      '  <div class="success-header">',
+      '    <div class="success-icon">&#10003;</div>',
+      '    <div>',
+      '      <h2>Logged in successfully</h2>',
+      '      <p>Zerodha session active — follow the steps below to connect your agent</p>',
+      '    </div>',
+      '  </div>',
+
+      apiKeyEl ? [
+        '  <div class="step">',
+        '    <div class="step-label">Step 1 — Copy your API key</div>',
+        '    <div class="api-key-box">',
+        '      <p class="api-key-label">MCP API Key <span>(shown only once — save it)</span></p>',
+        '      <code id="api-key">' + apiKey + '</code>',
+        '      <button type="button" onclick="copyKey()">Copy</button>',
+        '    </div>',
+        '  </div>',
+      ].join('') : [
+        '  <div class="step">',
+        '    <div class="step-label">Step 1 — API key</div>',
+        '    <p style="font-size:.8rem;color:#94a3b8;">Session refreshed — your existing API key is unchanged.</p>',
+        '  </div>',
+      ].join(''),
+
+      '  <div class="step">',
+      '    <div class="step-label">Step 2 — Add to your agent</div>',
+      '    <div class="tabs">',
+      '      <button class="tab active" onclick="showTab(\'claude-code\',this)">Claude Code</button>',
+      '      <button class="tab" onclick="showTab(\'claude-desktop\',this)">Claude Desktop</button>',
+      '      <button class="tab" onclick="showTab(\'cursor\',this)">Cursor</button>',
+      '    </div>',
+
+      '    <div id="tab-claude-code" class="tab-pane active">',
+      '      <p>Run this once in your terminal:</p>',
+      '      <div class="code-block" id="code-claude-code">' + escHtml(codeCmd) + '<button class="copy-code-btn" onclick="copyCode(\'code-claude-code\')">Copy</button></div>',
+      '    </div>',
+
+      '    <div id="tab-claude-desktop" class="tab-pane">',
+      '      <p>Merge into <code style="font-size:.7rem;color:#94a3b8;">~/Library/Application Support/Claude/claude_desktop_config.json</code> (Mac) or <code style="font-size:.7rem;color:#94a3b8;">%APPDATA%\\Claude\\claude_desktop_config.json</code> (Windows):</p>',
+      '      <div class="code-block" id="code-claude-desktop">' + escHtml(desktopJson) + '<button class="copy-code-btn" onclick="copyCode(\'code-claude-desktop\')">Copy</button></div>',
+      '    </div>',
+
+      '    <div id="tab-cursor" class="tab-pane">',
+      '      <p>Add to <code style="font-size:.7rem;color:#94a3b8;">.cursor/mcp.json</code> in your project (or global Cursor MCP settings):</p>',
+      '      <div class="code-block" id="code-cursor">' + escHtml(cursorJson) + '<button class="copy-code-btn" onclick="copyCode(\'code-cursor\')">Copy</button></div>',
+      '    </div>',
+      '  </div>',
+
+      '  <button class="close-btn" onclick="window.close()">Close this tab</button>',
+      '</div>',
+    ].join('');
   })();
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function showTab(id, btn) {
+    document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.remove('active'); });
+    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+    document.getElementById('tab-' + id).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  function copyCode(id) {
+    var el = document.getElementById(id);
+    var text = el.childNodes[0].textContent;
+    navigator.clipboard.writeText(text.trim()).then(function() {
+      var btn = el.querySelector('.copy-code-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(function(){ btn.textContent = 'Copy'; }, 2000);
+    });
+  }
 </script>
 </body>
 </html>
