@@ -18,10 +18,11 @@ logger = logging.getLogger(__name__)
 
 # Restore persisted session from DB so users survive server restarts without re-login
 def _restore_session() -> None:
-    enctoken = session_store.load()
-    if enctoken:
+    uid = session_store.get_active_user_id()
+    enctoken = session_store.load(uid) if uid else None
+    if enctoken and uid:
         get_broker().set_enctoken(enctoken)
-        logger.info("Session restored from DB")
+        logger.info("Session restored from DB: user_id=%s", uid)
 
 try:
     _restore_session()
@@ -368,6 +369,9 @@ async def app(scope, receive, send):
     if scope["type"] == "http":
         uid = _resolve_user(scope)
         token = current_user.set(uid)
+        path = scope.get("path", "")
+        if path in ("/mcp", "/sse"):
+            logger.info("MCP connect: path=%s user_id=%s", path, uid or "unauthenticated")
         try:
             await _app(scope, receive, send)
         finally:
