@@ -264,12 +264,25 @@ async def _handle_login_post(receive, send) -> None:
 
 
 def _resolve_user(scope) -> str | None:
-    """Read Authorization: Bearer <key> from headers and resolve to user_id."""
+    """Read Authorization: Bearer <key> from headers and resolve to user_id.
+
+    Single-user mode: if MCP_API_KEY env var is set and the key matches,
+    resolve to the active session's user_id without a DB lookup.
+    Multi-user mode: DB lookup via api_keys table.
+    """
+    static_key = os.environ.get("MCP_API_KEY", "").strip()
+
     for name, value in scope.get("headers", []):
         if name.lower() == b"authorization":
             val = value.decode("utf-8", errors="ignore").strip()
-            if val.lower().startswith("bearer "):
-                return api_key_store.lookup(val[7:].strip())
+            if not val.lower().startswith("bearer "):
+                continue
+            key = val[7:].strip()
+            if static_key and key == static_key:
+                # Single-user: resolve to the most recent active session
+                uid = session_store.get_active_user_id()
+                return uid or os.environ.get("ZERODHA_USER_ID", "default")
+            return api_key_store.lookup(key)
     return None
 
 

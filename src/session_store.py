@@ -63,6 +63,17 @@ def delete(user_id: str) -> bool:
     return True
 
 
+def get_active_user_id() -> str | None:
+    """Return the user_id of the most recently active session."""
+    conn = _get_connection()
+    row = conn.execute(
+        "SELECT user_id FROM sessions WHERE is_active = 1 ORDER BY last_used DESC LIMIT 1",
+    ).fetchone()
+    if row is None:
+        return None
+    return row["user_id"] if isinstance(row, dict) else row[0]
+
+
 def list_active() -> list[dict]:
     """Return all active sessions (user_id + last_used). Does not return tokens."""
     conn = _get_connection()
