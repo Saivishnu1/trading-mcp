@@ -63,6 +63,20 @@ class JugaadClient:
     def margins(self, segment: str = "equity") -> dict:
         return self._require_auth().margins(segment=segment)
 
+    def get_enctoken(self) -> str | None:
+        if self._kite is None:
+            return None
+        return getattr(self._kite, "enctoken", None) or getattr(self._kite, "access_token", None)
+
+    def set_enctoken(self, token: str) -> None:
+        Zerodha = self._import_zerodha()
+        kite = Zerodha()
+        kite.enctoken = token
+        self._kite = kite
+
+    def clear_enctoken(self) -> None:
+        self._kite = None
+
     def is_authenticated(self) -> bool:
         if self._kite is None:
             return False

@@ -56,6 +56,16 @@ class ZerodhaWebClient:
         # Real browsers authenticate via cookie only — no Authorization header.
         self._http.cookies.set("enctoken", token, domain="kite.zerodha.com")
 
+    def get_enctoken(self) -> str | None:
+        return self._enctoken
+
+    def set_enctoken(self, token: str) -> None:
+        self._set_token(token)
+
+    def clear_enctoken(self) -> None:
+        self._enctoken = None
+        self._http.cookies.clear()
+
     def _require_auth(self) -> None:
         if not self._enctoken:
             raise RuntimeError(

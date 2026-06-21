@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 def _restore_session() -> None:
     enctoken = session_store.load()
     if enctoken:
-        broker = get_broker()
-        broker._set_token(enctoken)  # type: ignore[attr-defined]
+        get_broker().set_enctoken(enctoken)
         logger.info("Session restored from DB")
 
 try:
@@ -229,7 +228,7 @@ async def _handle_login_post(receive, send) -> None:
     try:
         broker = get_broker()
         broker.login(user_id=user_id, password=password, totp=totp_code)
-        enctoken = broker._enctoken  # type: ignore[attr-defined]
+        enctoken = broker.get_enctoken()
         session_store.save(user_id, enctoken)
         logger.info("Browser login successful for %s", user_id)
         msg = '<p class="msg ok">Logged in successfully. You can close this tab.</p>'
@@ -272,7 +271,7 @@ async def app(scope, receive, send):
             if uid:
                 session_store.delete(uid)
             broker = get_broker()
-            broker._enctoken = None  # type: ignore[attr-defined]
+            broker.clear_enctoken()
             logger.info("Logout: %s", uid or "unknown")
             await _send_json(send, 200, {"logged_out": True, "user_id": uid or None})
             return

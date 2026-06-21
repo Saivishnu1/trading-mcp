@@ -70,6 +70,6 @@ def register(mcp: FastMCP) -> None:
         """
         session_store.delete(user_id)
         broker = get_broker()
-        broker._enctoken = None  # type: ignore[attr-defined]
+        broker.clear_enctoken()
         logger.info("MCP logout: %s", user_id)
         return {"logged_out": True, "user_id": user_id}
