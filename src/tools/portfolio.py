@@ -1,5 +1,5 @@
 from mcp.server.fastmcp import FastMCP
-from src.broker import get_broker
+from src.broker import require_broker
 
 
 def register(mcp: FastMCP) -> None:
@@ -12,7 +12,7 @@ def register(mcp: FastMCP) -> None:
         last_price, pnl, and day_change. Requires an active session
         (call zerodha_login first).
         """
-        return get_broker().holdings()
+        return require_broker().holdings()
 
     @mcp.tool()
     def get_positions() -> dict:
@@ -21,7 +21,7 @@ def register(mcp: FastMCP) -> None:
         Returns a dict with 'net' and 'day' keys, each a list of position
         dicts. Requires an active session.
         """
-        return get_broker().positions()
+        return require_broker().positions()
 
     @mcp.tool()
     def get_margins(segment: str = "equity") -> dict:
@@ -34,4 +34,4 @@ def register(mcp: FastMCP) -> None:
         """
         if segment not in ("equity", "commodity"):
             raise ValueError("segment must be 'equity' or 'commodity'")
-        return get_broker().margins(segment=segment)
+        return require_broker().margins(segment=segment)

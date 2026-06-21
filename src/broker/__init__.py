@@ -53,6 +53,19 @@ def get_broker(user_id: str | None = None) -> BrokerClient:
     return _default_broker
 
 
+def require_broker() -> BrokerClient:
+    """Return the broker for the current authenticated user.
+
+    Raises PermissionError if the request has no authenticated user (no valid Bearer token).
+    Use this for all tools that return personal Zerodha data.
+    Use get_broker() only for tools that work without auth (market data, instruments).
+    """
+    uid = current_user.get()
+    if not uid:
+        raise PermissionError("Authentication required. Call zerodha_login() to get a login URL, then add your API key as a Bearer token.")
+    return get_broker(uid)
+
+
 def reset_broker(user_id: str | None = None) -> None:
     """Remove a user's broker (or the default). Used by tests and logout."""
     global _default_broker

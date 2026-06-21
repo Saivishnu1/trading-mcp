@@ -1,6 +1,6 @@
 from mcp.server.fastmcp import FastMCP
 
-from src.broker import get_broker as _get_broker
+from src.broker import require_broker as _require_broker
 from src.journal.service import (
     log_trade as _log_trade,
     close_trade as _close_trade,
@@ -190,7 +190,7 @@ def register(mcp: FastMCP) -> None:
         Returns count and list of raw Zerodha order objects.
         """
         try:
-            orders = _get_broker().orders()
+            orders = _require_broker().orders()
             if status:
                 s = status.upper()
                 orders = [o for o in orders if (o.get("status") or "").upper() == s]
@@ -226,7 +226,7 @@ def register(mcp: FastMCP) -> None:
         Requires an active Zerodha session (call zerodha_login first).
         """
         try:
-            orders = _get_broker().orders()
+            orders = _require_broker().orders()
             data = _sync_zerodha_orders(orders)
         except Exception as exc:
             data = {"error": str(exc)}

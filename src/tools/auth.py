@@ -1,7 +1,7 @@
 import os
 import logging
 from mcp.server.fastmcp import FastMCP
-from src.broker import get_broker, reset_broker, current_user
+from src.broker import get_broker, require_broker, reset_broker, current_user
 import src.session_store as session_store
 import src.api_key_store as api_key_store
 
@@ -47,7 +47,7 @@ def register(mcp: FastMCP) -> None:
 
         Includes user_id, user_name, email, broker, and enabled exchanges.
         """
-        return get_broker().profile()
+        return require_broker().profile()
 
     @mcp.tool()
     def check_auth_status() -> dict:
