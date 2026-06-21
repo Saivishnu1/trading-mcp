@@ -276,15 +276,15 @@ async def app(scope, receive, send):
             return
 
         if path == "/logout" and method == "GET":
+            # Single-user: clear the active session; user_id optional for DB cleanup.
+            # TODO: require user_id when multi-user is implemented.
             qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
             uid = (qs.get("user_id", [""])[0]).strip()
-            if not uid:
-                await _send_json(send, 400, {"error": "user_id is required"})
-                return
-            session_store.delete(uid)
+            if uid:
+                session_store.delete(uid)
             get_broker().clear_enctoken()
-            logger.info("Logout: %s", uid)
-            await _send_json(send, 200, {"logged_out": True, "user_id": uid})
+            logger.info("Logout: %s", uid or "active session")
+            await _send_json(send, 200, {"logged_out": True, "user_id": uid or None})
             return
 
         if path == "/sse" or path.startswith("/messages"):
