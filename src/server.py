@@ -172,6 +172,9 @@ _http_app = mcp.streamable_http_app()
 
 _UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
 _LOGIN_TEMPLATE = open(os.path.join(_UI_DIR, "login.html"), encoding="utf-8").read()
+_HOME_TEMPLATE  = open(os.path.join(_UI_DIR, "home.html"),  encoding="utf-8").read()
+
+_TOOL_COUNT = len([t for t in dir(mcp) if not t.startswith("_")])
 
 
 async def _read_body(receive) -> bytes:
@@ -300,6 +303,11 @@ async def _app(scope, receive, send):
     if scope["type"] == "http":
         path = scope.get("path", "")
         method = scope.get("method", "GET")
+
+        if path == "/" or path == "":
+            html = _HOME_TEMPLATE.replace("{tool_count}", str(_TOOL_COUNT))
+            await _send_html(send, 200, html)
+            return
 
         if path == "/health":
             await _send_json(send, 200, {"status": "ok"})

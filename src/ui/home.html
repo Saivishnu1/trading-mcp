@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zerodha MCP</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; gap: .75rem;
+    margin-bottom: 2.5rem;
+  }
+  .logo-icon {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, #387ED1, #56cfb2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; font-weight: 800; color: #fff; flex-shrink: 0;
+  }
+  .logo-text { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; }
+  .logo-sub  { font-size: .78rem; color: #64748b; margin-top: .1rem; }
+
+  /* Status badge */
+  .status-row {
+    display: flex; align-items: center; gap: .5rem;
+    margin-bottom: 2rem;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .3rem .75rem;
+    border-radius: 99px; font-size: .75rem; font-weight: 600;
+  }
+  .badge-green { background: rgba(74,222,128,.12); color: #4ade80; border: 1px solid rgba(74,222,128,.25); }
+  .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  /* Cards */
+  .card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .card-title {
+    font-size: .7rem; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: #387ED1; margin-bottom: .75rem;
+  }
+
+  /* Info rows */
+  .info-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .45rem 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: .85rem;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { color: #64748b; }
+  .info-value { color: #e2e8f0; font-family: monospace; font-size: .8rem; }
+  .info-value a { color: #387ED1; text-decoration: none; }
+  .info-value a:hover { text-decoration: underline; }
+
+  /* Login CTA */
+  .cta {
+    background: linear-gradient(135deg, rgba(56,126,209,.15), rgba(86,207,178,.08));
+    border: 1px solid rgba(56,126,209,.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  }
+  .cta-text h3 { font-size: .95rem; font-weight: 600; margin-bottom: .25rem; }
+  .cta-text p  { font-size: .8rem; color: #64748b; }
+  .cta-btn {
+    flex-shrink: 0;
+    padding: .55rem 1.25rem;
+    background: linear-gradient(135deg, #387ED1, #2d6cb8);
+    color: #fff; font-size: .85rem; font-weight: 600;
+    border: none; border-radius: 8px; cursor: pointer;
+    text-decoration: none; display: inline-block;
+    transition: opacity .2s;
+  }
+  .cta-btn:hover { opacity: .88; }
+
+  /* Tools grid */
+  .tools-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem;
+  }
+  .tool-chip {
+    background: #0f172a; border: 1px solid #334155;
+    border-radius: 7px; padding: .4rem .7rem;
+    font-size: .75rem; color: #94a3b8;
+  }
+  .tool-chip strong { color: #e2e8f0; display: block; font-size: .78rem; }
+
+  /* Footer */
+  .footer {
+    margin-top: 2rem; font-size: .75rem; color: #475569; text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="logo-icon">Z</div>
+    <div>
+      <div class="logo-text">Zerodha MCP</div>
+      <div class="logo-sub">Personal Trading Intelligence Server</div>
+    </div>
+  </div>
+
+  <div class="status-row">
+    <span class="badge badge-green"><span class="badge-dot"></span>Server online</span>
+  </div>
+
+  <!-- Login CTA -->
+  <div class="cta">
+    <div class="cta-text">
+      <h3>Authenticate with Zerodha</h3>
+      <p>Log in to activate portfolio tools and live market access.</p>
+    </div>
+    <a href="/login" class="cta-btn">Log in</a>
+  </div>
+
+  <!-- Server info -->
+  <div class="card">
+    <div class="card-title">Server Info</div>
+    <div class="info-row">
+      <span class="info-label">MCP endpoint</span>
+      <span class="info-value"><span id="mcp-url"></span></span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Transport</span>
+      <span class="info-value">Streamable HTTP</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Auth</span>
+      <span class="info-value">Authorization: Bearer &lt;api-key&gt;</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Health check</span>
+      <span class="info-value"><a href="/health">/health</a></span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Session status</span>
+      <span class="info-value"><a href="/auth/status">/auth/status</a></span>
+    </div>
+  </div>
+
+  <!-- How to connect -->
+  <div class="card">
+    <div class="card-title">How to connect</div>
+    <div class="info-row">
+      <span class="info-label">Claude Code</span>
+      <span class="info-value" style="font-size:.72rem">claude mcp add --transport http …</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Claude Desktop</span>
+      <span class="info-value" style="font-size:.72rem">claude_desktop_config.json</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Cursor</span>
+      <span class="info-value" style="font-size:.72rem">.cursor/mcp.json</span>
+    </div>
+    <div class="info-row">
+      <span class="info-label">Postman</span>
+      <span class="info-value" style="font-size:.72rem">New → MCP Server → Streamable HTTP</span>
+    </div>
+    <div class="info-row" style="padding-top:.75rem">
+      <span style="font-size:.78rem;color:#64748b">Log in above to get your API key and ready-to-paste configs for each client.</span>
+    </div>
+  </div>
+
+  <!-- Capabilities -->
+  <div class="card">
+    <div class="card-title">Capabilities ({tool_count} tools)</div>
+    <div class="tools-grid">
+      <div class="tool-chip"><strong>Portfolio</strong>Holdings, positions, margins</div>
+      <div class="tool-chip"><strong>Market Data</strong>Quotes, OHLCV, historical</div>
+      <div class="tool-chip"><strong>Options</strong>Chains, OI, PCR, max pain</div>
+      <div class="tool-chip"><strong>Technicals</strong>RSI, EMA, MACD, ADX, ATR</div>
+      <div class="tool-chip"><strong>Intelligence</strong>Regime, signals, news</div>
+      <div class="tool-chip"><strong>Trade Journal</strong>Log, review, analytics</div>
+      <div class="tool-chip"><strong>Recommendations</strong>Plans, sizing, strategy</div>
+      <div class="tool-chip"><strong>Dashboard</strong>Nifty, BankNifty, risk</div>
+    </div>
+  </div>
+
+  <div class="footer">Session expires ~24h after login &nbsp;·&nbsp; API key persists across re-logins</div>
+
+</div>
+<script>
+  document.getElementById('mcp-url').textContent = window.location.origin + '/mcp';
+</script>
+</body>
+</html>
