@@ -289,6 +289,8 @@ async def _handle_login_post(scope, receive, send) -> None:
         try:
             session_store.save(user_id, enctoken)
             api_key, _ = api_key_store.get_or_create(user_id)
+            # Update the per-user broker cache so check_auth_status() returns true immediately
+            get_broker(user_id).set_enctoken(enctoken)
         except Exception as exc:
             logger.warning("Could not persist session/API key for %s: %s", user_id, exc)
     else:
@@ -602,7 +604,7 @@ async def _app(scope, receive, send):
         if path == "/auth/status":
             uid = current_user.get()  # only set if request carries a valid Bearer token
             if uid:
-                broker = get_broker()
+                broker = get_broker(uid)
                 await _send_json(send, 200, {
                     "authenticated": broker.is_authenticated(),
                     "backend": type(broker).__name__,
