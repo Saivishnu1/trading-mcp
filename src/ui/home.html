@@ -202,22 +202,45 @@
   .client-name { font-size: .84rem; font-weight: 500; color: #e2e8f0; }
   .client-hint { font-size: .74rem; color: #475569; font-family: monospace; }
 
-  /* Capabilities */
+  /* Access tiers */
+  .tier {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(51,65,85,.4);
+  }
+  .tier:last-child { border-bottom: none; }
+  .tier-header {
+    display: flex; align-items: center; gap: .6rem;
+    margin-bottom: .75rem;
+  }
+  .tier-badge {
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .2rem .6rem;
+    border-radius: 99px; font-size: .68rem; font-weight: 600;
+  }
+  .tier-free {
+    background: rgba(74,222,128,.1); color: #4ade80;
+    border: 1px solid rgba(74,222,128,.2);
+  }
+  .tier-auth {
+    background: rgba(56,126,209,.1); color: #60a5fa;
+    border: 1px solid rgba(56,126,209,.2);
+  }
+  .tier-desc { font-size: .78rem; color: #64748b; }
   .caps-grid {
-    display: grid; grid-template-columns: repeat(2, 1fr);
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: .4rem;
+    margin-top: .6rem;
   }
   .cap-item {
-    padding: .8rem 1.5rem;
-    border-bottom: 1px solid rgba(51,65,85,.4);
-    border-right: 1px solid rgba(51,65,85,.4);
+    background: rgba(15,23,42,.6);
+    border: 1px solid rgba(51,65,85,.5);
+    border-radius: 8px;
+    padding: .6rem .85rem;
   }
-  .cap-item:nth-child(even) { border-right: none; }
-  .cap-item:nth-last-child(-n+2) { border-bottom: none; }
   .cap-name {
-    font-size: .82rem; font-weight: 600; color: #e2e8f0;
-    margin-bottom: .15rem;
+    font-size: .8rem; font-weight: 600; color: #e2e8f0;
+    margin-bottom: .1rem;
   }
-  .cap-desc { font-size: .73rem; color: #475569; }
+  .cap-desc { font-size: .71rem; color: #475569; }
 
   /* Footer */
   .footer {
@@ -242,9 +265,10 @@
   <!-- Login CTA -->
   <div class="cta-card">
     <div>
-      <div class="cta-label">Authentication required</div>
+      <div class="cta-label">Optional · Unlocks personal data</div>
       <h2>Connect your Zerodha account</h2>
-      <p>Log in to activate portfolio tools, live data, and get your MCP API key.</p>
+      <p>Market data and analysis tools work right away — no login needed.<br>
+      Log in only if you want your portfolio, positions, and personal trade journal.</p>
     </div>
     <a href="/login" class="cta-btn">Log in →</a>
   </div>
@@ -320,40 +344,66 @@
   <div class="section" style="animation-delay:.25s">
     <div class="section-header">
       <div class="section-icon">🧠</div>
-      <span class="section-title">Capabilities &nbsp;·&nbsp; {tool_count} tools</span>
+      <span class="section-title">What's available &nbsp;·&nbsp; {tool_count} tools</span>
     </div>
-    <div class="caps-grid">
-      <div class="cap-item">
-        <div class="cap-name">Portfolio</div>
-        <div class="cap-desc">Holdings, positions, margins</div>
+
+    <!-- Free tier -->
+    <div class="tier">
+      <div class="tier-header">
+        <span class="tier-badge tier-free">✓ No login needed</span>
+        <span class="tier-desc">Works immediately for any user</span>
       </div>
-      <div class="cap-item">
-        <div class="cap-name">Market Data</div>
-        <div class="cap-desc">Quotes, OHLCV, historical</div>
+      <div class="caps-grid">
+        <div class="cap-item">
+          <div class="cap-name">Market Data</div>
+          <div class="cap-desc">Quotes, OHLCV, historical prices</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Options</div>
+          <div class="cap-desc">Chains, OI, PCR, max pain</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Technicals</div>
+          <div class="cap-desc">RSI, EMA, MACD, ADX, ATR</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Intelligence</div>
+          <div class="cap-desc">Regime detection, signals, news</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Instruments</div>
+          <div class="cap-desc">Search &amp; list NSE symbols</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Dashboard</div>
+          <div class="cap-desc">Nifty, BankNifty, risk scores</div>
+        </div>
       </div>
-      <div class="cap-item">
-        <div class="cap-name">Options</div>
-        <div class="cap-desc">Chains, OI, PCR, max pain</div>
+    </div>
+
+    <!-- Auth tier -->
+    <div class="tier">
+      <div class="tier-header">
+        <span class="tier-badge tier-auth">🔒 Login to unlock</span>
+        <span class="tier-desc">Requires your Zerodha account</span>
       </div>
-      <div class="cap-item">
-        <div class="cap-name">Technicals</div>
-        <div class="cap-desc">RSI, EMA, MACD, ADX, ATR</div>
-      </div>
-      <div class="cap-item">
-        <div class="cap-name">Intelligence</div>
-        <div class="cap-desc">Regime detection, signals, news</div>
-      </div>
-      <div class="cap-item">
-        <div class="cap-name">Trade Journal</div>
-        <div class="cap-desc">Log, review, analytics</div>
-      </div>
-      <div class="cap-item">
-        <div class="cap-name">Recommendations</div>
-        <div class="cap-desc">Plans, sizing, strategy</div>
-      </div>
-      <div class="cap-item">
-        <div class="cap-name">Dashboard</div>
-        <div class="cap-desc">Nifty, BankNifty, risk scores</div>
+      <div class="caps-grid">
+        <div class="cap-item">
+          <div class="cap-name">Portfolio</div>
+          <div class="cap-desc">Live holdings, positions, margins</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Orders</div>
+          <div class="cap-desc">Order history &amp; auto-sync</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Trade Journal</div>
+          <div class="cap-desc">Personal log, review, analytics</div>
+        </div>
+        <div class="cap-item">
+          <div class="cap-name">Recommendations</div>
+          <div class="cap-desc">Plans, sizing, strategy tracking</div>
+        </div>
       </div>
     </div>
   </div>
