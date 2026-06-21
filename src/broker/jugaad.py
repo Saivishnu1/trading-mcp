@@ -46,12 +46,8 @@ class JugaadClient:
         kite = Zerodha(user_id=user_id, password=password, twofa=totp)
         kite.login()
         self._kite = kite
-        # Cache the token now while it's fresh — jugaad exposes it inconsistently
-        self._enctoken = (
-            getattr(kite, "enctoken", None)
-            or getattr(kite, "access_token", None)
-            or getattr(getattr(kite, "session", None), "enctoken", None)
-        )
+        # jugaad stores enctoken as kite.enc_token (set in login_step2 from cookies)
+        self._enctoken = getattr(kite, "enc_token", None)
         logger.info("JugaadClient: login successful for %s", user_id)
         try:
             return kite.profile()
@@ -76,7 +72,7 @@ class JugaadClient:
     def set_enctoken(self, token: str) -> None:
         Zerodha = self._import_zerodha()
         kite = Zerodha()
-        kite.enctoken = token
+        kite.enc_token = token  # jugaad uses enc_token in custom_headers()
         self._kite = kite
         self._enctoken = token
 
@@ -97,12 +93,8 @@ class JugaadClient:
         if self._kite is None:
             return
         data: dict = {}
-        # jugaad-trader exposes enctoken after a successful login
-        for attr in ("enctoken", "access_token"):
-            val = getattr(self._kite, attr, None)
-            if val:
-                data[attr] = val
-                break
+        if self._enctoken:
+            data["enctoken"] = self._enctoken
         if data:
             Path(path).write_text(json.dumps(data))
 
@@ -115,12 +107,7 @@ class JugaadClient:
             token = data.get("enctoken") or data.get("access_token")
             if not token:
                 return False
-            Zerodha = self._import_zerodha()
-            kite = Zerodha()
-            # Setting enctoken directly is sufficient for jugaad-trader to
-            # authenticate subsequent requests without needing set_access_token().
-            kite.enctoken = token
-            self._kite = kite
+            self.set_enctoken(token)
             logger.info("JugaadClient: session restored from %s", path)
             return True
         except Exception as exc:
