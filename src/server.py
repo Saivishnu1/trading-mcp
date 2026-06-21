@@ -243,9 +243,9 @@ async def _handle_login_get(scope, send) -> None:
     prefill = os.environ.get("ZERODHA_USER_ID", "")
     uid_cookie = _get_cookie(scope, "mcp_uid")
     if uid_cookie:
-        msg = f'<p class="msg ok">Welcome back, {uid_cookie}. Log in again to refresh your session.</p>'
+        msg = f'<p class="alert ok">Welcome back, {uid_cookie}. Log in again to refresh your session.</p>'
     elif get_broker().is_authenticated():
-        msg = '<p class="msg ok">A session is already active. Log in again to refresh it.</p>'
+        msg = '<p class="alert ok">A session is already active. Log in again to refresh it.</p>'
     else:
         msg = ""
     await _send_html(send, 200, _render_login(prefill, msg))
@@ -268,7 +268,7 @@ async def _handle_login_post(scope, receive, send) -> None:
 
     if not (user_id and password and totp_code):
         prefill = os.environ.get("ZERODHA_USER_ID", "")
-        msg = '<p class="msg err">All fields are required.</p>'
+        msg = '<p class="alert err">All fields are required.</p>'
         await _send_html(send, 400, _render_login(prefill, msg, query_str))
         return
 
@@ -278,7 +278,7 @@ async def _handle_login_post(scope, receive, send) -> None:
     except Exception as exc:
         logger.warning("Browser login failed: %s", exc)
         prefill = os.environ.get("ZERODHA_USER_ID", "")
-        msg = f'<p class="msg err">Login failed: {exc}</p>'
+        msg = f'<p class="alert err">Login failed: {exc}</p>'
         await _send_html(send, 401, _render_login(prefill, msg, query_str))
         return
 
@@ -327,14 +327,8 @@ async def _handle_login_post(scope, receive, send) -> None:
         await send({"type": "http.response.body", "body": b""})
         return
 
-    key_html = (
-        f'<div class="api-key-box">'
-        f'<p class="api-key-label">Your MCP API Key</p>'
-        f'<code id="api-key">{api_key}</code>'
-        f'<button type="button" onclick="copyKey()">Copy</button>'
-        f'</div>'
-    ) if api_key else ''
-    msg = f'<p class="msg ok">Logged in successfully.</p>{key_html}'
+    key_html = f'<span id="api-key" style="display:none">{api_key}</span>' if api_key else ''
+    msg = f'<div class="alert ok">Logged in successfully.{key_html}</div>'
     html = _render_login("", msg).encode()
     cookie = f"mcp_uid={user_id}; Path=/; Max-Age=86400; SameSite=Strict"
     await send({"type": "http.response.start", "status": 200,
@@ -533,7 +527,7 @@ async def _app(scope, receive, send):
                     return
 
             prefill = os.environ.get("ZERODHA_USER_ID", "")
-            msg = f'<p class="msg ok">Already logged in as {uid_cookie}. Enter credentials to confirm.</p>' if uid_cookie else ""
+            msg = f'<p class="alert ok">Already logged in as {uid_cookie}. Enter credentials to confirm.</p>' if uid_cookie else ""
             await _send_html(send, 200, _render_login(prefill, msg, query_str))
             return
 

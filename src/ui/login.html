@@ -3,278 +3,293 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zerodha Login</title>
+<title>Sign in — Zerodha MCP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:         #09090b;
+  --surface:    #111116;
+  --surface-2:  #18181f;
+  --border:     rgba(255,255,255,.07);
+  --border-2:   rgba(255,255,255,.12);
+  --text:       #f4f4f5;
+  --text-2:     #a1a1aa;
+  --text-3:     #52525b;
+  --accent:     #4f8ef7;
+  --accent-dim: rgba(79,142,247,.12);
+  --accent-ring:rgba(79,142,247,.25);
+  --green:      #22c55e;
+  --green-dim:  rgba(34,197,94,.10);
+  --green-ring: rgba(34,197,94,.22);
+  --red:        #f87171;
+  --red-dim:    rgba(248,113,113,.10);
+  --red-ring:   rgba(248,113,113,.22);
+  --mono:       'JetBrains Mono', 'Fira Code', monospace;
+  --r:          10px;
+  --r-lg:       14px;
+}
 
-  body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #0f172a;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 1rem;
-  }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
 
-  .card {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 14px;
-    padding: 2.5rem 2rem;
-    width: 100%;
-    max-width: 480px;
-    box-shadow: 0 25px 50px rgba(0,0,0,.5);
-    animation: slideUp .35s ease;
-  }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
 
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateY(16px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(rgba(79,142,247,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,142,247,.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+body::after {
+  content: '';
+  position: fixed; top: -200px; left: 50%; transform: translateX(-50%); z-index: 0;
+  width: 700px; height: 400px;
+  background: radial-gradient(ellipse, rgba(79,142,247,.09) 0%, transparent 70%);
+  pointer-events: none;
+}
 
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: .6rem;
-    margin-bottom: 2rem;
-  }
-  .logo-icon {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, #387ED1, #56cfb2);
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.1rem; font-weight: 800; color: #fff;
-  }
-  .logo-text { font-size: 1.1rem; font-weight: 600; color: #f1f5f9; }
-  .logo-sub  { font-size: .75rem; color: #64748b; }
+.card {
+  position: relative; z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.6);
+  animation: up .35s ease both;
+}
 
-  h1 {
-    font-size: 1.35rem;
-    font-weight: 600;
-    color: #f1f5f9;
-    margin-bottom: .35rem;
-  }
-  .subtitle {
-    font-size: .85rem;
-    color: #64748b;
-    margin-bottom: 1.75rem;
-  }
+@keyframes up {
+  from { opacity:0; transform: translateY(12px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+@keyframes pop {
+  0%   { transform: scale(0); }
+  70%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+@keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
 
-  .field { margin-bottom: 1.1rem; }
-  label  { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .4rem; font-weight: 500; }
+/* ── Masthead ── */
+.masthead {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 32px;
+}
+.m-logo {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: linear-gradient(135deg, #4f8ef7, #34d399);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; font-weight: 700; color: #fff;
+  flex-shrink: 0;
+}
+.m-name  { font-size: 14px; font-weight: 600; color: var(--text); }
+.m-sub   { font-size: 12px; color: var(--text-3); }
 
-  input {
-    width: 100%;
-    padding: .65rem .9rem;
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    font-size: .95rem;
-    color: #f1f5f9;
-    transition: border-color .2s;
-  }
-  input::placeholder { color: #475569; }
-  input:focus { outline: none; border-color: #387ED1; }
+/* ── Form section ── */
+.form-head { margin-bottom: 24px; }
+.form-head h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -.02em; margin-bottom: 4px; }
+.form-head p  { font-size: 13px; color: var(--text-3); }
 
-  button {
-    width: 100%;
-    padding: .75rem;
-    margin-top: .5rem;
-    background: linear-gradient(135deg, #387ED1, #2d6cb8);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: .95rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity .2s, transform .1s;
-    position: relative;
-  }
-  button:hover   { opacity: .9; }
-  button:active  { transform: scale(.98); }
-  button:disabled { opacity: .6; cursor: not-allowed; }
+.field { margin-bottom: 14px; }
+label  { display: block; font-size: 12px; font-weight: 500; color: var(--text-2); margin-bottom: 6px; }
 
-  .spinner {
-    display: none;
-    width: 16px; height: 16px;
-    border: 2px solid rgba(255,255,255,.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-    position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
-  }
-  @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  font-size: 14px; font-family: inherit;
+  color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+input::placeholder { color: var(--text-3); }
+input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
 
-  .msg {
-    display: flex; align-items: flex-start; gap: .6rem;
-    margin-bottom: 1.25rem;
-    padding: .85rem 1rem;
-    border-radius: 8px;
-    font-size: .875rem;
-    line-height: 1.4;
-  }
-  .msg-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: .05rem; }
-  .ok  { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.2); }
-  .err { background: rgba(239,68,68,.12);  color: #f87171; border: 1px solid rgba(239,68,68,.2);  }
+.submit-btn {
+  width: 100%; margin-top: 8px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #fff; border: none; border-radius: var(--r);
+  font-size: 14px; font-weight: 600; font-family: inherit;
+  cursor: pointer; position: relative;
+  box-shadow: 0 2px 12px rgba(79,142,247,.35);
+  transition: opacity .2s, transform .1s;
+}
+.submit-btn:hover   { opacity: .9; }
+.submit-btn:active  { transform: scale(.98); }
+.submit-btn:disabled { opacity: .55; cursor: not-allowed; }
 
-  .api-key-box {
-    margin-top: 1.25rem;
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 1rem;
-  }
-  .api-key-label {
-    font-size: .78rem;
-    color: #94a3b8;
-    margin-bottom: .5rem;
-    font-weight: 500;
-  }
-  .api-key-label span { color: #f59e0b; font-weight: 400; }
-  .api-key-row {
-    display: flex; align-items: center; gap: .5rem;
-    margin-bottom: .75rem;
-  }
-  .api-key-box code {
-    flex: 1;
-    font-family: monospace;
-    font-size: .8rem;
-    color: #56cfb2;
-    word-break: break-all;
-    line-height: 1.5;
-    filter: blur(5px);
-    user-select: none;
-    transition: filter .2s;
-  }
-  .api-key-box code.visible {
-    filter: none;
-    user-select: text;
-  }
-  .eye-btn {
-    width: 30px; height: 30px; flex-shrink: 0; margin-top: 0; padding: 0;
-    background: transparent; border: 1px solid #334155; border-radius: 6px;
-    color: #64748b; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    transition: border-color .15s, color .15s;
-  }
-  .eye-btn:hover { border-color: #475569; color: #94a3b8; }
-  .api-key-box .copy-btn {
-    width: auto;
-    padding: .4rem .9rem;
-    font-size: .8rem;
-    background: #334155;
-    margin-top: 0;
-    flex-shrink: 0;
-  }
-  .api-key-box .copy-btn:hover { background: #475569; }
+.spinner {
+  display: none; width: 15px; height: 15px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+}
 
-  .security-note {
-    display: flex; align-items: center; gap: .5rem;
-    margin-top: 1.5rem;
-    padding: .7rem .9rem;
-    background: rgba(56,126,209,.08);
-    border: 1px solid rgba(56,126,209,.15);
-    border-radius: 8px;
-    font-size: .78rem;
-    color: #64748b;
-  }
-  .security-note span { color: #387ED1; font-size: 1rem; }
+/* ── Alert ── */
+.alert {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 11px 13px; border-radius: var(--r);
+  font-size: 13px; line-height: 1.5;
+  margin-bottom: 20px;
+}
+.alert.ok  { background: var(--green-dim); border: 1px solid var(--green-ring); color: #86efac; }
+.alert.err { background: var(--red-dim);   border: 1px solid var(--red-ring);   color: #fca5a5; }
 
-  .success-card { padding: .5rem 0; }
-  .success-header {
-    display: flex; align-items: center; gap: .75rem;
-    margin-bottom: 1.5rem;
-  }
-  .success-icon {
-    width: 40px; height: 40px; flex-shrink: 0;
-    background: rgba(74,222,128,.15);
-    border: 1px solid rgba(74,222,128,.3);
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.2rem;
-    animation: pop .4s ease;
-  }
-  @keyframes pop {
-    0%   { transform: scale(0); }
-    70%  { transform: scale(1.15); }
-    100% { transform: scale(1); }
-  }
-  .success-header h2 { color: #4ade80; font-size: 1.05rem; margin: 0; }
-  .success-header p  { color: #64748b; font-size: .78rem; margin: .15rem 0 0; }
+/* ── Security note ── */
+.sec-note {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 20px; padding: 10px 12px;
+  background: var(--accent-dim); border: 1px solid var(--accent-ring);
+  border-radius: var(--r); font-size: 12px; color: var(--text-3);
+}
+.sec-note-icon { font-size: 14px; flex-shrink: 0; }
 
-  .setup-steps { margin-top: 1.25rem; }
-  .step {
-    margin-bottom: 1.25rem;
-  }
-  .step-label {
-    font-size: .72rem; font-weight: 600; letter-spacing: .05em;
-    color: #387ED1; text-transform: uppercase; margin-bottom: .5rem;
-  }
-  .step p { font-size: .8rem; color: #94a3b8; margin-bottom: .5rem; }
+/* ── Success state ── */
+.success-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 28px;
+}
+.success-icon {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  background: var(--green-dim); border: 1px solid var(--green-ring);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; animation: pop .4s ease;
+}
+.success-title { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -.02em; }
+.success-sub   { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 
-  .tabs {
-    display: flex; gap: .35rem; margin-bottom: .75rem; flex-wrap: wrap;
-  }
-  .tab {
-    width: auto; margin-top: 0; padding: .3rem .75rem;
-    font-size: .75rem; font-weight: 500;
-    border-radius: 6px; border: 1px solid #334155;
-    background: #0f172a; color: #64748b; cursor: pointer;
-    transition: all .15s;
-  }
-  .tab.active {
-    background: rgba(56,126,209,.15); border-color: rgba(56,126,209,.4);
-    color: #387ED1;
-  }
-  .tab-pane { display: none; }
-  .tab-pane.active { display: block; }
+/* ── API key box ── */
+.key-section { margin-bottom: 24px; }
+.section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--text-3);
+  margin-bottom: 10px;
+}
+.key-box {
+  background: var(--bg); border: 1px solid var(--border-2);
+  border-radius: var(--r); padding: 12px 14px;
+}
+.key-caption {
+  font-size: 11px; color: var(--text-3); margin-bottom: 8px;
+}
+.key-caption span { color: var(--accent); font-weight: 500; }
+.key-row { display: flex; align-items: center; gap: 8px; }
+.key-val {
+  flex: 1; font-family: var(--mono); font-size: 12px; color: #34d399;
+  word-break: break-all; line-height: 1.5;
+  filter: blur(4px); user-select: none; transition: filter .2s;
+}
+.key-val.show { filter: none; user-select: text; }
+.icon-btn {
+  width: 30px; height: 30px; flex-shrink: 0; padding: 0;
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  border-radius: 7px; color: var(--text-3); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .15s, color .15s; font-family: inherit;
+}
+.icon-btn:hover { border-color: var(--border-2); color: var(--text-2); }
+.copy-key-btn {
+  padding: 5px 12px; font-size: 12px; font-weight: 500;
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  border-radius: 7px; color: var(--text-2); cursor: pointer;
+  flex-shrink: 0; white-space: nowrap; font-family: inherit;
+  transition: border-color .15s, color .15s;
+}
+.copy-key-btn:hover { border-color: var(--border-2); color: var(--text); }
+.copy-key-btn.ok { border-color: var(--green-ring); color: var(--green); background: var(--green-dim); }
 
-  .code-wrap {
-    position: relative;
-  }
-  .code-block {
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: .7rem .7rem 2.2rem;
-    font-family: monospace; font-size: .72rem;
-    color: #e2e8f0; line-height: 1.6;
-    overflow-x: auto; white-space: pre;
-  }
-  .copy-code-btn {
-    position: absolute; bottom: .5rem; right: .5rem;
-    width: auto; margin-top: 0; padding: .2rem .6rem;
-    font-size: .68rem; font-weight: 500;
-    background: #334155; border: 1px solid #475569;
-    border-radius: 4px; color: #94a3b8; cursor: pointer;
-    transition: background .15s;
-  }
-  .copy-code-btn:hover { background: #475569; color: #f1f5f9; }
+/* ── Setup guide ── */
+.guide-section { margin-bottom: 24px; }
+.tab-row {
+  display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.gtab {
+  padding: 5px 12px; font-size: 12px; font-weight: 500;
+  border-radius: var(--r); border: 1px solid var(--border);
+  background: transparent; color: var(--text-3); cursor: pointer; font-family: inherit;
+  transition: all .15s;
+}
+.gtab.on {
+  background: var(--accent-dim); border-color: var(--accent-ring); color: var(--accent);
+}
+.gtab:hover:not(.on) { border-color: var(--border-2); color: var(--text-2); }
 
-  .close-btn {
-    display: block; width: 100%; margin-top: 1.5rem;
-    padding: .65rem; font-size: .875rem;
-    background: rgba(56,126,209,.1); border: 1px solid rgba(56,126,209,.25);
-    border-radius: 8px; color: #387ED1; cursor: pointer;
-    transition: background .15s;
-  }
-  .close-btn:hover { background: rgba(56,126,209,.2); }
+.gpane { display: none; }
+.gpane.on { display: block; }
+.gpane p { font-size: 13px; color: var(--text-2); margin-bottom: 8px; line-height: 1.6; }
+.gpane p strong { color: var(--text); font-weight: 600; }
+.gpane p code { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+
+.code-wrap { position: relative; }
+.code-block {
+  background: var(--bg); border: 1px solid var(--border-2);
+  border-radius: var(--r); padding: 12px 14px 36px;
+  font-family: var(--mono); font-size: 12px;
+  color: #93c5fd; line-height: 1.7;
+  overflow-x: auto; white-space: pre;
+}
+.copy-code-btn {
+  position: absolute; bottom: 8px; right: 8px;
+  padding: 3px 10px; font-size: 11px; font-weight: 500;
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  border-radius: 5px; color: var(--text-3); cursor: pointer; font-family: inherit;
+  transition: border-color .15s, color .15s;
+}
+.copy-code-btn:hover { color: var(--text-2); }
+.copy-code-btn.ok { border-color: var(--green-ring); color: var(--green); background: var(--green-dim); }
+
+/* ── Done button ── */
+.done-btn {
+  display: block; width: 100%; padding: 10px;
+  background: transparent; border: 1px solid var(--border-2);
+  border-radius: var(--r); color: var(--text-2);
+  font-size: 13px; font-weight: 500; font-family: inherit;
+  cursor: pointer; text-align: center; transition: border-color .15s, color .15s;
+}
+.done-btn:hover { border-color: var(--border-2); color: var(--text); }
 </style>
 </head>
 <body>
 <div class="card" id="main-card">
-  <div class="logo">
-    <div class="logo-icon">Z</div>
+
+  <div class="masthead">
+    <div class="m-logo">Z</div>
     <div>
-      <div class="logo-text">Zerodha MCP</div>
-      <div class="logo-sub">Personal Trading Server</div>
+      <div class="m-name">Zerodha MCP</div>
+      <div class="m-sub">Personal Trading Server</div>
     </div>
   </div>
 
   <div id="form-section">
-    <h1>Sign in</h1>
-    <p class="subtitle">Enter your Kite credentials to authenticate (supports OAuth 2.0 / Claude Web)</p>
+    <div class="form-head">
+      <h1>Sign in</h1>
+      <p>Enter your Kite credentials to authenticate</p>
+    </div>
 
     {message}
 
@@ -288,163 +303,155 @@
         <input type="password" name="password" placeholder="Kite password" required autocomplete="new-password">
       </div>
       <div class="field">
-        <label>TOTP (6-digit code)</label>
-        <input type="password" name="totp_code" placeholder="123456" maxlength="6" required autocomplete="off" inputmode="numeric">
+        <label>TOTP</label>
+        <input type="password" name="totp_code" placeholder="6-digit code" maxlength="6" required autocomplete="off" inputmode="numeric">
       </div>
-      <button type="submit" id="submit-btn">
-        Log in securely
+      <button type="submit" class="submit-btn" id="submit-btn">
+        Sign in securely
         <div class="spinner" id="spinner"></div>
       </button>
     </form>
 
-    <div class="security-note">
-      <span>&#128274;</span>
+    <div class="sec-note">
+      <span class="sec-note-icon">&#128274;</span>
       Credentials go directly to the server — never through the AI agent
     </div>
   </div>
+
 </div>
 
 <script>
-  function copyKey() {
-    var key = document.getElementById('api-key');
-    if (!key) return;
-    navigator.clipboard.writeText(key.textContent.trim()).then(function() {
-      var btn = document.querySelector('.copy-btn') || key.nextElementSibling;
-      if (btn) { btn.textContent = 'Copied!'; setTimeout(function(){ btn.textContent = 'Copy'; }, 2000); }
-    });
-  }
-
-  var _eyeOff = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-  var _eyeOn  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var _eyeOff = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  var _eyeOn  = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 
   function toggleKey() {
-    var key = document.getElementById('api-key');
+    var el = document.getElementById('api-key');
     var btn = document.getElementById('eye-btn');
-    if (!key) return;
-    var visible = key.classList.toggle('visible');
-    btn.innerHTML = visible ? _eyeOn : _eyeOff;
-    btn.title = visible ? 'Hide key' : 'Show key';
+    if (!el) return;
+    var v = el.classList.toggle('show');
+    btn.innerHTML = v ? _eyeOn : _eyeOff;
+    btn.title = v ? 'Hide' : 'Show';
   }
 
-  // Show loading state on submit
-  document.getElementById('login-form').addEventListener('submit', function() {
-    var btn = document.getElementById('submit-btn');
-    var spinner = document.getElementById('spinner');
-    btn.disabled = true;
-    btn.childNodes[0].textContent = 'Signing in…';
-    spinner.style.display = 'block';
-  });
-
-  // Setup guide on success
-  (function() {
-    if (!document.querySelector('.msg.ok')) return;
-
-    var apiKey  = (document.getElementById('api-key') || {}).textContent || '';
-    apiKey = apiKey.trim();
-    var mcpUrl  = window.location.origin + '/mcp';
-    var authUrl = window.location.origin + '/oauth/authorize';
-    var tokenUrl = window.location.origin + '/oauth/token';
-
-    var eyeOff = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-    var eyeOn  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-
-    var cfgJson = JSON.stringify({
-      mcpServers: { zerodha: { url: mcpUrl, headers: { Authorization: 'Bearer ' + apiKey } } }
-    }, null, 2);
-    var codeCmd = 'claude mcp add --transport http zerodha ' + mcpUrl + '\n  --header "Authorization: Bearer ' + apiKey + '"';
-
-    document.getElementById('form-section').innerHTML = [
-      '<div class="success-card">',
-
-      // Header
-      '<div class="success-header">',
-      '  <div class="success-icon">&#10003;</div>',
-      '  <div><h2>Logged in</h2><p>Zerodha session active</p></div>',
-      '</div>',
-
-      // API key
-      '<div class="step">',
-      '  <div class="step-label">Your API Key</div>',
-      '  <p>Use this key to authenticate your MCP client. Copy it and keep it safe.</p>',
-      '  <div class="api-key-box" style="margin-top:.5rem">',
-      '    <p class="api-key-label">MCP API Key</p>',
-      '    <div class="api-key-row">',
-      '      <code id="api-key">' + escHtml(apiKey) + '</code>',
-      '      <button class="eye-btn" onclick="toggleKey()" id="eye-btn" title="Show key">'+eyeOff+'</button>',
-      '      <button class="copy-btn" onclick="copyKey()">Copy</button>',
-      '    </div>',
-      '  </div>',
-      '</div>',
-
-      // Setup
-      '<div class="step">',
-      '  <div class="step-label">Connect your agent</div>',
-      '  <p>Choose your client and paste the config below — the key is already filled in.</p>',
-      '  <div class="tabs" style="margin-top:.6rem">',
-      '    <button class="tab active" onclick="showTab(\'cc\',this)">Claude Code</button>',
-      '    <button class="tab" onclick="showTab(\'cw\',this)">Claude Web</button>',
-      '    <button class="tab" onclick="showTab(\'cd\',this)">Claude Desktop</button>',
-      '    <button class="tab" onclick="showTab(\'cur\',this)">Cursor</button>',
-      '    <button class="tab" onclick="showTab(\'pm\',this)">Postman</button>',
-      '  </div>',
-
-      '  <div id="tab-cc" class="tab-pane active">',
-      '    <p>Run once in your terminal:</p>',
-      '    <div class="code-wrap"><div class="code-block" id="blk-cc">' + escHtml(codeCmd) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cc\')">Copy</button></div>',
-      '  </div>',
-
-      '  <div id="tab-cw" class="tab-pane">',
-      '    <p>In Claude Web settings → <strong>Connectors</strong> → <strong>Add custom connector</strong>:<br>',
-      '    &nbsp;• Name: <code style="font-size:.68rem;color:#64748b">Zerodha</code><br>',
-      '    &nbsp;• Remote MCP server URL: (copy value below)</p>',
-      '    <div class="code-wrap"><div class="code-block" id="blk-cw">' + escHtml(mcpUrl) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cw\')">Copy</button></div>',
-      '    <p style="margin-top:.5rem;font-size:.72rem;color:#64748b"><em>Note: Claude Web will automatically discover the OAuth endpoints on your server.</em></p>',
-      '  </div>',
-
-      '  <div id="tab-cd" class="tab-pane">',
-      '    <p>Add to <strong>claude_desktop_config.json</strong><br>',
-      '    Mac: <code style="font-size:.68rem;color:#64748b">~/Library/Application Support/Claude/</code><br>',
-      '    Win: <code style="font-size:.68rem;color:#64748b">%APPDATA%\\Claude\\</code></p>',
-      '    <div class="code-wrap"><div class="code-block" id="blk-cd">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cd\')">Copy</button></div>',
-      '  </div>',
-
-      '  <div id="tab-cur" class="tab-pane">',
-      '    <p>Add to <code style="font-size:.68rem;color:#64748b">.cursor/mcp.json</code> in your project:</p>',
-      '    <div class="code-wrap"><div class="code-block" id="blk-cur">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cur\')">Copy</button></div>',
-      '  </div>',
-
-      '  <div id="tab-pm" class="tab-pane">',
-      '    <p>In Postman → <strong>New</strong> → <strong>MCP Server</strong> → select <strong>Streamable HTTP</strong>:<br>',
-      '    &nbsp;• URL: <code style="font-size:.68rem;color:#64748b">' + escHtml(mcpUrl) + '</code><br>',
-      '    &nbsp;• Header: <code style="font-size:.68rem;color:#64748b">Authorization</code> → value below</p>',
-      '    <div class="code-wrap"><div class="code-block" id="blk-pm">' + escHtml('Bearer ' + apiKey) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-pm\')">Copy</button></div>',
-      '  </div>',
-      '</div>',
-
-      '<button class="close-btn" onclick="window.close()">Done — close this tab</button>',
-      '</div>',
-    ].join('');
-  })();
-
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  function showTab(id, btn) {
-    document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.remove('active'); });
-    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
-    document.getElementById('tab-' + id).classList.add('active');
-    btn.classList.add('active');
+  function copyKey() {
+    var el = document.getElementById('api-key');
+    var btn = document.getElementById('copy-key-btn');
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent.trim()).then(function() {
+      btn.textContent = 'Copied!'; btn.classList.add('ok');
+      setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 2000);
+    });
   }
 
   function copyCode(id) {
     var el = document.getElementById(id);
     var btn = el.parentElement.querySelector('.copy-code-btn');
     navigator.clipboard.writeText(el.textContent.trim()).then(function() {
-      btn.textContent = 'Copied!';
-      setTimeout(function(){ btn.textContent = 'Copy'; }, 2000);
+      btn.textContent = 'Copied!'; btn.classList.add('ok');
+      setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 2000);
     });
   }
+
+  function showGuideTab(id, btn) {
+    document.querySelectorAll('.gpane').forEach(function(p) { p.classList.remove('on'); });
+    document.querySelectorAll('.gtab').forEach(function(b) { b.classList.remove('on'); });
+    document.getElementById('g-' + id).classList.add('on');
+    btn.classList.add('on');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Loading state on submit
+  document.getElementById('login-form').addEventListener('submit', function() {
+    var btn = document.getElementById('submit-btn');
+    var sp  = document.getElementById('spinner');
+    btn.disabled = true;
+    btn.childNodes[0].textContent = 'Signing in…';
+    sp.style.display = 'block';
+  });
+
+  // Success: build setup guide
+  (function() {
+    if (!document.querySelector('.alert.ok')) return;
+
+    // Server injects the key as <code id="api-key"> inside {message}
+    var apiKey = '';
+    var keyEl = document.getElementById('api-key');
+    if (keyEl) { apiKey = keyEl.textContent.trim(); keyEl.closest('.api-key-box') && keyEl.closest('.api-key-box').remove(); }
+
+    var sseUrl  = window.location.origin + '/sse';
+    var mcpUrl  = window.location.origin + '/mcp';
+
+    var cfgJson = JSON.stringify({
+      mcpServers: { zerodha: { url: sseUrl, headers: { Authorization: 'Bearer ' + apiKey } } }
+    }, null, 2);
+    var ccCmd  = 'claude mcp add --transport sse zerodha ' + sseUrl + '\n  --header "Authorization: Bearer ' + apiKey + '"';
+    var bearer = 'Bearer ' + apiKey;
+
+    document.getElementById('form-section').innerHTML = [
+      '<div class="success-header">',
+      '  <div class="success-icon">&#10003;</div>',
+      '  <div>',
+      '    <div class="success-title">Signed in</div>',
+      '    <div class="success-sub">Zerodha session is active</div>',
+      '  </div>',
+      '</div>',
+
+      '<div class="key-section">',
+      '  <div class="section-label">Your API Key</div>',
+      '  <div class="key-box">',
+      '    <div class="key-caption">Use this to authenticate your MCP client. <span>Keep it private.</span></div>',
+      '    <div class="key-row">',
+      '      <span class="key-val" id="api-key">' + escHtml(apiKey) + '</span>',
+      '      <button class="icon-btn" id="eye-btn" onclick="toggleKey()" title="Show">' + _eyeOff + '</button>',
+      '      <button class="copy-key-btn" id="copy-key-btn" onclick="copyKey()">Copy</button>',
+      '    </div>',
+      '  </div>',
+      '</div>',
+
+      '<div class="guide-section">',
+      '  <div class="section-label">Connect your client</div>',
+      '  <div class="tab-row">',
+      '    <button class="gtab on" onclick="showGuideTab(\'cc\',this)">Claude Code</button>',
+      '    <button class="gtab" onclick="showGuideTab(\'ai\',this)">claude.ai</button>',
+      '    <button class="gtab" onclick="showGuideTab(\'cd\',this)">Claude Desktop</button>',
+      '    <button class="gtab" onclick="showGuideTab(\'cur\',this)">Cursor</button>',
+      '    <button class="gtab" onclick="showGuideTab(\'pm\',this)">Postman</button>',
+      '  </div>',
+
+      '  <div id="g-cc" class="gpane on">',
+      '    <p>Run once in your terminal:</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cc">' + escHtml(ccCmd) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cc\')">Copy</button></div>',
+      '  </div>',
+
+      '  <div id="g-ai" class="gpane">',
+      '    <p>Settings → Integrations → <strong>Add MCP Server</strong>. Paste the SSE URL — OAuth handles auth automatically, no key needed here.</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-ai">' + escHtml(sseUrl) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-ai\')">Copy</button></div>',
+      '  </div>',
+
+      '  <div id="g-cd" class="gpane">',
+      '    <p>Edit <strong>claude_desktop_config.json</strong><br>Mac: <code>~/Library/Application Support/Claude/</code><br>Win: <code>%APPDATA%\\Claude\\</code></p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cd">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cd\')">Copy</button></div>',
+      '  </div>',
+
+      '  <div id="g-cur" class="gpane">',
+      '    <p>Add to <code>.cursor/mcp.json</code> in your project root:</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-cur">' + escHtml(cfgJson) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-cur\')">Copy</button></div>',
+      '  </div>',
+
+      '  <div id="g-pm" class="gpane">',
+      '    <p>New → MCP Server → <strong>SSE</strong> → paste URL, then add the Authorization header:</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-pm-url">' + escHtml(sseUrl) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-pm-url\')">Copy URL</button></div>',
+      '    <p style="margin-top:10px">Authorization header value:</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-pm-hdr">' + escHtml(bearer) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-pm-hdr\')">Copy</button></div>',
+      '  </div>',
+      '</div>',
+
+      '<button class="done-btn" onclick="window.close()">Done — close this tab</button>',
+    ].join('\n');
+  })();
 </script>
 </body>
 </html>

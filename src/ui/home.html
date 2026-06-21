@@ -4,732 +4,658 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Zerodha MCP — Personal Trading Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Design tokens ── */
+:root {
+  --bg:          #09090b;
+  --surface:     #111116;
+  --surface-2:   #18181f;
+  --border:      rgba(255,255,255,.07);
+  --border-hover:rgba(255,255,255,.13);
+  --text:        #f4f4f5;
+  --text-2:      #a1a1aa;
+  --text-3:      #52525b;
+  --accent:      #4f8ef7;
+  --accent-dim:  rgba(79,142,247,.12);
+  --accent-ring: rgba(79,142,247,.25);
+  --green:       #22c55e;
+  --green-dim:   rgba(34,197,94,.10);
+  --green-ring:  rgba(34,197,94,.22);
+  --amber:       #f59e0b;
+  --mono:        'JetBrains Mono', 'Fira Code', monospace;
+  --radius:      10px;
+  --radius-sm:   6px;
+  --radius-lg:   14px;
+}
 
-  body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #080e1a;
-    color: #f1f5f9;
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    background-image:
-      linear-gradient(rgba(56,126,209,.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(56,126,209,.03) 1px, transparent 1px);
-    background-size: 48px 48px;
-    pointer-events: none;
-  }
+html { -webkit-font-smoothing: antialiased; }
 
-  body::after {
-    content: '';
-    position: fixed; top: -300px; left: 50%; transform: translateX(-50%);
-    width: 1000px; height: 600px;
-    background: radial-gradient(ellipse, rgba(56,126,209,.14) 0%, transparent 65%);
-    pointer-events: none;
-  }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
 
-  .page {
-    position: relative; z-index: 1;
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 3.5rem 2rem 5rem;
-  }
+/* subtle grid + glow */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(rgba(79,142,247,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,142,247,.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+body::after {
+  content: '';
+  position: fixed; top: -240px; left: 50%; transform: translateX(-50%); z-index: 0;
+  width: 900px; height: 500px;
+  background: radial-gradient(ellipse, rgba(79,142,247,.10) 0%, transparent 70%);
+  pointer-events: none;
+}
 
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(18px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+/* ── Layout ── */
+.page {
+  position: relative; z-index: 1;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 56px 24px 80px;
+}
 
-  /* ── Hero ── */
-  .hero {
-    text-align: center;
-    margin-bottom: 3.5rem;
-    animation: fadeUp .5s ease both;
-  }
+@keyframes up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.a1 { animation: up .45s .00s ease both; }
+.a2 { animation: up .45s .06s ease both; }
+.a3 { animation: up .45s .12s ease both; }
+.a4 { animation: up .45s .18s ease both; }
+.a5 { animation: up .45s .24s ease both; }
+.a6 { animation: up .45s .30s ease both; }
 
-  .logo-wrap {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 76px; height: 76px;
-    background: linear-gradient(135deg, #387ED1, #56cfb2);
-    border-radius: 22px;
-    box-shadow: 0 0 60px rgba(56,126,209,.4), 0 16px 48px rgba(0,0,0,.5);
-    font-size: 2.2rem; font-weight: 800; color: #fff;
-    margin-bottom: 1.75rem;
-  }
+/* ── Typography helpers ── */
+.label {
+  font-size: 11px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.mono { font-family: var(--mono); }
 
-  .hero h1 {
-    font-size: 2.6rem; font-weight: 700; letter-spacing: -.03em;
-    background: linear-gradient(135deg, #f1f5f9 40%, #94a3b8);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: .6rem;
-  }
+/* ── Hero ── */
+.hero {
+  text-align: center;
+  padding-bottom: 48px;
+}
+.logo {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 64px; height: 64px; border-radius: 16px;
+  background: linear-gradient(135deg, #4f8ef7, #34d399);
+  box-shadow: 0 0 48px rgba(79,142,247,.35), 0 12px 40px rgba(0,0,0,.5);
+  font-size: 1.6rem; font-weight: 700; color: #fff;
+  margin-bottom: 24px;
+}
+.hero h1 {
+  font-size: 36px; font-weight: 700; letter-spacing: -.03em; line-height: 1.2;
+  background: linear-gradient(160deg, #f4f4f5 30%, #71717a);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  margin-bottom: 12px;
+}
+.hero-sub {
+  font-size: 15px; color: var(--text-2); max-width: 460px;
+  margin: 0 auto 24px; line-height: 1.7;
+}
+.pills {
+  display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2);
+}
+.pill-live { border-color: var(--green-ring); background: var(--green-dim); color: var(--green); }
+.pill-blue { border-color: var(--accent-ring); background: var(--accent-dim); color: var(--accent); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; animation: blink 2.5s ease infinite; }
+@keyframes blink { 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
 
-  .hero-tagline {
-    font-size: 1.05rem; color: #94a3b8; margin-bottom: .5rem; line-height: 1.5;
-  }
+/* ── Opt-in notice ── */
+.notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px; border-radius: var(--radius);
+  background: var(--green-dim); border: 1px solid var(--green-ring);
+  margin-bottom: 16px;
+  font-size: 13px; color: #86efac; line-height: 1.5;
+}
+.notice-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.notice strong { color: var(--green); }
 
-  .hero-desc {
-    font-size: .88rem; color: #64748b; max-width: 520px;
-    margin: 0 auto 1.75rem; line-height: 1.7;
-  }
+/* ── Endpoint bar ── */
+.endpoint-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+.endpoint-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--accent); white-space: nowrap;
+}
+.endpoint-url {
+  flex: 1; font-family: var(--mono); font-size: 13px; color: var(--text);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.copy-btn {
+  flex-shrink: 0; padding: 5px 14px; border-radius: var(--radius-sm);
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-2); font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: border-color .15s, color .15s; font-family: inherit;
+  white-space: nowrap;
+}
+.copy-btn:hover { border-color: var(--border-hover); color: var(--text); }
+.copy-btn.ok { border-color: var(--green-ring); color: var(--green); background: var(--green-dim); }
 
-  .hero-pills {
-    display: flex; align-items: center; justify-content: center; gap: .6rem; flex-wrap: wrap;
-  }
-  .pill {
-    display: inline-flex; align-items: center; gap: .4rem;
-    padding: .28rem .85rem; border-radius: 99px; font-size: .73rem; font-weight: 600;
-  }
-  .pill-green { background: rgba(74,222,128,.1); color: #4ade80; border: 1px solid rgba(74,222,128,.2); }
-  .pill-blue  { background: rgba(56,126,209,.1); color: #60a5fa; border: 1px solid rgba(56,126,209,.2); }
-  .pill-gray  { background: rgba(100,116,139,.08); color: #94a3b8; border: 1px solid rgba(100,116,139,.15); }
-  .pulse { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; animation: pulse 2s infinite; }
-  @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.6); }
-    70%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
-    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
-  }
+/* ── Section heading ── */
+.section-head {
+  font-size: 11px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3);
+  margin-bottom: 12px;
+}
 
-  /* ── Section label ── */
-  .section-label {
-    font-size: .7rem; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: #475569;
-    text-align: center; margin-bottom: 1.25rem;
-  }
+/* ── Quick start ── */
+.qs-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+  margin-bottom: 12px;
+}
+.qs-top {
+  padding: 14px 18px 0;
+  font-size: 12px; font-weight: 600; color: var(--text-2);
+  letter-spacing: .02em;
+}
+.tab-row {
+  display: flex; overflow-x: auto; padding: 0 18px;
+  border-bottom: 1px solid var(--border); margin-top: 12px;
+  scrollbar-width: none;
+}
+.tab-row::-webkit-scrollbar { display: none; }
+.tab {
+  padding: 8px 14px; font-size: 13px; font-weight: 500;
+  color: var(--text-3); cursor: pointer; background: none; border: none;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .15s, border-color .15s; white-space: nowrap;
+  font-family: inherit;
+}
+.tab:hover { color: var(--text-2); }
+.tab.on { color: var(--text); border-bottom-color: var(--accent); }
 
-  /* ── MCP endpoint banner ── */
-  .endpoint-banner {
-    background: rgba(15,23,42,.8); border: 1px solid rgba(56,126,209,.25);
-    border-radius: 14px; padding: 1.1rem 1.5rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    margin-bottom: 2rem;
-    animation: fadeUp .5s .05s ease both;
-  }
-  .endpoint-label { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #387ED1; margin-bottom: .3rem; }
-  .endpoint-url {
-    font-family: monospace; font-size: .9rem; color: #e2e8f0;
-    word-break: break-all;
-  }
-  .copy-btn {
-    flex-shrink: 0; padding: .45rem 1rem; border-radius: 8px;
-    background: rgba(56,126,209,.15); border: 1px solid rgba(56,126,209,.3);
-    color: #60a5fa; font-size: .78rem; font-weight: 600; cursor: pointer;
-    transition: background .15s, color .15s; white-space: nowrap;
-  }
-  .copy-btn:hover { background: rgba(56,126,209,.28); color: #93c5fd; }
-  .copy-btn.copied { background: rgba(74,222,128,.12); border-color: rgba(74,222,128,.25); color: #4ade80; }
+.tab-body { display: none; padding: 20px 18px; }
+.tab-body.on { display: block; }
 
-  /* ── Quick Start ── */
-  .quickstart {
-    background: rgba(15,23,42,.7); border: 1px solid rgba(51,65,85,.7);
-    border-radius: 14px; overflow: hidden; backdrop-filter: blur(6px);
-    margin-bottom: 1.25rem;
-    animation: fadeUp .5s .1s ease both;
-  }
+.steps { display: flex; flex-direction: column; gap: 16px; }
+.step { display: flex; gap: 14px; }
+.step-n {
+  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0; margin-top: 1px;
+  background: var(--accent-dim); border: 1px solid var(--accent-ring);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--accent);
+}
+.step-t { font-size: 13px; color: var(--text-2); line-height: 1.6; }
+.step-t b { color: var(--text); font-weight: 600; }
+.step-t a { color: var(--accent); text-decoration: none; }
+.step-t a:hover { text-decoration: underline; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  background: var(--green-dim); color: var(--green); border: 1px solid var(--green-ring);
+  margin-left: 6px; vertical-align: middle;
+}
+pre.code {
+  margin-top: 10px; padding: 12px 14px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 12px; color: #93c5fd;
+  line-height: 1.7; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+}
 
-  .qs-header {
-    display: flex; align-items: center; gap: .6rem;
-    padding: .85rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.5);
-  }
-  .qs-icon {
-    width: 26px; height: 26px; border-radius: 7px;
-    background: rgba(56,126,209,.1); border: 1px solid rgba(56,126,209,.2);
-    display: flex; align-items: center; justify-content: center; font-size: .78rem;
-  }
-  .qs-title { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #387ED1; }
+/* ── Access grid ── */
+.access-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin-bottom: 12px;
+}
+.access-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.access-head {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.access-title {
+  font-size: 14px; font-weight: 600; margin-bottom: 2px;
+}
+.access-title.green { color: var(--green); }
+.access-title.blue  { color: var(--accent); }
+.access-desc { font-size: 12px; color: var(--text-3); }
+.no-login-tag {
+  display: inline-block; margin-left: 8px;
+  font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  padding: 2px 7px; border-radius: 4px; vertical-align: middle;
+  background: var(--green-dim); color: var(--green); border: 1px solid var(--green-ring);
+}
+.access-items { padding: 4px 0; }
+.ai {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 18px; border-bottom: 1px solid var(--border);
+}
+.ai:last-child { border-bottom: none; }
+.ai-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.ai-dot.green { background: var(--green); }
+.ai-dot.blue  { background: var(--accent); }
+.ai-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.ai-desc { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+.access-foot {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+}
+.btn-ghost {
+  display: block; text-align: center;
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500; text-decoration: none;
+  border: 1px solid var(--green-ring); color: var(--green);
+  background: var(--green-dim); cursor: pointer; font-family: inherit;
+  transition: opacity .15s;
+}
+.btn-ghost:hover { opacity: .8; }
+.btn-primary {
+  display: block; text-align: center;
+  padding: 8px 16px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  background: var(--accent); color: #fff; border: none; cursor: pointer; font-family: inherit;
+  box-shadow: 0 2px 12px rgba(79,142,247,.3);
+  transition: opacity .15s, transform .1s;
+}
+.btn-primary:hover { opacity: .9; }
+.btn-primary:active { transform: scale(.98); }
 
-  /* tab strip */
-  .tab-strip {
-    display: flex; border-bottom: 1px solid rgba(51,65,85,.5);
-    overflow-x: auto;
-  }
-  .tab-btn {
-    padding: .6rem 1.1rem; font-size: .78rem; font-weight: 600; cursor: pointer;
-    background: transparent; border: none; color: #475569;
-    border-bottom: 2px solid transparent; margin-bottom: -1px;
-    transition: color .15s, border-color .15s; white-space: nowrap;
-  }
-  .tab-btn:hover { color: #94a3b8; }
-  .tab-btn.active { color: #60a5fa; border-bottom-color: #387ED1; }
+/* ── Security row ── */
+.sec-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--border); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+  margin-bottom: 12px;
+}
+.sec-item {
+  background: var(--surface); padding: 16px 18px;
+  font-size: 13px; color: var(--text-2); line-height: 1.6;
+}
+.sec-item b { display: block; color: var(--text); font-weight: 600; margin-bottom: 4px; font-size: 13px; }
 
-  .tab-panel { display: none; padding: 1.25rem; }
-  .tab-panel.active { display: block; }
+/* ── Session card ── */
+.session {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 18px; border-radius: var(--radius-lg);
+  background: var(--surface); border: 1px solid var(--border);
+  margin-bottom: 12px; transition: border-color .3s, background .3s;
+}
+.session.ok     { border-color: var(--green-ring); background: rgba(34,197,94,.04); }
+.session.warn   { border-color: rgba(245,158,11,.2); background: rgba(245,158,11,.03); }
+.session-info   { display: flex; align-items: center; gap: 12px; }
+.sess-indicator {
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; background: var(--surface-2); border: 1px solid var(--border);
+  transition: all .3s;
+}
+.session.ok   .sess-indicator { background: var(--green-dim); border-color: var(--green-ring); }
+.session.warn .sess-indicator { background: rgba(245,158,11,.08); border-color: rgba(245,158,11,.2); }
+.sess-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--text-3); margin-bottom: 2px; }
+.sess-status { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.session.ok   .sess-status { color: var(--green); }
+.session.warn .sess-status { color: var(--amber); }
+.sess-sub { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.session-btns { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-sm {
+  padding: 6px 14px; font-size: 12px; font-weight: 500;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: transparent; color: var(--text-2); cursor: pointer; font-family: inherit;
+  text-decoration: none; display: inline-flex; align-items: center;
+  transition: border-color .15s, color .15s;
+}
+.btn-sm:hover { border-color: var(--border-hover); color: var(--text); }
+.btn-sm-p {
+  padding: 6px 14px; font-size: 12px; font-weight: 600;
+  border-radius: var(--radius-sm); border: none;
+  background: var(--accent); color: #fff; cursor: pointer; font-family: inherit;
+  text-decoration: none; display: inline-flex; align-items: center;
+  box-shadow: 0 2px 8px rgba(79,142,247,.3); transition: opacity .15s;
+}
+.btn-sm-p:hover { opacity: .88; }
 
-  .qs-step {
-    display: flex; gap: .85rem; margin-bottom: 1rem;
-  }
-  .qs-step:last-child { margin-bottom: 0; }
-  .qs-num {
-    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0; margin-top: .05rem;
-    background: rgba(56,126,209,.12); border: 1px solid rgba(56,126,209,.2);
-    display: flex; align-items: center; justify-content: center;
-    font-size: .7rem; font-weight: 700; color: #387ED1;
-  }
-  .qs-text { font-size: .82rem; color: #94a3b8; line-height: 1.6; }
-  .qs-text strong { color: #e2e8f0; font-weight: 600; }
-  .qs-badge {
-    display: inline-flex; align-items: center; gap: .25rem;
-    font-size: .68rem; font-weight: 700; padding: .12rem .45rem; border-radius: 4px;
-    background: rgba(74,222,128,.1); color: #4ade80; border: 1px solid rgba(74,222,128,.2);
-    margin-left: .25rem;
-  }
+/* ── Bottom grid ── */
+.bot-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin-bottom: 12px;
+}
+.bot-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.bot-head {
+  padding: 12px 18px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.info-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 9px 18px; border-bottom: 1px solid var(--border); gap: 16px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-k { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.info-v { font-family: var(--mono); font-size: 12px; color: var(--text-2); text-align: right; word-break: break-all; }
+.info-v a { color: var(--accent); text-decoration: none; }
+.info-v a:hover { text-decoration: underline; }
 
-  pre.qs-code {
-    margin-top: .5rem;
-    background: rgba(2,6,23,.7); border: 1px solid rgba(51,65,85,.5);
-    border-radius: 8px; padding: .65rem .85rem;
-    font-size: .74rem; color: #93c5fd; line-height: 1.7;
-    overflow-x: auto; white-space: pre-wrap; word-break: break-all;
-  }
-  pre.qs-code .kw { color: #e879f9; }
-  pre.qs-code .val { color: #4ade80; }
+.client-row {
+  padding: 10px 18px; border-bottom: 1px solid var(--border);
+}
+.client-row:last-child { border-bottom: none; }
+.client-name { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+.client-sub  { font-size: 11px; color: var(--text-3); line-height: 1.5; }
+.client-sub code { font-family: var(--mono); font-size: 11px; }
+.oauth-tag {
+  display: inline-flex; align-items: center; margin-left: 6px;
+  font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+  background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-ring);
+  font-family: inherit;
+}
 
-  /* ── Access split ── */
-  .access-split {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
-    margin-bottom: 1.25rem;
-    animation: fadeUp .5s .2s ease both;
-  }
+/* ── Footer ── */
+.footer {
+  text-align: center; font-size: 12px; color: var(--text-3); margin-top: 40px;
+  display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+}
+.footer-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-3); }
 
-  .access-card {
-    border-radius: 14px; border: 1px solid rgba(51,65,85,.7);
-    background: rgba(15,23,42,.7); backdrop-filter: blur(6px); overflow: hidden;
-  }
-
-  .access-header {
-    padding: 1.1rem 1.25rem .85rem;
-    border-bottom: 1px solid rgba(51,65,85,.5);
-    display: flex; align-items: center; gap: .65rem;
-  }
-  .access-icon {
-    width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center; font-size: 1rem;
-  }
-  .free-icon { background: rgba(74,222,128,.12); border: 1px solid rgba(74,222,128,.2); }
-  .auth-icon { background: rgba(56,126,209,.12); border: 1px solid rgba(56,126,209,.2); }
-  .access-title { font-size: .92rem; font-weight: 700; }
-  .free-title  { color: #4ade80; }
-  .auth-title  { color: #60a5fa; }
-  .access-sub  { font-size: .72rem; color: #64748b; margin-top: .1rem; }
-
-  .access-list { padding: .35rem 0; }
-  .access-item {
-    display: flex; align-items: flex-start; gap: .6rem;
-    padding: .55rem 1.25rem;
-    border-bottom: 1px solid rgba(51,65,85,.3);
-    font-size: .82rem;
-  }
-  .access-item:last-child { border-bottom: none; }
-  .access-item-icon { font-size: .85rem; width: 18px; text-align: center; flex-shrink: 0; margin-top: .05rem; }
-  .access-item-name { color: #e2e8f0; font-weight: 500; }
-  .access-item-desc { font-size: .71rem; color: #475569; margin-top: .05rem; }
-
-  .access-footer { padding: .85rem 1.25rem; border-top: 1px solid rgba(51,65,85,.4); }
-  .access-footer a {
-    display: flex; align-items: center; justify-content: center; gap: .4rem;
-    padding: .6rem; border-radius: 9px; font-size: .83rem; font-weight: 600;
-    text-decoration: none; transition: opacity .15s, transform .15s;
-  }
-  .access-footer a:hover { opacity: .88; transform: translateY(-1px); }
-  .btn-green { background: rgba(74,222,128,.1); color: #4ade80; border: 1px solid rgba(74,222,128,.2); }
-  .btn-blue  { background: linear-gradient(135deg, #387ED1, #2d6cb8); color: #fff; border: none; box-shadow: 0 4px 16px rgba(56,126,209,.3); }
-
-  /* ── Security callout ── */
-  .security-callout {
-    background: rgba(15,23,42,.7); border: 1px solid rgba(51,65,85,.5);
-    border-left: 3px solid #387ED1;
-    border-radius: 12px; padding: 1rem 1.25rem;
-    margin-bottom: 1.25rem;
-    animation: fadeUp .5s .25s ease both;
-  }
-  .security-callout-title {
-    font-size: .75rem; font-weight: 700; color: #60a5fa;
-    letter-spacing: .05em; text-transform: uppercase; margin-bottom: .65rem;
-  }
-  .security-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem;
-  }
-  .security-item { font-size: .78rem; color: #94a3b8; line-height: 1.5; }
-  .security-item strong { display: block; color: #e2e8f0; font-weight: 600; margin-bottom: .15rem; }
-
-  /* ── Session card ── */
-  .session-card {
-    border-radius: 14px; border: 1px solid rgba(51,65,85,.7);
-    background: rgba(15,23,42,.7); backdrop-filter: blur(6px);
-    padding: 1rem 1.5rem;
-    margin-bottom: 1.25rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    animation: fadeUp .5s .3s ease both;
-    transition: border-color .3s, background .3s;
-  }
-  .session-card.active  { background: rgba(74,222,128,.04); border-color: rgba(74,222,128,.2); }
-  .session-card.expired { background: rgba(251,191,36,.03); border-color: rgba(251,191,36,.18); }
-
-  .session-left { display: flex; align-items: center; gap: .85rem; }
-  .session-dot {
-    width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px;
-    display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
-    background: rgba(51,65,85,.5); border: 1px solid rgba(51,65,85,.8); transition: all .3s;
-  }
-  .session-card.active  .session-dot { background: rgba(74,222,128,.12); border-color: rgba(74,222,128,.2); }
-  .session-card.expired .session-dot { background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.2); }
-  .session-label { font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #475569; margin-bottom: .2rem; }
-  .session-status { font-size: .88rem; font-weight: 600; color: #94a3b8; }
-  .session-card.active  .session-status { color: #4ade80; }
-  .session-card.expired .session-status { color: #fbbf24; }
-  .session-user { font-size: .74rem; color: #475569; margin-top: .1rem; }
-  .session-hint { font-size: .74rem; color: #387ED1; margin-top: .25rem; font-style: italic; }
-
-  .session-actions { display: flex; gap: .5rem; flex-shrink: 0; }
-  .btn-sm { padding: .38rem .85rem; font-size: .77rem; font-weight: 500; border-radius: 8px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; transition: border-color .15s, color .15s; }
-  .btn-sm:hover { border-color: #475569; color: #e2e8f0; }
-  .btn-sm-primary { padding: .38rem .85rem; font-size: .77rem; font-weight: 600; border-radius: 8px; border: none; background: linear-gradient(135deg, #387ED1, #2d6cb8); color: #fff; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; box-shadow: 0 2px 8px rgba(56,126,209,.3); transition: opacity .15s; }
-  .btn-sm-primary:hover { opacity: .88; }
-
-  /* ── Bottom grid ── */
-  .bottom-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
-    margin-bottom: 1.25rem;
-    animation: fadeUp .5s .35s ease both;
-  }
-
-  .section {
-    background: rgba(15,23,42,.7); border: 1px solid rgba(51,65,85,.7);
-    border-radius: 14px; overflow: hidden; backdrop-filter: blur(6px);
-  }
-  .section-header {
-    display: flex; align-items: center; gap: .6rem;
-    padding: .85rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.5);
-  }
-  .section-icon {
-    width: 26px; height: 26px; border-radius: 7px;
-    background: rgba(56,126,209,.1); border: 1px solid rgba(56,126,209,.2);
-    display: flex; align-items: center; justify-content: center; font-size: .78rem;
-  }
-  .section-title { font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #387ED1; }
-
-  .info-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: .6rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.3);
-    font-size: .8rem; gap: .75rem;
-  }
-  .info-row:last-child { border-bottom: none; }
-  .info-label { color: #64748b; white-space: nowrap; flex-shrink: 0; }
-  .info-value { color: #cbd5e1; font-family: monospace; font-size: .74rem; text-align: right; word-break: break-all; }
-  .info-value a { color: #387ED1; text-decoration: none; padding: .1rem .4rem; background: rgba(56,126,209,.08); border: 1px solid rgba(56,126,209,.15); border-radius: 4px; transition: background .15s; }
-  .info-value a:hover { background: rgba(56,126,209,.18); }
-
-  .client-row {
-    display: flex; align-items: flex-start; gap: .65rem;
-    padding: .65rem 1.25rem; border-bottom: 1px solid rgba(51,65,85,.3);
-  }
-  .client-row:last-child { border-bottom: none; }
-  .client-icon { width: 28px; height: 28px; flex-shrink: 0; background: #0f172a; border: 1px solid #1e293b; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: .78rem; margin-top: .1rem; }
-  .client-name { font-size: .8rem; font-weight: 500; color: #e2e8f0; line-height: 1.4; }
-  .client-hint { font-size: .68rem; color: #475569; font-family: monospace; margin-top: .1rem; }
-  .client-hint-plain { font-size: .68rem; color: #475569; margin-top: .1rem; }
-  .oauth-badge { font-size: .65rem; background: rgba(56,126,209,.15); color: #60a5fa; border: 1px solid rgba(56,126,209,.2); border-radius: 4px; padding: .1rem .3rem; margin-left: .3rem; font-weight: 600; font-family: system-ui; }
-
-  /* Footer */
-  .footer { text-align: center; font-size: .73rem; color: #334155; margin-top: 2rem; animation: fadeUp .5s .4s ease both; }
-  .footer span { margin: 0 .5rem; color: #1e293b; }
-
-  @media (max-width: 640px) {
-    .access-split, .bottom-grid, .security-grid { grid-template-columns: 1fr; }
-    .endpoint-banner { flex-direction: column; align-items: flex-start; }
-  }
+/* ── Responsive ── */
+@media (max-width: 620px) {
+  .page { padding: 32px 16px 60px; }
+  .hero h1 { font-size: 26px; }
+  .access-grid, .bot-grid { grid-template-columns: 1fr; }
+  .sec-row { grid-template-columns: 1fr; }
+  .endpoint-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .copy-btn { align-self: flex-start; }
+}
 </style>
 </head>
 <body>
 <div class="page">
 
   <!-- Hero -->
-  <div class="hero">
-    <div class="logo-wrap">Z</div>
+  <div class="hero a1">
+    <div class="logo">Z</div>
     <h1>Zerodha MCP</h1>
-    <p class="hero-tagline">Your personal trading intelligence, connected to AI</p>
-    <p class="hero-desc">
-      An MCP server that gives AI agents like Claude direct access to Indian market data,
-      options analytics, technicals, and your Zerodha portfolio — so you can ask questions
-      in plain English and get real answers, not generic advice.
+    <p class="hero-sub">
+      Give AI agents live access to Indian market data, options analytics, technicals,
+      and your Zerodha portfolio — no paid Kite Connect subscription needed.
     </p>
-    <div class="hero-pills">
-      <span class="pill pill-green"><span class="pulse"></span>Online &amp; ready</span>
+    <div class="pills">
+      <span class="pill pill-live"><span class="dot"></span> Online &amp; ready</span>
       <span class="pill pill-blue">{tool_count} tools</span>
-      <span class="pill pill-gray">NSE · BSE · F&amp;O</span>
-      <span class="pill pill-gray">No Kite Connect needed</span>
+      <span class="pill">NSE · BSE · F&amp;O</span>
+      <span class="pill">No Kite Connect</span>
     </div>
   </div>
 
-  <!-- Login optional notice -->
-  <div style="display:flex;gap:.6rem;align-items:center;background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.2);border-radius:10px;padding:.75rem 1.1rem;margin-bottom:1.25rem;font-size:.85rem;color:#86efac;">
-    <span style="font-size:1.1rem">✦</span>
-    <span><strong style="color:#4ade80">50+ tools work without any login</strong> — market data, options, technicals, dashboards. Login is only needed for your personal portfolio and trade journal.</span>
+  <!-- Login-optional notice -->
+  <div class="notice a2">
+    <span class="notice-icon">✦</span>
+    <span>
+      <strong>50+ tools work with zero login</strong> — market data, options chains, technicals,
+      and dashboards are available to any agent instantly. Login is only needed for your personal
+      portfolio, orders, and trade journal.
+    </span>
   </div>
 
-  <!-- SSE endpoint banner -->
-  <div class="endpoint-banner">
-    <div>
-      <div class="endpoint-label">SSE Endpoint</div>
-      <div class="endpoint-url" id="mcp-url-display"></div>
-    </div>
-    <button class="copy-btn" id="copy-endpoint-btn" onclick="copyEndpoint()">Copy URL</button>
+  <!-- Endpoint bar -->
+  <div class="endpoint-bar a2">
+    <span class="endpoint-label">SSE Endpoint</span>
+    <span class="endpoint-url mono" id="sse-display"></span>
+    <button class="copy-btn" id="copy-btn" onclick="copyEndpoint()">Copy</button>
   </div>
 
-  <!-- Quick Start -->
-  <div class="section-label">Quick start — 3 ways to connect</div>
-  <div class="quickstart">
-    <div class="qs-header">
-      <div class="qs-icon">⚡</div>
-      <span class="qs-title">Connect your AI client</span>
+  <!-- Quick start -->
+  <p class="section-head a3">Quick start</p>
+  <div class="qs-card a3">
+    <div class="qs-top">Connect your AI client</div>
+    <div class="tab-row" id="tab-row">
+      <button class="tab on" onclick="showTab('claudeai',this)">claude.ai</button>
+      <button class="tab" onclick="showTab('cc',this)">Claude Code</button>
+      <button class="tab" onclick="showTab('desktop',this)">Claude Desktop</button>
+      <button class="tab" onclick="showTab('cursor',this)">Cursor</button>
+      <button class="tab" onclick="showTab('postman',this)">Postman</button>
     </div>
 
-    <div class="tab-strip">
-      <button class="tab-btn active" onclick="showTab('claudeai')">claude.ai</button>
-      <button class="tab-btn" onclick="showTab('claudecode')">Claude Code</button>
-      <button class="tab-btn" onclick="showTab('desktop')">Claude Desktop</button>
-      <button class="tab-btn" onclick="showTab('cursor')">Cursor</button>
-      <button class="tab-btn" onclick="showTab('postman')">Postman</button>
-    </div>
-
-    <div id="tab-claudeai" class="tab-panel active">
-      <div class="qs-step">
-        <div class="qs-num">1</div>
-        <div class="qs-text">
-          <strong>Open claude.ai</strong> and go to <strong>Settings → Integrations → Add MCP Server</strong>.
-          <span class="qs-badge">OAuth · automatic</span>
+    <div id="tab-claudeai" class="tab-body on">
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-t"><b>Open claude.ai</b> → Settings → Integrations → Add MCP Server<span class="badge">OAuth · automatic</span></div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">2</div>
-        <div class="qs-text">
-          <strong>Paste the SSE endpoint URL</strong> (shown above). No API key needed at this step.
-          <pre class="qs-code" id="qs-claudeai-url"></pre>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-t"><b>Paste the SSE endpoint URL.</b> No API key needed — OAuth handles auth automatically.<pre class="code" id="qs-ai-url"></pre></div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">3</div>
-        <div class="qs-text">
-          <strong>A login popup appears automatically.</strong> Sign in with your Zerodha credentials.
-          Claude receives an OAuth token — your credentials never pass through the agent or appear in chat.
-          Done. Market tools are available immediately; portfolio tools unlock after login.
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-t"><b>A login popup appears.</b> Sign in with your Zerodha credentials directly — they never pass through the agent or appear in chat.</div>
         </div>
       </div>
     </div>
 
-    <div id="tab-claudecode" class="tab-panel">
-      <div class="qs-step">
-        <div class="qs-num">1</div>
-        <div class="qs-text">
-          <strong>Get your API key</strong> — log in at <a href="/login" style="color:#387ED1">/login</a>,
-          then copy the key shown on that page.
+    <div id="tab-cc" class="tab-body">
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-t"><b>Get your API key</b> — log in at <a href="/login">/login</a> and copy the key shown there.</div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">2</div>
-        <div class="qs-text">
-          <strong>Add the server</strong> with a single command:
-          <pre class="qs-code" id="qs-cc-cmd"></pre>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-t"><b>Run this command once:</b><pre class="code" id="qs-cc-cmd"></pre></div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">3</div>
-        <div class="qs-text">
-          <strong>Start a conversation</strong> — ask "What's the Nifty trend today?" or "Show my portfolio risk."
-          Session status is shown in the card below.
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-t"><b>Ask anything</b> — "What's Nifty's trend?" or "Show my portfolio risk." Market tools work immediately; portfolio tools need the login step above.</div>
         </div>
       </div>
     </div>
 
-    <div id="tab-desktop" class="tab-panel">
-      <div class="qs-step">
-        <div class="qs-num">1</div>
-        <div class="qs-text">
-          <strong>Get your API key</strong> from <a href="/login" style="color:#387ED1">/login</a>.
+    <div id="tab-desktop" class="tab-body">
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-t"><b>Get your API key</b> from <a href="/login">/login</a>.</div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">2</div>
-        <div class="qs-text">
-          <strong>Edit <code style="color:#e2e8f0">claude_desktop_config.json</code></strong>
-          (macOS: <code style="color:#64748b">~/Library/Application Support/Claude/</code>,
-          Windows: <code style="color:#64748b">%APPDATA%\Claude\</code>):
-          <pre class="qs-code" id="qs-desktop-json"></pre>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-t">
+            <b>Edit claude_desktop_config.json</b>
+            <span style="color:var(--text-3)"> (macOS: ~/Library/Application Support/Claude/ · Windows: %APPDATA%\Claude\)</span>
+            <pre class="code" id="qs-desktop-json"></pre>
+          </div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">3</div>
-        <div class="qs-text">
-          <strong>Restart Claude Desktop.</strong> An OAuth popup may appear on first connection — follow the prompts.
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-t"><b>Restart Claude Desktop.</b> An OAuth popup may appear on first connect — follow the prompts.</div>
         </div>
       </div>
     </div>
 
-    <div id="tab-cursor" class="tab-panel">
-      <div class="qs-step">
-        <div class="qs-num">1</div>
-        <div class="qs-text">
-          <strong>Get your API key</strong> from <a href="/login" style="color:#387ED1">/login</a>.
+    <div id="tab-cursor" class="tab-body">
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-t"><b>Get your API key</b> from <a href="/login">/login</a>.</div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">2</div>
-        <div class="qs-text">
-          <strong>Create or edit <code style="color:#e2e8f0">.cursor/mcp.json</code></strong> in your project root:
-          <pre class="qs-code" id="qs-cursor-json"></pre>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-t"><b>Create or edit .cursor/mcp.json</b> in your project root:<pre class="code" id="qs-cursor-json"></pre></div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">3</div>
-        <div class="qs-text">
-          <strong>Reload Cursor.</strong> The Zerodha MCP server will appear in your MCP tool list.
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-t"><b>Reload Cursor.</b> Zerodha MCP appears in your tool list.</div>
         </div>
       </div>
     </div>
 
-    <div id="tab-postman" class="tab-panel">
-      <div class="qs-step">
-        <div class="qs-num">1</div>
-        <div class="qs-text">
-          <strong>Open Postman</strong> and click <strong>New → MCP Server → SSE</strong>.
+    <div id="tab-postman" class="tab-body">
+      <div class="steps">
+        <div class="step">
+          <div class="step-n">1</div>
+          <div class="step-t"><b>Open Postman</b> → New → MCP Server → SSE.</div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">2</div>
-        <div class="qs-text">
-          <strong>Paste the SSE endpoint URL.</strong> Free market data tools work with no auth header.
-          For portfolio tools, add <code style="color:#60a5fa">Authorization: Bearer &lt;your-api-key&gt;</code>.
-          <pre class="qs-code" id="qs-postman-url"></pre>
+        <div class="step">
+          <div class="step-n">2</div>
+          <div class="step-t">
+            <b>Paste the SSE URL.</b> Free market data tools work with no auth header at all.
+            For portfolio tools, add <code style="font-family:var(--mono);color:var(--accent)">Authorization: Bearer &lt;api-key&gt;</code>.
+            <pre class="code" id="qs-postman-url"></pre>
+          </div>
         </div>
-      </div>
-      <div class="qs-step">
-        <div class="qs-num">3</div>
-        <div class="qs-text">
-          <strong>Connect and start calling tools.</strong> No agent session required for exploration.
+        <div class="step">
+          <div class="step-n">3</div>
+          <div class="step-t"><b>Connect and start calling tools.</b> No agent session required for exploration.</div>
         </div>
       </div>
     </div>
-
   </div>
 
-  <!-- Free vs Auth -->
-  <div class="section-label" style="margin-top:2rem">What's available</div>
-  <div class="access-split">
-
+  <!-- What's available -->
+  <p class="section-head a4">What's available</p>
+  <div class="access-grid a4">
     <div class="access-card">
-      <div class="access-header">
-        <div class="access-icon free-icon">✦</div>
-        <div>
-          <div class="access-title free-title">Works right now <span style="font-size:.65rem;font-weight:600;background:rgba(34,197,94,.15);color:#4ade80;padding:.2rem .5rem;border-radius:20px;vertical-align:middle;letter-spacing:.04em">NO LOGIN</span></div>
-          <div class="access-sub">Available to any agent instantly — no credentials, no API key</div>
-        </div>
+      <div class="access-head">
+        <div class="access-title green">Works right now<span class="no-login-tag">NO LOGIN</span></div>
+        <div class="access-desc">Any agent, any client — no credentials needed</div>
       </div>
-      <div class="access-list">
-        <div class="access-item">
-          <span class="access-item-icon">📈</span>
-          <div><div class="access-item-name">Market Data</div><div class="access-item-desc">Live quotes, OHLCV, historical prices</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">🔗</span>
-          <div><div class="access-item-name">Options Analytics</div><div class="access-item-desc">Chains, OI, PCR, max pain, S/R levels</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">📊</span>
-          <div><div class="access-item-name">Technicals</div><div class="access-item-desc">RSI, EMA, MACD, ADX, ATR — pure Python</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">🧠</span>
-          <div><div class="access-item-name">Market Intelligence</div><div class="access-item-desc">Regime detection, signals, news sentiment</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">🖥</span>
-          <div><div class="access-item-name">Dashboards</div><div class="access-item-desc">Nifty, BankNifty, VIX, risk scores</div></div>
-        </div>
+      <div class="access-items">
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Market Data</div><div class="ai-desc">Live quotes, OHLCV, historical prices</div></div></div>
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Options Analytics</div><div class="ai-desc">Chains, OI, PCR, max pain, support/resistance</div></div></div>
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Technicals</div><div class="ai-desc">RSI, EMA, MACD, ADX, ATR — pure Python</div></div></div>
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Market Intelligence</div><div class="ai-desc">Regime detection, signals, news sentiment</div></div></div>
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Dashboards</div><div class="ai-desc">Nifty, BankNifty, VIX, risk score</div></div></div>
       </div>
-      <div class="access-footer">
-        <a href="#" class="btn-green">✓ No action needed — start asking questions</a>
+      <div class="access-foot">
+        <span class="btn-ghost" style="cursor:default">Connect and start asking questions →</span>
       </div>
     </div>
 
     <div class="access-card">
-      <div class="access-header">
-        <div class="access-icon auth-icon">🔒</div>
-        <div>
-          <div class="access-title auth-title">After Zerodha login</div>
-          <div class="access-sub">Your personal data — completely optional</div>
-        </div>
+      <div class="access-head">
+        <div class="access-title blue">After Zerodha login</div>
+        <div class="access-desc">Your personal data — completely optional</div>
       </div>
-      <div class="access-list">
-        <div class="access-item">
-          <span class="access-item-icon">💼</span>
-          <div><div class="access-item-name">Live Portfolio</div><div class="access-item-desc">Holdings, positions, available margins</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">📋</span>
-          <div><div class="access-item-name">Order History</div><div class="access-item-desc">Auto-sync trades from Zerodha</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">📓</span>
-          <div><div class="access-item-name">Trade Journal</div><div class="access-item-desc">Personal log, P&amp;L review, analytics</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">🎯</span>
-          <div><div class="access-item-name">Recommendations</div><div class="access-item-desc">Trade plans, position sizing, strategy log</div></div>
-        </div>
-        <div class="access-item">
-          <span class="access-item-icon">🔑</span>
-          <div><div class="access-item-name">MCP API Key</div><div class="access-item-desc">Issued once · stays the same across re-logins</div></div>
-        </div>
+      <div class="access-items">
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">Live Portfolio</div><div class="ai-desc">Holdings, positions, available margins</div></div></div>
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">Order History</div><div class="ai-desc">Auto-sync trades from Zerodha</div></div></div>
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">Trade Journal</div><div class="ai-desc">Personal log, P&amp;L, performance analytics</div></div></div>
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">Recommendations</div><div class="ai-desc">Trade plans, sizing, strategy log</div></div></div>
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">MCP API Key</div><div class="ai-desc">Issued once · persists across re-logins</div></div></div>
       </div>
-      <div class="access-footer">
-        <a href="/login" class="btn-blue">Log in with Zerodha →</a>
+      <div class="access-foot">
+        <a href="/login" class="btn-primary">Log in with Zerodha →</a>
       </div>
     </div>
-
   </div>
 
-  <!-- Security callout -->
-  <div class="security-callout">
-    <div class="security-callout-title">Security model</div>
-    <div class="security-grid">
-      <div class="security-item">
-        <strong>Free tools — no auth</strong>
-        Market data, technicals, options analytics, dashboards. Any agent can call them with no credentials.
-      </div>
-      <div class="security-item">
-        <strong>Personal tools — API key</strong>
-        Portfolio, orders, journal, recommendations. Require your Bearer token. Each user sees only their own data.
-      </div>
-      <div class="security-item">
-        <strong>Token stays server-side</strong>
-        Your Bearer token is sent in the HTTP header, not in chat or tool arguments. The AI model never sees it.
-      </div>
-    </div>
+  <!-- Security row -->
+  <div class="sec-row a4">
+    <div class="sec-item"><b>Free tools — no auth</b>Market data, technicals, options, dashboards. Any agent can call them, no credentials.</div>
+    <div class="sec-item"><b>Personal tools — API key</b>Portfolio, orders, journal. Require Bearer token. Each user sees only their own data.</div>
+    <div class="sec-item"><b>Token stays server-side</b>Your API key travels in the HTTP header — the AI model never sees it in chat or tool args.</div>
   </div>
 
   <!-- Session status -->
-  <div class="session-card loading" id="session-card">
-    <div class="session-left">
-      <div class="session-dot" id="session-dot">⋯</div>
+  <div class="session a5" id="session">
+    <div class="session-info">
+      <div class="sess-indicator" id="sess-icon">·</div>
       <div>
-        <div class="session-label">Zerodha session</div>
-        <div class="session-status" id="session-status">Checking…</div>
-        <div class="session-user" id="session-user"></div>
-        <div class="session-hint" id="session-hint"></div>
+        <div class="sess-label">Zerodha session</div>
+        <div class="sess-status" id="sess-status">Checking…</div>
+        <div class="sess-sub" id="sess-sub"></div>
       </div>
     </div>
-    <div class="session-actions" id="session-actions"></div>
+    <div class="session-btns" id="sess-btns"></div>
   </div>
 
   <!-- Server info + Clients -->
-  <div class="bottom-grid">
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">⚡</div>
-        <span class="section-title">Server Info</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">MCP endpoint</span>
-        <span class="info-value" id="mcp-url"></span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">SSE endpoint</span>
-        <span class="info-value" id="sse-url"></span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Transport</span>
-        <span class="info-value">Streamable HTTP + SSE</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Auth methods</span>
-        <span class="info-value">Bearer · OAuth 2.0 + PKCE</span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Health</span>
-        <span class="info-value"><a href="/health">/health</a></span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">Session status</span>
-        <span class="info-value"><a href="/auth/status">/auth/status</a></span>
-      </div>
-      <div class="info-row">
-        <span class="info-label">DB schema</span>
-        <span class="info-value">v7 (user_id isolation)</span>
-      </div>
+  <div class="bot-grid a6">
+    <div class="bot-card">
+      <div class="bot-head">Server Info</div>
+      <div class="info-row"><span class="info-k">SSE endpoint</span><span class="info-v mono" id="info-sse"></span></div>
+      <div class="info-row"><span class="info-k">Streamable HTTP</span><span class="info-v mono" id="info-mcp"></span></div>
+      <div class="info-row"><span class="info-k">Auth</span><span class="info-v">Bearer · OAuth 2.0 + PKCE</span></div>
+      <div class="info-row"><span class="info-k">Tools</span><span class="info-v">{tool_count} across 18 domains</span></div>
+      <div class="info-row"><span class="info-k">Health</span><span class="info-v"><a href="/health">/health</a></span></div>
+      <div class="info-row"><span class="info-k">Auth status</span><span class="info-v"><a href="/auth/status">/auth/status</a></span></div>
     </div>
 
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">🔌</div>
-        <span class="section-title">Supported Clients</span>
+    <div class="bot-card">
+      <div class="bot-head">Supported Clients</div>
+      <div class="client-row">
+        <div class="client-name">claude.ai<span class="oauth-tag">OAuth · automatic</span></div>
+        <div class="client-sub">Settings → Integrations → Add MCP Server → paste SSE URL. Login popup handles auth.</div>
       </div>
       <div class="client-row">
-        <div class="client-icon">🌐</div>
-        <div>
-          <div class="client-name">claude.ai <span class="oauth-badge">OAuth · automatic</span></div>
-          <div class="client-hint-plain">Settings → Integrations → Add MCP Server → paste URL</div>
-          <div class="client-hint-plain" style="color:#4ade80;margin-top:.15rem">Login popup appears — no API key needed</div>
-        </div>
+        <div class="client-name">Claude Code</div>
+        <div class="client-sub"><code>claude mcp add --transport sse zerodha &lt;url&gt;/sse</code></div>
       </div>
       <div class="client-row">
-        <div class="client-icon">⌨</div>
-        <div>
-          <div class="client-name">Claude Code</div>
-          <div class="client-hint">claude mcp add --transport http zerodha &lt;url&gt;/mcp</div>
-          <div class="client-hint" style="margin-top:.1rem">--header "Authorization: Bearer &lt;api-key&gt;"</div>
-        </div>
+        <div class="client-name">Claude Desktop<span class="oauth-tag">OAuth popup</span></div>
+        <div class="client-sub">claude_desktop_config.json → mcpServers → <code>url: &lt;url&gt;/sse</code></div>
       </div>
       <div class="client-row">
-        <div class="client-icon">🖥</div>
-        <div>
-          <div class="client-name">Claude Desktop <span class="oauth-badge">OAuth popup</span></div>
-          <div class="client-hint">claude_desktop_config.json → mcpServers → url: &lt;url&gt;/sse</div>
-          <div class="client-hint" style="margin-top:.1rem">+ Authorization header or use OAuth popup</div>
-        </div>
+        <div class="client-name">Cursor</div>
+        <div class="client-sub"><code>.cursor/mcp.json</code> → url + Authorization header</div>
       </div>
       <div class="client-row">
-        <div class="client-icon">✦</div>
-        <div>
-          <div class="client-name">Cursor</div>
-          <div class="client-hint">.cursor/mcp.json → url + Authorization header</div>
-        </div>
-      </div>
-      <div class="client-row">
-        <div class="client-icon">📮</div>
-        <div>
-          <div class="client-name">Postman</div>
-          <div class="client-hint">New → MCP Server → SSE → &lt;url&gt;/sse</div>
-        </div>
-      </div>
-      <div class="info-row" style="padding:.65rem 1.25rem">
-        <span style="font-size:.73rem;color:#475569">Log in to get your API key with ready-to-paste configs.</span>
+        <div class="client-name">Postman</div>
+        <div class="client-sub">New → MCP Server → SSE → <code>&lt;url&gt;/sse</code></div>
       </div>
     </div>
   </div>
 
-  <div class="footer">
-    Zerodha session ~24h &nbsp;<span>·</span>&nbsp; API key persists across re-logins &nbsp;<span>·</span>&nbsp; Multi-user &amp; OAuth 2.0 + PKCE &nbsp;<span>·</span>&nbsp; No Kite Connect subscription needed
+  <div class="footer a6">
+    <span>Session lifetime ~24h</span>
+    <span class="footer-dot"></span>
+    <span>API key persists across re-logins</span>
+    <span class="footer-dot"></span>
+    <span>Multi-user · OAuth 2.0 + PKCE</span>
+    <span class="footer-dot"></span>
+    <span>No Kite Connect subscription</span>
   </div>
 
 </div>
 <script>
   var origin = window.location.origin;
-  var mcpUrl = origin + '/mcp';
   var sseUrl = origin + '/sse';
+  var mcpUrl = origin + '/mcp';
 
-  // Populate static URL references
-  document.getElementById('mcp-url-display').textContent = sseUrl;
-  document.getElementById('mcp-url').textContent = mcpUrl;
-  document.getElementById('sse-url').textContent = sseUrl;
+  // Endpoint display
+  document.getElementById('sse-display').textContent = sseUrl;
+  document.getElementById('info-sse').textContent = sseUrl;
+  document.getElementById('info-mcp').textContent = mcpUrl;
 
-  // Quick-start tab code snippets
-  document.getElementById('qs-claudeai-url').textContent = sseUrl;
+  // Quick-start snippets
+  document.getElementById('qs-ai-url').textContent = sseUrl;
   document.getElementById('qs-cc-cmd').textContent =
     'claude mcp add --transport sse zerodha ' + sseUrl + ' \\\n  --header "Authorization: Bearer <your-api-key>"';
   document.getElementById('qs-desktop-json').textContent =
@@ -738,87 +664,71 @@
     '{\n  "mcpServers": {\n    "zerodha": {\n      "url": "' + sseUrl + '",\n      "headers": { "Authorization": "Bearer <your-api-key>" }\n    }\n  }\n}';
   document.getElementById('qs-postman-url').textContent = sseUrl;
 
-  // Copy endpoint
+  // Copy button
   function copyEndpoint() {
-    var btn = document.getElementById('copy-endpoint-btn');
+    var btn = document.getElementById('copy-btn');
     navigator.clipboard.writeText(sseUrl).then(function() {
-      btn.textContent = 'Copied!';
-      btn.classList.add('copied');
-      setTimeout(function() {
-        btn.textContent = 'Copy URL';
-        btn.classList.remove('copied');
-      }, 2000);
+      btn.textContent = 'Copied!'; btn.classList.add('ok');
+      setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 2000);
     }).catch(function() {
-      btn.textContent = 'Copy failed';
-      setTimeout(function() { btn.textContent = 'Copy URL'; }, 2000);
+      btn.textContent = 'Failed'; setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
     });
   }
 
   // Tab switching
-  function showTab(id) {
-    document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
-    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
-    document.getElementById('tab-' + id).classList.add('active');
-    event.currentTarget.classList.add('active');
+  function showTab(id, btn) {
+    document.querySelectorAll('.tab-body').forEach(function(p) { p.classList.remove('on'); });
+    document.querySelectorAll('.tab').forEach(function(b) { b.classList.remove('on'); });
+    document.getElementById('tab-' + id).classList.add('on');
+    btn.classList.add('on');
   }
 
   // Session status
   (function() {
-    var card    = document.getElementById('session-card');
-    var dot     = document.getElementById('session-dot');
-    var status  = document.getElementById('session-status');
-    var user    = document.getElementById('session-user');
-    var hint    = document.getElementById('session-hint');
-    var actions = document.getElementById('session-actions');
+    var card    = document.getElementById('session');
+    var icon    = document.getElementById('sess-icon');
+    var status  = document.getElementById('sess-status');
+    var sub     = document.getElementById('sess-sub');
+    var btns    = document.getElementById('sess-btns');
 
-    function getCookie(name) {
-      var m = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+    function getCookie(n) {
+      var m = document.cookie.match('(?:^|; )' + n + '=([^;]*)');
       return m ? decodeURIComponent(m[1]) : null;
     }
 
+    window.doLogout = function() {
+      var key = prompt('Enter your API key to confirm logout:');
+      if (!key) return;
+      fetch('/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + key.trim() } })
+        .then(function(r) { r.ok ? location.reload() : alert('Invalid API key.'); })
+        .catch(function() { alert('Logout failed.'); });
+    };
+
     fetch('/auth/status')
-      .then(function(r){ return r.json(); })
+      .then(function(r) { return r.json(); })
       .then(function(d) {
         var uid = d.user_id || getCookie('mcp_uid');
-        card.classList.remove('loading');
-
         if (d.authenticated) {
-          // Bearer token present in this request — fully authenticated
-          card.classList.add('active');
-          dot.textContent = '✓';
-          status.textContent = 'Session active — portfolio tools unlocked';
-          if (uid) user.textContent = 'Logged in as ' + uid;
-          actions.innerHTML =
-            '<a href="/login" class="btn-sm">Refresh session</a>' +
-            '<button class="btn-sm" onclick="doLogout()">Log out</button>';
+          card.classList.add('ok');
+          icon.textContent = '✓';
+          status.textContent = 'Active — portfolio tools unlocked';
+          if (uid) sub.textContent = 'Logged in as ' + uid;
+          btns.innerHTML = '<a href="/login" class="btn-sm">Refresh</a><button class="btn-sm" onclick="doLogout()">Log out</button>';
         } else if (uid) {
-          // Cookie present — browser has been here before
-          card.classList.add('active');
-          dot.textContent = '✓';
-          status.textContent = 'Session active — connect your AI client';
-          user.textContent = 'Browser session for ' + uid;
-          hint.textContent = 'Paste the MCP URL into your AI client to start using portfolio tools.';
-          actions.innerHTML =
-            '<a href="/login" class="btn-sm">Refresh session</a>' +
-            '<button class="btn-sm" onclick="doLogout()">Log out</button>';
+          card.classList.add('ok');
+          icon.textContent = '✓';
+          status.textContent = 'Browser session active';
+          sub.textContent = 'Connect your AI client with the SSE URL to unlock portfolio tools.';
+          btns.innerHTML = '<a href="/login" class="btn-sm">Refresh</a><button class="btn-sm" onclick="doLogout()">Log out</button>';
         } else {
-          card.classList.add('expired');
-          dot.textContent = '!';
-          status.textContent = 'No active session';
-          user.textContent = 'Log in to unlock portfolio tools — market data works without it';
-          actions.innerHTML = '<a href="/login" class="btn-sm-primary">Log in →</a>';
+          card.classList.add('warn');
+          icon.textContent = '—';
+          status.textContent = 'No session';
+          sub.textContent = 'Market tools work right now. Log in to unlock portfolio tools.';
+          btns.innerHTML = '<a href="/login" class="btn-sm-p">Log in →</a>';
         }
-
-        window.doLogout = function() {
-          var key = prompt('Enter your API key to confirm logout:');
-          if (!key) return;
-          fetch('/logout', {method:'POST', headers:{'Authorization':'Bearer '+key.trim()}})
-            .then(function(r){ r.ok ? location.reload() : alert('Invalid API key'); })
-            .catch(function(){ alert('Logout failed'); });
-        };
       })
       .catch(function() {
-        card.classList.remove('loading');
         status.textContent = 'Could not reach server';
       });
   })();
