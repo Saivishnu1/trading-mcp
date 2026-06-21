@@ -81,14 +81,14 @@ async def test_oauth_authorization_server_metadata():
 
 @pytest.mark.anyio
 async def test_oauth_authorize_get():
-    query = b"client_id=claude&redirect_uri=http://callback&state=xyz&code_challenge=challenge_val&code_challenge_method=S256"
+    query = b"client_id=claude&redirect_uri=https://callback&state=xyz&code_challenge=challenge_val&code_challenge_method=S256"
     status, headers, body = await make_asgi_call("/oauth/authorize", query_string=query)
     assert status == 200
     assert headers[b"content-type"] == b"text/html; charset=utf-8"
     html = body.decode()
     # Verify action URL preserves the query string parameters
     assert 'action="/login?client_id=claude' in html
-    assert 'redirect_uri=http://callback' in html
+    assert 'redirect_uri=https://callback' in html
     assert 'state=xyz' in html
 
 
@@ -104,7 +104,7 @@ async def test_oauth_login_post_success(monkeypatch):
     monkeypatch.setattr("src.session_store.save", lambda uid, token: None)
     monkeypatch.setattr("src.api_key_store.get_or_create", lambda uid: ("mocked_api_key", True))
     
-    query = b"client_id=claude&redirect_uri=http://callback&state=xyz&code_challenge=challenge_val&code_challenge_method=S256"
+    query = b"client_id=claude&redirect_uri=https://callback&state=xyz&code_challenge=challenge_val&code_challenge_method=S256"
     body = b"user_id=ZK1234&password=mypassword&totp_code=123456"
     
     # Clear codes first
@@ -149,7 +149,7 @@ async def test_oauth_token_exchange_success_plain():
     assert status == 200
     data = json.loads(resp_body.decode())
     assert data["access_token"] == "api_key_123"
-    assert data["token_type"] == "Bearer"
+    assert data["token_type"] == "bearer"  # lowercase per RFC 6750
     assert code not in _oauth_codes  # Consumed
 
 
