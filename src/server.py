@@ -650,6 +650,11 @@ async def _app(scope, receive, send):
             await _handle_login_post(scope, receive, send)
             return
 
+        if path == "/guest-token" and method == "GET":
+            guest_key, _ = api_key_store.get_or_create("__guest__")
+            await _send_json(send, 200, {"token": guest_key, "type": "bearer"})
+            return
+
         if path == "/auth/status":
             uid = current_user.get()  # only set if request carries a valid Bearer token
             if uid:

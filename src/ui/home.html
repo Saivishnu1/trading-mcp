@@ -550,7 +550,14 @@ pre.code {
         <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Dashboards</div><div class="ai-desc">Nifty, BankNifty, VIX, risk score</div></div></div>
       </div>
       <div class="access-foot">
-        <span class="btn-ghost" style="cursor:default">Connect and start asking questions →</span>
+        <button class="btn-ghost" id="guest-token-btn" onclick="getGuestToken()">Get guest token →</button>
+        <div id="guest-token-row" style="display:none;margin-top:10px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">Use as <code style="font-family:var(--mono)">Authorization: Bearer &lt;token&gt;</code> in your client</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <code class="mono" id="guest-token-val" style="font-size:12px;color:var(--accent);word-break:break-all;flex:1"></code>
+            <button class="copy-btn" id="guest-copy-btn" onclick="copyGuestToken()" style="flex-shrink:0">Copy</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -668,6 +675,25 @@ pre.code {
       setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 2000);
     }).catch(function() {
       btn.textContent = 'Failed'; setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    });
+  }
+
+  // Guest token
+  function getGuestToken() {
+    var btn = document.getElementById('guest-token-btn');
+    btn.textContent = 'Loading…';
+    fetch('/guest-token').then(function(r) { return r.json(); }).then(function(d) {
+      document.getElementById('guest-token-val').textContent = d.token;
+      document.getElementById('guest-token-row').style.display = 'block';
+      btn.textContent = 'Refresh token';
+    }).catch(function() { btn.textContent = 'Get guest token →'; });
+  }
+  function copyGuestToken() {
+    var val = document.getElementById('guest-token-val').textContent;
+    var btn = document.getElementById('guest-copy-btn');
+    navigator.clipboard.writeText(val).then(function() {
+      btn.textContent = 'Copied!'; btn.classList.add('ok');
+      setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('ok'); }, 2000);
     });
   }
 
