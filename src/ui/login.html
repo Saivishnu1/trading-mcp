@@ -427,8 +427,10 @@ input:focus {
       '  </div>',
 
       '  <div id="g-ai" class="gpane">',
-      '    <p>Settings → Integrations → <strong>Add MCP Server</strong>. Paste the SSE URL — OAuth handles auth automatically, no key needed here.</p>',
-      '    <div class="code-wrap"><div class="code-block" id="blk-ai">' + escHtml(sseUrl) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-ai\')">Copy</button></div>',
+      '    <p>Settings → Integrations → <strong>Add MCP Server</strong>. Paste the SSE URL, then add the Authorization header with your API key to unlock personal tools. Others can use it with no auth for free market data.</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-ai-url">' + escHtml(sseUrl) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-ai-url\')">Copy URL</button></div>',
+      '    <p style="margin-top:10px">Authorization header value:</p>',
+      '    <div class="code-wrap"><div class="code-block" id="blk-ai-hdr">' + escHtml(bearer) + '</div><button class="copy-code-btn" onclick="copyCode(\'blk-ai-hdr\')">Copy</button></div>',
       '  </div>',
 
       '  <div id="g-cd" class="gpane">',

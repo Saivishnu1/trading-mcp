@@ -390,27 +390,6 @@ async def app(scope, receive, send):
         uid = _resolve_user(scope)
         token = current_user.set(uid)
         path = scope.get("path", "")
-        method = scope.get("method", "GET")
-
-        # Trigger OAuth discovery: return 401 + WWW-Authenticate when an MCP client
-        # opens the SSE/HTTP stream without a resolvable token. MCP clients (claude.ai,
-        # Claude Desktop) only begin the OAuth flow after receiving this 401.
-        # Only the stream-open request is guarded — /messages/ POSTs run in the
-        # already-authenticated SSE task context, so they are left alone.
-        is_stream_open = (path == "/sse" and method == "GET") or (path == "/mcp")
-        if is_stream_open and not uid:
-            base_url = _get_base_url(scope)
-            www_auth = (
-                f'Bearer resource_metadata="{base_url}/.well-known/oauth-protected-resource"'
-            )
-            body = b'{"error":"unauthorized","error_description":"Authentication required"}'
-            await send({"type": "http.response.start", "status": 401,
-                        "headers": [[b"www-authenticate", www_auth.encode()],
-                                    [b"content-type", b"application/json"],
-                                    [b"content-length", str(len(body)).encode()]]})
-            await send({"type": "http.response.body", "body": body})
-            current_user.reset(token)
-            return
 
         if path in ("/mcp", "/sse") and uid:
             logger.info("MCP connect: path=%s user_id=%s", path, uid)
