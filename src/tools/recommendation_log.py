@@ -133,7 +133,8 @@ def register(mcp: FastMCP) -> None:
 
         Returns record with id (format: REC-xxxxxxxx). Store it for weekly review.
         """
-        if not _current_user.get():
+        uid = _current_user.get()
+        if not uid or uid == "__guest__":
             return _meta.wrap({"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}, _meta.build_meta(type_=_meta.TYPE_FACT, validation_status=_meta.VALIDATION_VERIFIED, data_quality=_meta.DQ_INVALID, source="internal_journal", account_type="PAPER_JOURNAL"))
         data = _svc.log_recommendation(
             symbol=symbol,
@@ -195,7 +196,8 @@ def register(mcp: FastMCP) -> None:
         Args:
             id: Record id returned by log_recommendation (format: REC-xxxxxxxx).
         """
-        if not _current_user.get():
+        uid = _current_user.get()
+        if not uid or uid == "__guest__":
             return _meta.wrap({"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}, _meta.build_meta(type_=_meta.TYPE_FACT, validation_status=_meta.VALIDATION_VERIFIED, data_quality=_meta.DQ_INVALID, source="internal_journal", account_type="PAPER_JOURNAL"))
         data = _svc.update_recommendation_outcome(
             id=id,
@@ -234,7 +236,8 @@ def register(mcp: FastMCP) -> None:
         Stats are null until analysis_ready — drawing conclusions before 100 clean
         records is the primary risk to avoid.
         """
-        if not _current_user.get():
+        uid = _current_user.get()
+        if not uid or uid == "__guest__":
             return _meta.wrap({"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}, _meta.build_meta(type_=_meta.TYPE_FACT, validation_status=_meta.VALIDATION_VERIFIED, data_quality=_meta.DQ_INVALID, source="internal_journal", account_type="PAPER_JOURNAL"))
         data = _svc.get_recommendation_stats(clean_only=True)
         m = _meta.build_meta(

@@ -29,7 +29,7 @@ def register(mcp: FastMCP) -> None:
         default_url = f"https://{railway_domain}" if railway_domain else "http://localhost:8000"
         base_url = os.environ.get("PUBLIC_URL", default_url).rstrip("/")
 
-        if uid and get_broker(uid).is_authenticated():
+        if uid and uid != "__guest__" and get_broker(uid).is_authenticated():
             return {"authenticated": True, "message": "Already authenticated."}
 
         return {
@@ -57,7 +57,7 @@ def register(mcp: FastMCP) -> None:
         and the associated session is active.
         """
         uid = current_user.get()
-        if not uid:
+        if not uid or uid == "__guest__":
             return {"authenticated": False, "backend": None}
         broker = get_broker(uid)
         return {

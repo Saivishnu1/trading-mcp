@@ -56,12 +56,13 @@ def get_broker(user_id: str | None = None) -> BrokerClient:
 def require_broker() -> BrokerClient:
     """Return the broker for the current authenticated user.
 
-    Raises PermissionError if the request has no authenticated user (no valid Bearer token).
+    Raises PermissionError if the request has no authenticated user (no valid Bearer token)
+    or if the user connected as a guest (free-tools-only token).
     Use this for all tools that return personal Zerodha data.
     Use get_broker() only for tools that work without auth (market data, instruments).
     """
     uid = current_user.get()
-    if not uid:
+    if not uid or uid == "__guest__":
         raise PermissionError("not_authenticated: Call zerodha_login() to get a login URL, then ask the user to open it in their browser.")
     return get_broker(uid)
 

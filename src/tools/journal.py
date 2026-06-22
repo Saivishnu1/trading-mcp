@@ -5,7 +5,8 @@ from src.broker import require_broker as _require_broker, current_user as _curre
 _NOT_AUTHED = {"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}
 
 def _require_user() -> str | None:
-    return _current_user.get()
+    uid = _current_user.get()
+    return uid if uid and uid != "__guest__" else None
 from src.journal.service import (
     log_trade as _log_trade,
     close_trade as _close_trade,

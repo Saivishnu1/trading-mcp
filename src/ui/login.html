@@ -263,6 +263,17 @@ input:focus {
 .copy-code-btn:hover { color: var(--text-2); }
 .copy-code-btn.ok { border-color: var(--green-ring); color: var(--green); background: var(--green-dim); }
 
+/* ── Guest button ── */
+.guest-btn {
+  display: block; width: 100%; padding: 9px;
+  text-align: center; text-decoration: none;
+  font-size: 12px; font-weight: 500; font-family: inherit;
+  color: var(--text-3); border: 1px solid var(--border);
+  border-radius: var(--r); margin-top: 10px;
+  transition: border-color .15s, color .15s;
+}
+.guest-btn:hover { border-color: var(--border-2); color: var(--text-2); }
+
 /* ── Done button ── */
 .done-btn {
   display: block; width: 100%; padding: 10px;
@@ -316,6 +327,8 @@ input:focus {
       <span class="sec-note-icon">&#128274;</span>
       Credentials go directly to the server — never through the AI agent
     </div>
+
+    {guest_btn}
   </div>
 
 </div>

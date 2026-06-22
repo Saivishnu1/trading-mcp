@@ -231,10 +231,20 @@ def _get_cookie(scope, name: str) -> str | None:
 
 def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> str:
     action = f"/login?{oauth_query}" if oauth_query else "/login"
+    if oauth_query:
+        guest_url = f"/oauth/authorize?{oauth_query}&guest=1"
+        guest_btn = (
+            f'<a href="{guest_url}" class="guest-btn">'
+            "Continue as guest — market data &amp; free tools only"
+            "</a>"
+        )
+    else:
+        guest_btn = ""
     return (
         _LOGIN_TEMPLATE
         .replace("{prefill_user_id}", prefill_user_id)
         .replace("{message}", message)
+        .replace("{guest_btn}", guest_btn)
         .replace('action="/login"', f'action="{action}"')
     )
 
@@ -390,6 +400,23 @@ async def app(scope, receive, send):
         uid = _resolve_user(scope)
         token = current_user.set(uid)
         path = scope.get("path", "")
+        method = scope.get("method", "GET")
+
+        # Trigger OAuth discovery: 401 on unauthenticated stream-open so MCP clients
+        # (claude.ai, Claude Desktop) start the OAuth flow. Guest tokens count as auth
+        # (uid == "__guest__") so they pass through; personal tools reject them internally.
+        is_stream_open = (path == "/sse" and method == "GET") or (path == "/mcp")
+        if is_stream_open and not uid:
+            base_url = _get_base_url(scope)
+            www_auth = f'Bearer resource_metadata="{base_url}/.well-known/oauth-protected-resource"'
+            body = b'{"error":"unauthorized","error_description":"Authentication required"}'
+            await send({"type": "http.response.start", "status": 401,
+                        "headers": [[b"www-authenticate", www_auth.encode()],
+                                    [b"content-type", b"application/json"],
+                                    [b"content-length", str(len(body)).encode()]]})
+            await send({"type": "http.response.body", "body": body})
+            current_user.reset(token)
+            return
 
         if path in ("/mcp", "/sse") and uid:
             logger.info("MCP connect: path=%s user_id=%s", path, uid)
@@ -504,6 +531,27 @@ async def _app(scope, receive, send):
             state = (oauth_params.get("state", [""])[0]).strip()
             code_challenge = (oauth_params.get("code_challenge", [""])[0]).strip()
             code_challenge_method = (oauth_params.get("code_challenge_method", ["S256"])[0]).strip()
+
+            # Guest flow: user clicked "Continue as guest" — issue a limited token
+            if oauth_params.get("guest", [""])[0] == "1" and redirect_uri:
+                import secrets as _s, time as _t
+                guest_key, _ = api_key_store.get_or_create("__guest__")
+                code = "auth_" + _s.token_hex(16)
+                _oauth_codes[code] = {
+                    "user_id": "__guest__",
+                    "api_key": guest_key,
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": code_challenge_method,
+                    "expires_at": _t.time() + 300,
+                }
+                redirect_url = f"{redirect_uri}?code={code}"
+                if state:
+                    redirect_url += f"&state={urllib.parse.quote(state)}"
+                await send({"type": "http.response.start", "status": 302,
+                            "headers": [[b"location", redirect_url.encode()]]})
+                await send({"type": "http.response.body", "body": b""})
+                logger.info("OAuth guest token issued")
+                return
 
             # If already logged in (cookie present + session in DB), skip login form
             uid_cookie = _get_cookie(scope, "mcp_uid")
