@@ -2322,8 +2322,28 @@ HTML form — they never appear in MCP traffic, agent context, or tool logs.
 - `POST /logout` requires Bearer token; browser logout button prompts for API key
 - `mcp_uid` cookie cleared on logout
 
+**401 guard on /sse and /mcp**
+- Both endpoints return `401 + WWW-Authenticate: Bearer resource_metadata=<well-known-url>` for any request without a valid Bearer token
+- This is the MCP spec trigger for OAuth discovery — clients like claude.ai and Claude Desktop automatically open their OAuth flow when they see this response
+- Authenticated requests (valid Bearer token present) pass through normally; the 401 is only for unauthenticated connections
+
+**Guest token flow**
+- `/oauth/authorize` page shows a "Continue as guest" button below the Zerodha credentials form
+- Clicking it bypasses Zerodha login entirely — the server immediately issues an OAuth redirect with a freshly-minted Bearer token
+- The token is stored in `api_key_store` with `user_id = "__guest__"`
+- `uid == "__guest__"` is treated identically to `uid == None` throughout the codebase:
+  - `require_broker()` → raises PermissionError (portfolio tools fail with auth error)
+  - `_require_user()` → returns `{"status": "not_authenticated", "message": "..."}`
+  - `_user_filter()` → returns `WHERE 1=0` (no journal data visible)
+  - `check_auth_status()` → returns `{"authenticated": false}`
+  - `zerodha_login()` → returns a login URL (same as for no-auth)
+- All 50+ free tools (market data, options, technicals, dashboards, analysis, intelligence) work normally for guest tokens
+- Personal tools (portfolio, journal, recommendations) reject guest with the same "not_authenticated" response as any unauthenticated call
+
 ### Key decisions
 
 - Cookie is display-only: it lets the home page show a "connect your client" message to returning browser users, but auth always requires a Bearer header — never the cookie.
 - `require_broker()` vs `_require_user()`: broker tools raise hard (portfolio calls fail visibly if unauthenticated); journal/recommendation tools return a soft "not_authenticated" dict so the agent can surface a clear message rather than an exception.
 - OAuth PKCE chosen over simpler bearer-only to support claude.ai's automatic OAuth flow — no API key copy/paste needed for that client.
+- Guest token uses `"__guest__"` as the user_id (not `None`) so it is a valid stored token; the equality check `uid == "__guest__"` gates it out of personal tools without needing a separate token type.
+- 401 guard is on the transport endpoints, not on individual tool calls — tools never return 401. This keeps the MCP tool contract clean: tools return data or `{"error": "..."}` / `{"status": "not_authenticated"}`, never HTTP 401.

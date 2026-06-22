@@ -229,17 +229,39 @@ uv run zerodha-mcp
 
 ---
 
-## First login
+## Connecting — guest vs full login
 
-Market data tools work immediately without authentication. Portfolio tools (`get_holdings`,
-`get_positions`, `get_margins`) require a live Zerodha session.
+The server has two access tiers:
+
+| Tier | Who | How | Tools available |
+|------|-----|-----|-----------------|
+| **Guest** | Anyone | Click "Continue as guest" on the OAuth login page | 50+ free tools: market data, options, technicals, dashboards, analysis |
+| **Full login** | Account owner | Enter Zerodha credentials on the OAuth login page | All 69 tools including portfolio, journal, recommendations |
+
+**Market data tools work immediately — no login required.**
+Portfolio tools (`get_holdings`, `get_positions`, `get_margins`), journal, and recommendations
+require a full Zerodha login.
 
 > **Security design:** Credentials never pass through the agent. The `zerodha_login()` MCP tool
 > takes no parameters — it returns a URL. You open the URL in your browser and enter credentials
 > directly into the server's login page. Nothing sensitive appears in agent context, tool logs,
 > or MCP traffic.
 
-### Option A — Via agent (recommended)
+### How the login page works
+
+When you (or an MCP client) connect to `/mcp` or `/sse` without a token, the server returns
+a `401` response with `WWW-Authenticate: Bearer resource_metadata=...`. MCP clients that
+support OAuth (claude.ai, Claude Desktop) automatically open a login popup.
+
+The `/oauth/authorize` page shows:
+- A **Zerodha login form** (Client ID + password + TOTP) for full access
+- A **"Continue as guest"** button at the bottom for immediate free-tools access
+
+Clicking "Continue as guest" issues an OAuth Bearer token instantly — no Zerodha credentials
+needed. Guest tokens give access to all public market data tools; personal tools return
+`"not_authenticated"` for guest users.
+
+### Option A — Via agent (recommended for full login)
 
 Ask any connected agent:
 
@@ -257,6 +279,8 @@ The agent calls `zerodha_login()` and returns a login URL:
 
 Open that URL in your browser, fill in your Client ID, Kite password, and current TOTP code,
 and click **Log in securely**. The server authenticates with Zerodha and saves the session.
+Your API key is shown on the success page — copy it for use with non-OAuth clients (Claude Code,
+Claude Desktop with Bearer header, Cursor, Postman).
 
 ### Option B — Open the login page directly
 
@@ -264,6 +288,8 @@ Navigate to the login page in your browser without involving an agent:
 
 - **Local:** `http://localhost:8000/login`
 - **Railway:** `https://zerodha-mcp-production.up.railway.app/login`
+
+The same page with the Zerodha form and "Continue as guest" button is shown.
 
 ### Option C — Auto-login on server startup
 
@@ -277,6 +303,8 @@ never in agent context.
 ```
 check_auth_status()
 ```
+
+Returns `authenticated: true` only for a full Zerodha login. Guest tokens return `authenticated: false`.
 
 ```json
 {
@@ -304,18 +332,22 @@ Replace `localhost:8000` with your Railway URL for the hosted deployment.
 
 | Tool category | Auth required | How |
 |---------------|---------------|-----|
-| Market data, technicals, options, dashboards | No | No header needed |
-| Portfolio, orders, journal, recommendations | Yes | `Authorization: Bearer <api-key>` |
+| Market data, technicals, options, dashboards | No | Works for both guest and full-login tokens |
+| Portfolio, orders, journal, recommendations | Full login only | Guest tokens return "not_authenticated"; full Bearer token required |
 
 Your Bearer token travels in the HTTP header — it is never visible in chat or tool arguments.
 The AI model never sees it.
+
+Connecting without a token to `/mcp` or `/sse` returns `401 + WWW-Authenticate: Bearer resource_metadata=...`,
+which triggers automatic OAuth discovery in supporting MCP clients.
 
 ### claude.ai (OAuth — no API key needed)
 
 1. Open claude.ai → **Settings → Integrations → Add MCP Server**
 2. Paste the MCP endpoint URL: `https://zerodha-mcp-production.up.railway.app/mcp`
-3. A login popup appears automatically (OAuth 2.0 + PKCE). Sign in with Zerodha credentials.
-4. Done — the token is managed automatically. No API key to copy or paste.
+3. A login popup appears automatically (OAuth 2.0 + PKCE).
+4. Choose **"Continue as guest"** for immediate access to free market data tools, **or** sign in with your Zerodha credentials for full access to all 69 tools.
+5. Done — the token is managed automatically. No API key to copy or paste.
 
 ### Claude Code (CLI)
 

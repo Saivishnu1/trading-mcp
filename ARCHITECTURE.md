@@ -39,31 +39,50 @@ through this framework before wiring them into the recommendation chain.
 ## Auth Architecture (Phase 22H)
 
 ```
-HTTP request
+HTTP request to /sse or /mcp
     │
-    ├── Bearer token present?
-    │       │
-    │       ├── Yes → set current_user ContextVar → broker scoped to that user
-    │       │          require_broker() passes → personal tools work
-    │       │          _user_filter() returns "user_id = ?" → journal isolated
-    │       │
-    │       └── No  → current_user = None
-    │                  require_broker() raises PermissionError
-    │                  _user_filter() returns "1=0" → empty results
-    │                  _require_user() returns {"status":"not_authenticated"}
+    ├── No Bearer token → 401 + WWW-Authenticate: Bearer resource_metadata=...
+    │       MCP clients (claude.ai, Claude Desktop) auto-trigger OAuth discovery
     │
-    └── OAuth flow (claude.ai / Claude Desktop)
+    └── Bearer token present → resolve uid from api_key_store
             │
-            ├── /.well-known/oauth-authorization-server  (discovery)
-            ├── /.well-known/oauth-protected-resource    (discovery)
-            ├── /oauth/register   (RFC 7591 dynamic client registration)
-            ├── /oauth/authorize  (PKCE; auto-complete if mcp_uid cookie set)
-            └── /oauth/token      (token exchange → Bearer token issued)
+            ├── uid == "__guest__"  → current_user = None (guest)
+            │       require_broker() raises PermissionError
+            │       _require_user()  returns {"status":"not_authenticated"}
+            │       _user_filter()   returns "1=0" → empty DB results
+            │       check_auth_status() → authenticated: false
+            │       50+ free market data / options / technicals tools work normally
+            │
+            ├── uid == real user_id → current_user = uid (full login)
+            │       require_broker() passes → personal tools work
+            │       _user_filter() returns "user_id = ?" → journal isolated
+            │       All 69 tools available
+            │
+            └── uid == None (no token) → same behavior as "__guest__"
+
+OAuth flow (MCP clients: claude.ai / Claude Desktop)
+    │
+    ├── /.well-known/oauth-authorization-server  (discovery)
+    ├── /.well-known/oauth-protected-resource    (discovery)
+    ├── /oauth/register   (RFC 7591 dynamic client registration)
+    ├── /oauth/authorize  (PKCE login page)
+    │       ├── Zerodha credentials form → full login → sess_xxx token → real uid stored
+    │       └── "Continue as guest" button → instant redirect → guest token → uid = "__guest__"
+    └── /oauth/token      (token exchange → Bearer token issued)
 ```
+
+### Guest token
+
+- Created when user clicks "Continue as guest" on `/oauth/authorize`
+- `user_id = "__guest__"` stored in `api_key_store` for the issued token
+- `uid == "__guest__"` is treated identically to `None` in all auth guards
+- Gives access to all free tools (50+): market data, options, technicals, dashboards, analysis, intelligence
+- Personal tools (`require_broker()`, `_require_user()`) reject guest with "not_authenticated" — identical to no-auth behavior
+- `check_auth_status()` returns `authenticated: false` for guest tokens
 
 ### Auth guard functions
 
-| Guard | Used by | Behavior when unauthenticated |
+| Guard | Used by | Behavior for guest or no-auth |
 |-------|---------|-------------------------------|
 | `require_broker()` | Portfolio, profile, orders, margins, positions | Raises `PermissionError` → MCP error response |
 | `_require_user()` | Journal, recommendation tools | Returns `{"status": "not_authenticated", "message": "..."}` |

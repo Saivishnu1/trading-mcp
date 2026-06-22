@@ -129,6 +129,9 @@ When generating tests:
 * OAuth 2.0 + PKCE endpoints: `/oauth/authorize`, `/oauth/token`, `/oauth/register`. Well-known metadata at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
 * `mcp_uid` cookie is for browser display only — set on login, cleared on logout. It is NOT an auth token. Auth is always via Bearer token in HTTP header.
 * `check_auth_status()` and `zerodha_login()` are scoped to caller's Bearer token, not global. Unauthenticated requests get empty results or a clear "call zerodha_login() first" message — never a 401 error from tool calls.
+* **Guest token (Phase 22H):** `uid == "__guest__"` is treated identically to `None` in `require_broker()`, `_require_user()`, `check_auth_status()`, and `zerodha_login()`. Guest users get `authenticated: false` and "not_authenticated" from personal tools. Never grant guest access to portfolio, journal, or recommendation tools.
+* **401 guard on `/sse` (GET) and `/mcp`:** Both endpoints return `401 + WWW-Authenticate: Bearer resource_metadata=...` for unauthenticated connections. This triggers OAuth discovery in MCP clients (claude.ai, Claude Desktop) automatically. Do not remove this guard.
+* **OAuth authorize page (`/oauth/authorize`)** shows the Zerodha login form AND a "Continue as guest" button. Guest click → instant OAuth redirect → guest Bearer token mapped to `user_id = "__guest__"` in api_key_store. Full login → real Bearer token (`sess_xxx`) mapped to the owner's Zerodha user_id. Both flows issue standard OAuth tokens; the difference is only the user_id stored server-side.
 
 ---
 

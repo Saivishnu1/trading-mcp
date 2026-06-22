@@ -419,8 +419,8 @@ pre.code {
   <div class="notice a2">
     <span class="notice-icon">✦</span>
     <span>
-      <strong>50+ tools work with zero login</strong> — market data, options chains, technicals,
-      and dashboards are available to any agent instantly. Login is only needed for your personal
+      <strong>50+ tools need no Zerodha login</strong> — connect as a guest for instant market data,
+      options chains, technicals, and dashboards. Sign in with Zerodha only if you want your personal
       portfolio, orders, and trade journal.
     </span>
   </div>
@@ -448,15 +448,15 @@ pre.code {
       <div class="steps">
         <div class="step">
           <div class="step-n">1</div>
-          <div class="step-t"><b>Open claude.ai</b> → Settings → Integrations → Add MCP Server → paste the SSE URL. Market data tools work immediately with no login.<pre class="code" id="qs-ai-url"></pre></div>
+          <div class="step-t"><b>Open claude.ai</b> → Settings → Integrations → Add MCP Server → paste the SSE URL.<pre class="code" id="qs-ai-url"></pre></div>
         </div>
         <div class="step">
           <div class="step-n">2</div>
-          <div class="step-t"><b>For personal tools (portfolio, orders, journal):</b> Log in at <a href="/login">/login</a> to get your API key. Then in the connector settings, set the <code style="font-family:var(--mono);color:var(--accent)">Authorization</code> header to <code style="font-family:var(--mono);color:var(--accent)">Bearer &lt;your-api-key&gt;</code>.</div>
+          <div class="step-t"><b>A login page appears.</b> Two options: <b>Sign in with Zerodha</b> to unlock all 69 tools including your personal portfolio, orders, and journal — or click <b>Continue as guest</b> for instant access to 50+ free market data tools with no credentials needed.</div>
         </div>
         <div class="step">
           <div class="step-n">3</div>
-          <div class="step-t"><b>Your credentials stay private.</b> The API key travels only in the HTTP header — never in chat messages or tool arguments. Others can use market data tools without logging in at all.</div>
+          <div class="step-t"><b>That's it.</b> Your choice is remembered. Credentials never pass through the AI agent — they go directly to the server.</div>
         </div>
       </div>
     </div>
@@ -520,19 +520,15 @@ pre.code {
       <div class="steps">
         <div class="step">
           <div class="step-n">1</div>
-          <div class="step-t"><b>Open Postman</b> → New → MCP Server → SSE.</div>
+          <div class="step-t"><b>Open Postman</b> → New → MCP Server → SSE → paste the URL.<pre class="code" id="qs-postman-url"></pre></div>
         </div>
         <div class="step">
           <div class="step-n">2</div>
-          <div class="step-t">
-            <b>Paste the SSE URL.</b> Free market data tools work with no auth header at all.
-            For portfolio tools, add <code style="font-family:var(--mono);color:var(--accent)">Authorization: Bearer &lt;api-key&gt;</code>.
-            <pre class="code" id="qs-postman-url"></pre>
-          </div>
+          <div class="step-t"><b>For free tools:</b> Postman will follow the OAuth redirect — open the login page in a browser, click <b>Continue as guest</b>, and Postman gets a guest Bearer token automatically. Or add <code style="font-family:var(--mono);color:var(--accent)">Authorization: Bearer &lt;your-api-key&gt;</code> directly if you have a key from <a href="/login">/login</a>.</div>
         </div>
         <div class="step">
           <div class="step-n">3</div>
-          <div class="step-t"><b>Connect and start calling tools.</b> No agent session required for exploration.</div>
+          <div class="step-t"><b>Connect and explore.</b> 50+ tools available as guest; all 69 with your API key.</div>
         </div>
       </div>
     </div>
@@ -578,9 +574,9 @@ pre.code {
 
   <!-- Security row -->
   <div class="sec-row a4">
-    <div class="sec-item"><b>Free tools — no auth</b>Market data, technicals, options, dashboards. Any agent can call them, no credentials.</div>
-    <div class="sec-item"><b>Personal tools — API key</b>Portfolio, orders, journal. Require Bearer token. Each user sees only their own data.</div>
-    <div class="sec-item"><b>Token stays server-side</b>Your API key travels in the HTTP header — the AI model never sees it in chat or tool args.</div>
+    <div class="sec-item"><b>Guest access — no Zerodha login</b>Click "Continue as guest" during OAuth to get 50+ market data, options, and technical tools instantly.</div>
+    <div class="sec-item"><b>Full access — your account</b>Sign in with Zerodha during OAuth to unlock portfolio, orders, journal, and all 69 tools.</div>
+    <div class="sec-item"><b>Credentials never touch the AI</b>Login happens server-side. Bearer tokens travel in HTTP headers — never in chat or tool arguments.</div>
   </div>
 
   <!-- Session status -->
@@ -611,8 +607,8 @@ pre.code {
     <div class="bot-card">
       <div class="bot-head">Supported Clients</div>
       <div class="client-row">
-        <div class="client-name">claude.ai</div>
-        <div class="client-sub">Settings → Integrations → Add MCP Server → paste SSE URL. Free tools work instantly. Add <code>Authorization: Bearer &lt;key&gt;</code> header for personal tools.</div>
+        <div class="client-name">claude.ai<span class="oauth-tag">OAuth · guest or full</span></div>
+        <div class="client-sub">Paste SSE URL → login page appears → "Continue as guest" for free tools, or sign in with Zerodha for full access.</div>
       </div>
       <div class="client-row">
         <div class="client-name">Claude Code</div>
@@ -638,7 +634,7 @@ pre.code {
     <span class="footer-dot"></span>
     <span>API key persists across re-logins</span>
     <span class="footer-dot"></span>
-    <span>Multi-user · Bearer token auth</span>
+    <span>Guest or full access · OAuth 2.0 + PKCE</span>
     <span class="footer-dot"></span>
     <span>No Kite Connect subscription</span>
   </div>

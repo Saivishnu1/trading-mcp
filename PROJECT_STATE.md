@@ -106,7 +106,7 @@ v7 (user_id in trades + recommendation_log); meta schema_version: 5 (tool respon
 
 ✅ Phase 22G — Browser login (credentials never in agent context)
 
-✅ Phase 22H — OAuth 2.0 + PKCE, multi-user isolation (user_id ContextVar + _user_filter), require_broker() / _require_user() security model, DB schema v7, home page Quick Start + security callout
+✅ Phase 22H — OAuth 2.0 + PKCE, multi-user isolation (user_id ContextVar + _user_filter), require_broker() / _require_user() security model, DB schema v7, home page Quick Start + security callout; guest token flow (uid "__guest__" treated as unauthenticated); 401 guard on /sse GET and /mcp; "Continue as guest" button on OAuth authorize page
 
 ⬜ Phase 23 — Remove _migration block; rename bull_target/bear_target → upside/downside_reference_level
 
@@ -156,7 +156,7 @@ Total: 69
 
 ## Recent Changes
 
-Phase 22H (OAuth 2.0 + PKCE, multi-user isolation, security model):
+Phase 22H (OAuth 2.0 + PKCE, multi-user isolation, security model, guest token):
 
 * 1 new tool (68 → 69); 22 new tests; 1397 passing (41 files)
 * Multi-user isolation: `current_user` ContextVar + `_user_filter()` in all DB queries; schema v7 adds `user_id` to `trades` and `recommendation_log`
@@ -165,6 +165,10 @@ Phase 22H (OAuth 2.0 + PKCE, multi-user isolation, security model):
 * `mcp_uid` cookie: browser display only (not auth); set on login, cleared on logout
 * Home page rewritten: MCP endpoint banner with copy button, Quick Start tabs (5 clients), security callout, improved session card
 * `check_auth_status()` and `zerodha_login()` scoped to caller's Bearer token
+* **401 guard** on `/sse` (GET) and `/mcp` — unauthenticated connections receive `401 + WWW-Authenticate: Bearer resource_metadata=...`, triggering OAuth discovery in MCP clients automatically
+* **Guest token flow:** `/oauth/authorize` page has a "Continue as guest" button → instant OAuth redirect → Bearer token issued with `user_id = "__guest__"` in api_key_store; `uid == "__guest__"` treated identically to `None` in `require_broker()`, `_require_user()`, `check_auth_status()`, and `zerodha_login()`; guest users get access to 50+ free market data tools; personal tools return "not_authenticated"
+* **Full login flow:** Owner enters Zerodha credentials on the OAuth page → real Bearer token (`sess_xxx`) mapped to their Zerodha user_id → all 69 tools available
+* Non-OAuth clients (Claude Code, Cursor, Postman) can pass `Authorization: Bearer <api-key>` directly; API key shown on login success page
 
 Phase 22G (browser login — credentials out of agent context):
 
