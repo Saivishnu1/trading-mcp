@@ -667,9 +667,9 @@ async def _app(scope, receive, send):
             return
 
         if path == "/logout" and method == "POST":
-            # Requires valid Bearer token — prevents unauthenticated DoS logout
-            uid = current_user.get()
-            if not uid:
+            # Accept Bearer token (MCP client) or mcp_uid cookie (browser)
+            uid = current_user.get() or _get_cookie(scope, "mcp_uid")
+            if not uid or uid == "__guest__":
                 await _send_json(send, 401, {"error": "unauthorized"})
                 return
             session_store.delete(uid)

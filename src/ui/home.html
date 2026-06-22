@@ -693,10 +693,9 @@ pre.code {
     }
 
     window.doLogout = function() {
-      var key = prompt('Enter your API key to confirm logout:');
-      if (!key) return;
-      fetch('/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + key.trim() } })
-        .then(function(r) { r.ok ? location.reload() : alert('Invalid API key.'); })
+      if (!confirm('Log out of Zerodha MCP?')) return;
+      fetch('/logout', { method: 'POST' })
+        .then(function(r) { r.ok ? location.reload() : alert('Logout failed.'); })
         .catch(function() { alert('Logout failed.'); });
     };
 
