@@ -91,19 +91,38 @@ def is_index(yf_ticker: str) -> bool:
 
 # Per-tool symbol format requirements (Phase 22 — symbol normalizer)
 _TOOL_FORMATS: dict[str, str] = {
+    # --- Market data (NSE-prefixed) ---
     "get_quote":             "NSE:{symbol}",
     "get_ohlc":              "NSE:{symbol}",
     "get_ltp":               "NSE:{symbol}",
+    # --- Technical indicators (yfinance .NS suffix) ---
     "analyze_technicals":    "{symbol}.NS",
     "calculate_rsi":         "{symbol}.NS",
     "calculate_ema":         "{symbol}.NS",
-    "calculate_macd":        "{symbol}.NS",
+    "calculate_macd":        "{symbol}.NS",   # was PASSTHROUGH — fixed D1
     "calculate_adx":         "{symbol}.NS",
-    "calculate_atr":         "{symbol}.NS",
+    "calculate_atr":         "{symbol}.NS",   # was PASSTHROUGH — fixed D1
     "get_historical_data":   "{symbol}.NS",
+    # --- Analysis/regime (bare — no exchange prefix, no suffix) ---
     "detect_market_regime":  "{symbol}",
+    "get_regime_alignment":  "{symbol}",      # was PASSTHROUGH — fixed D1
     "generate_trade_setup":  "{symbol}.NS",
     "recommend_strategy":    "{symbol}",
+    # --- Options/catalyst: intentional PASSTHROUGH (NSELive/service layer handles) ---
+    # get_expiries, get_equity_option_chain, calculate_pcr, get_oi_analysis,
+    # identify_support_resistance_from_oi, calculate_max_pain, get_option_chain_depth,
+    # get_symbol_news, get_news_sentiment, get_earnings_calendar, get_event_risk
+    #
+    # --- Intelligence: intentional PASSTHROUGH ---
+    # get_market_risk_score: downstream PCR service (NSELive) requires bare index names
+    # ("NIFTY", "BANKNIFTY") — converting to yfinance ticker ("^NSEI") would break PCR lookup.
+}
+
+
+_FORMAT_NAMES: dict[str, str] = {
+    "NSE:{symbol}": "NSE_PREFIX",
+    "{symbol}.NS": "YF_NS_SUFFIX",
+    "{symbol}": "BARE",
 }
 
 
@@ -132,3 +151,26 @@ def normalize_symbol(symbol: str, tool: str) -> tuple[str, bool]:
 
     normalized = fmt.format(symbol=base_upper)
     return normalized, (normalized != raw)
+
+
+def normalize_symbol_extended(symbol: str, tool: str) -> tuple[str, bool, str]:
+    """Return (normalized, was_corrected, format_applied).
+
+    format_applied is one of: INDEX_CANONICAL, NSE_PREFIX, YF_NS_SUFFIX, BARE, PASSTHROUGH.
+    Extends normalize_symbol() without changing its contract.
+    """
+    raw = symbol.strip()
+    _, base = parse(raw)
+    base_upper = base.upper().removesuffix(".NS").removesuffix(".BO")
+
+    if base_upper in INDEX_YF:
+        normalized = INDEX_YF[base_upper]
+        return normalized, (normalized != raw), "INDEX_CANONICAL"
+
+    fmt = _TOOL_FORMATS.get(tool)
+    if fmt is None:
+        return raw, False, "PASSTHROUGH"
+
+    normalized = fmt.format(symbol=base_upper)
+    format_name = _FORMAT_NAMES.get(fmt, "UNKNOWN")
+    return normalized, (normalized != raw), format_name

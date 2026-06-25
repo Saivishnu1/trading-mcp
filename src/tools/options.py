@@ -1,7 +1,9 @@
 from typing import Optional
 from mcp.server.fastmcp import FastMCP
+from src import meta as _meta
 from src.options.service import get_options_service
 from src.options import analytics
+from src.market.symbols import normalize_symbol_extended as _norm, parse as _parse
 
 
 def register(mcp: FastMCP) -> None:
@@ -12,10 +14,10 @@ def register(mcp: FastMCP) -> None:
 
     def _fetch(symbol: str, expiry: Optional[str]) -> tuple[dict, Optional[str]]:
         svc = get_options_service()
-        metadata = svc.get_option_chain(symbol.upper())
+        metadata = svc.get_option_chain(symbol)
         available = metadata.get("records", {}).get("expiryDates", [])
         resolved = expiry if expiry in available else (available[0] if available else None)
-        chain = svc.get_option_chain(symbol.upper(), resolved)
+        chain = svc.get_option_chain(symbol, resolved)
         return chain, resolved
 
     def _format_chain(chain: dict, symbol: str, expiry: Optional[str], atm_range: int) -> dict:
@@ -61,7 +63,7 @@ def register(mcp: FastMCP) -> None:
             })
 
         return {
-            "symbol":             symbol.upper(),
+            "symbol":             symbol,
             "underlying_value":   spot,
             "expiry":             expiry,
             "available_expiries": expiry_dates,
@@ -84,9 +86,19 @@ def register(mcp: FastMCP) -> None:
             symbol: 'NIFTY', 'BANKNIFTY', 'FINNIFTY', or 'MIDCPNIFTY'
                     (default 'NIFTY').
         """
-        expiries = get_options_service().available_expiries(symbol.upper())
+        sym, corrected, fmt = _norm(symbol, "get_expiries")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "get_expiries")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+        expiries = get_options_service().available_expiries(nse_sym)
         return {
-            "symbol": symbol.upper(),
+            "symbol": nse_sym,
             "count": len(expiries),
             "expiries": expiries,
         }
@@ -150,8 +162,18 @@ def register(mcp: FastMCP) -> None:
             atm_range: Number of strikes above and below ATM to return (default 10).
                        Set to 0 to return all strikes.
         """
-        chain, resolved = _fetch(symbol, expiry)
-        return _format_chain(chain, symbol.upper(), resolved, atm_range)
+        sym, corrected, fmt = _norm(symbol, "get_equity_option_chain")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "get_equity_option_chain")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+        chain, resolved = _fetch(nse_sym, expiry)
+        return _format_chain(chain, nse_sym, resolved, atm_range)
 
     @mcp.tool()
     def calculate_pcr(
@@ -167,7 +189,17 @@ def register(mcp: FastMCP) -> None:
             symbol: Index — 'NIFTY' or 'BANKNIFTY' (default 'NIFTY').
             expiry: Expiry date string. Defaults to nearest expiry.
         """
-        chain, resolved = _fetch(symbol, expiry)
+        sym, corrected, fmt = _norm(symbol, "calculate_pcr")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "calculate_pcr")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+        chain, resolved = _fetch(nse_sym, expiry)
         return analytics.calculate_pcr(chain, resolved)
 
     @mcp.tool()
@@ -186,7 +218,17 @@ def register(mcp: FastMCP) -> None:
             expiry: Expiry date string. Defaults to nearest expiry.
             top_n: Number of top strikes to return per side (default 10).
         """
-        chain, resolved = _fetch(symbol, expiry)
+        sym, corrected, fmt = _norm(symbol, "get_oi_analysis")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "get_oi_analysis")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+        chain, resolved = _fetch(nse_sym, expiry)
         return analytics.get_oi_analysis(chain, resolved, top_n)
 
     @mcp.tool()
@@ -207,7 +249,17 @@ def register(mcp: FastMCP) -> None:
             expiry: Expiry date string. Defaults to nearest expiry.
             top_n: Number of levels to surface per side (default 5).
         """
-        chain, resolved = _fetch(symbol, expiry)
+        sym, corrected, fmt = _norm(symbol, "identify_support_resistance_from_oi")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "identify_support_resistance_from_oi")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+        chain, resolved = _fetch(nse_sym, expiry)
         return analytics.identify_support_resistance_from_oi(chain, resolved, top_n)
 
     @mcp.tool()
@@ -225,5 +277,136 @@ def register(mcp: FastMCP) -> None:
             symbol: 'NIFTY' or 'BANKNIFTY' (default 'NIFTY').
             expiry: Expiry date string. Defaults to nearest expiry.
         """
-        chain, resolved = _fetch(symbol, expiry)
+        sym, corrected, fmt = _norm(symbol, "calculate_max_pain")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "calculate_max_pain")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+        chain, resolved = _fetch(nse_sym, expiry)
         return analytics.calculate_max_pain(chain, resolved)
+
+    @mcp.tool()
+    def get_option_chain_depth(
+        symbol: str = "NIFTY",
+        expiry: Optional[str] = None,
+        atm_range: int = 10,
+    ) -> dict:
+        """Per-strike option chain depth with summary analytics.
+
+        Returns per-strike call_oi, put_oi, oi_change, volume, iv, ltp for
+        strikes within atm_range of ATM. Summary includes ATM strike,
+        max_pain, pcr_oi, pcr_volume.
+
+        Facts only — no signals, no confidence scores, no interpretations.
+
+        Args:
+            symbol: 'NIFTY', 'BANKNIFTY', or any NSE F&O equity symbol.
+            expiry: Expiry date string (e.g. '27-Jun-2024'). Defaults to nearest.
+            atm_range: Number of strikes above and below ATM to return (default 10).
+                       Set to 0 to return all strikes.
+        """
+        sym, corrected, fmt = _norm(symbol, "get_option_chain_depth")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "get_option_chain_depth")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
+
+        try:
+            svc = get_options_service()
+            chain = svc.get_option_chain(nse_sym, expiry)
+        except Exception as exc:
+            data = {"error": str(exc), "symbol": nse_sym}
+            m = _meta.build_meta(
+                type_=_meta.TYPE_FACT,
+                validation_status=_meta.VALIDATION_VERIFIED,
+                data_quality=_meta.DQ_INVALID,
+                source="NSE",
+                account_type="MARKET_DATA_ONLY",
+                **_norm_kw,
+            )
+            return _meta.wrap(data, m)
+
+        records = chain.get("records", {})
+        spot = records.get("underlyingValue")
+        expiry_dates = records.get("expiryDates", [])
+        resolved = expiry if expiry in expiry_dates else (expiry_dates[0] if expiry_dates else None)
+
+        rows = analytics._strikes_for_expiry(chain, resolved)
+        all_strikes = sorted({r.get("strikePrice") for r in rows if r.get("strikePrice") is not None})
+
+        # ATM = strike closest to spot
+        atm_strike: float | None = None
+        if spot and all_strikes:
+            atm_strike = min(all_strikes, key=lambda s: abs(s - spot))
+
+        # Filter to ±atm_range strikes around ATM
+        if atm_range > 0 and atm_strike is not None and all_strikes:
+            atm_idx = all_strikes.index(atm_strike)
+            lo = max(0, atm_idx - atm_range)
+            hi = min(len(all_strikes) - 1, atm_idx + atm_range)
+            range_set = set(all_strikes[lo : hi + 1])
+            filtered = [r for r in rows if r.get("strikePrice") in range_set]
+        else:
+            filtered = rows
+
+        strikes_data = []
+        for row in filtered:
+            ce = row.get("CE") or {}
+            pe = row.get("PE") or {}
+            strikes_data.append({
+                "strike": row.get("strikePrice"),
+                "call_oi": ce.get("openInterest"),
+                "call_oi_change": ce.get("changeinOpenInterest"),
+                "call_volume": ce.get("totalTradedVolume"),
+                "call_iv": ce.get("impliedVolatility"),
+                "call_ltp": ce.get("lastPrice"),
+                "put_oi": pe.get("openInterest"),
+                "put_oi_change": pe.get("changeinOpenInterest"),
+                "put_volume": pe.get("totalTradedVolume"),
+                "put_iv": pe.get("impliedVolatility"),
+                "put_ltp": pe.get("lastPrice"),
+            })
+
+        pcr = analytics.calculate_pcr(chain, resolved)
+        mp = analytics.calculate_max_pain(chain, resolved)
+
+        data = {
+            "symbol": nse_sym,
+            "spot": spot,
+            "expiry": resolved,
+            "atm_strike": atm_strike,
+            "strikes": strikes_data,
+            "summary": {
+                "atm_strike": atm_strike,
+                "max_pain": mp.get("max_pain"),
+                "pcr_oi": pcr.get("pcr_oi"),
+                "pcr_volume": pcr.get("pcr_volume"),
+            },
+            "limitations": [
+                "oi_change is per-session intraday only, not absolute.",
+                "IV sourced from NSE intraday trade data — not a standardised model.",
+                "Data cached 60 s by options service.",
+            ],
+        }
+
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_VALID if strikes_data else _meta.DQ_INVALID,
+            source="NSE",
+            account_type="MARKET_DATA_ONLY",
+            stale_threshold_seconds=60,
+            **_norm_kw,
+        )
+        return _meta.wrap(data, m)
+

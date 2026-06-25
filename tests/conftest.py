@@ -27,6 +27,17 @@ def _clear_analysis_cache():
     clear_analysis_cache()
 
 
+@pytest.fixture(autouse=True)
+def _mock_market_hours(monkeypatch):
+    """Default: market is always 'open' in tests.
+
+    Time-gated tools (calculate_rsi/ema/macd, analyze_technicals,
+    get_intraday_snapshot) would return TOOL_TIME_GATED outside 09:15-15:30 IST.
+    Override per-test with a second monkeypatch.setattr call (last one wins).
+    """
+    monkeypatch.setattr("src.meta.is_market_hours", lambda: True)
+
+
 # ---------------------------------------------------------------------------
 # Option chain constants
 # ---------------------------------------------------------------------------

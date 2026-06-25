@@ -2,6 +2,7 @@ from mcp.server.fastmcp import FastMCP
 
 from src.analysis import regime
 from src import meta as _meta
+from src.market.symbols import normalize_symbol_extended as _norm, parse as _parse
 
 _INTERP_LIMITATIONS = [
     "Regime classification has not been backtested for edge.",
@@ -14,7 +15,14 @@ _INTERP_LIMITATIONS = [
 _SETUP_FIELDS_TO_DELETE = {"confidence", "signal", "trade_quality", "quality", "bullish_probability"}
 
 
-def _interp_meta(data: dict) -> dict:
+def _interp_meta(
+    data: dict,
+    *,
+    symbol_corrected: bool = False,
+    symbol_original: str | None = None,
+    symbol_normalized: str | None = None,
+    symbol_format_applied: str | None = None,
+) -> dict:
     dq = _meta.DQ_INVALID if "error" in data else _meta.DQ_VALID
     return _meta.build_meta(
         type_=_meta.TYPE_INTERPRETATION,
@@ -24,6 +32,10 @@ def _interp_meta(data: dict) -> dict:
         source="yfinance",
         account_type="MARKET_DATA_ONLY",
         limitations=_INTERP_LIMITATIONS,
+        symbol_corrected=symbol_corrected,
+        symbol_original=symbol_original,
+        symbol_normalized=symbol_normalized,
+        symbol_format_applied=symbol_format_applied,
     )
 
 
@@ -191,8 +203,17 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        data = regime.get_regime_alignment(symbol)
-        return _meta.wrap(data, _interp_meta(data))
+        sym, corrected, fmt = _norm(symbol, "get_regime_alignment")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "get_regime_alignment")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        data = regime.get_regime_alignment(sym)
+        return _meta.wrap(data, _interp_meta(data, **_norm_kw))
 
     @mcp.tool()
     def detect_market_regime(symbol: str) -> dict:
@@ -211,9 +232,18 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        raw = regime.detect_market_regime(symbol)
+        sym, corrected, fmt = _norm(symbol, "detect_market_regime")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "detect_market_regime")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        raw = regime.detect_market_regime(sym)
         data = _build_market_structure(raw)
-        return _meta.wrap(data, _interp_meta(data))
+        return _meta.wrap(data, _interp_meta(data, **_norm_kw))
 
     @mcp.tool()
     def generate_trade_setup(symbol: str) -> dict:
@@ -238,15 +268,24 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        raw_setup = regime.generate_trade_setup(symbol)
+        sym, corrected, fmt = _norm(symbol, "generate_trade_setup")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "generate_trade_setup")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        raw_setup = regime.generate_trade_setup(sym)
         if "error" in raw_setup:
-            return _meta.wrap(raw_setup, _interp_meta(raw_setup))
+            return _meta.wrap(raw_setup, _interp_meta(raw_setup, **_norm_kw))
 
         # Uses cached _analyze_technicals — no second network call
-        raw_regime = regime.detect_market_regime(symbol)
+        raw_regime = regime.detect_market_regime(sym)
         ms_data = _build_market_structure(raw_regime)
         if "error" in ms_data:
-            return _meta.wrap(ms_data, _interp_meta(ms_data))
+            return _meta.wrap(ms_data, _interp_meta(ms_data, **_norm_kw))
 
         ms = ms_data["market_structure"]
         ii = ms["indicator_interpretation"]
@@ -273,7 +312,7 @@ def register(mcp: FastMCP) -> None:
         data["market_structure"] = ms
         data["_migration"] = ms_data["_migration"]
 
-        return _meta.wrap(data, _interp_meta(data))
+        return _meta.wrap(data, _interp_meta(data, **_norm_kw))
 
     @mcp.tool()
     def recommend_strategy(symbol: str) -> dict:
@@ -285,8 +324,17 @@ def register(mcp: FastMCP) -> None:
         Args:
             symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
         """
-        data = regime.recommend_strategy(symbol)
-        return _meta.wrap(data, _interp_meta(data))
+        sym, corrected, fmt = _norm(symbol, "recommend_strategy")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "recommend_strategy")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        data = regime.recommend_strategy(sym)
+        return _meta.wrap(data, _interp_meta(data, **_norm_kw))
 
     @mcp.tool()
     def calculate_risk_reward(entry: float, stoploss: float, target: float) -> dict:

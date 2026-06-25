@@ -1,5 +1,6 @@
 """
 Phase 22 — Trust metadata layer.
+Phase 23 — Freshness fields, symbol normalization meta, loud error contracts.
 
 Every MCP tool response is wrapped:
   { "data": <existing output>, "meta": <trust context> }
@@ -8,6 +9,9 @@ build_meta()           — assemble the meta dict for a tool call
 wrap()                 — wrap data + meta into the canonical response envelope
 is_market_hours()      — True during NSE session (09:15–15:30 IST)
 detect_data_quality()  — inspect a data dict for NaN / USD ticker / staleness
+make_symbol_error()    — structured SYMBOL_ERROR response (not a wrapped response)
+make_deprecated_error() — structured TOOL_DEPRECATED response
+make_time_gated_error() — structured TOOL_TIME_GATED response
 """
 from __future__ import annotations
 
@@ -128,6 +132,16 @@ def detect_data_quality(data: dict | list, symbol: str = "", tool: str = "") -> 
 # Meta builder
 # ---------------------------------------------------------------------------
 
+def _freshness_label(age_seconds: int, threshold_seconds: int, from_cache: bool) -> str:
+    if from_cache:
+        return "CACHED"
+    if age_seconds < 60:
+        return "LIVE"
+    if age_seconds <= threshold_seconds:
+        return "RECENT"
+    return "STALE"
+
+
 def build_meta(
     *,
     type_: str = TYPE_FACT,
@@ -144,11 +158,18 @@ def build_meta(
     deprecation_note: str | None = None,
     symbol_corrected: bool = False,
     symbol_original: str | None = None,
+    symbol_normalized: str | None = None,
+    symbol_format_applied: str | None = None,
     bootstrap_period: bool = True,
     warning: str | None = None,
+    data_age_seconds: int = 0,
+    stale_threshold_seconds: int = 300,
+    from_cache: bool = False,
 ) -> dict:
     """Build the meta dict that accompanies every tool response."""
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    freshness = _freshness_label(data_age_seconds, stale_threshold_seconds, from_cache)
+    is_stale = data_age_seconds > stale_threshold_seconds
 
     meta: dict = {
         "type": type_,
@@ -164,11 +185,19 @@ def build_meta(
         "account_type": account_type,
         "zerodha_connected": zerodha_connected,
         "as_of": now_utc,
+        "freshness": {
+            "label": freshness,
+            "data_age_seconds": data_age_seconds,
+            "stale_threshold_seconds": stale_threshold_seconds,
+            "is_stale": is_stale,
+        },
         "limitations": limitations or [],
         "deprecated_fields_present": deprecated_fields_present or [],
         "deprecation_note": deprecation_note,
         "symbol_corrected": symbol_corrected,
         "symbol_original": symbol_original,
+        "symbol_normalized": symbol_normalized,
+        "symbol_format_applied": symbol_format_applied,
         "bootstrap_period": bootstrap_period,
         "warning": warning,
         "schema_version": 5,
@@ -180,9 +209,74 @@ def build_meta(
 # Wrapper
 # ---------------------------------------------------------------------------
 
-def wrap(data: Any, meta: dict) -> dict:
-    """Return { 'data': data, 'meta': meta }."""
-    return {"data": data, "meta": meta}
+def wrap(data: Any, meta: dict, warnings: list[str] | None = None) -> dict:
+    """Return { 'data': data, 'meta': meta } with optional warnings array.
+
+    Stale data warnings are appended automatically when meta['freshness']['is_stale'] is True.
+    """
+    result: dict = {"data": data, "meta": meta}
+    active_warnings: list[str] = list(warnings or [])
+    if meta.get("freshness", {}).get("is_stale"):
+        active_warnings.append("STALE_DATA — data is older than threshold")
+    if active_warnings:
+        result["warnings"] = active_warnings
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 23 — Loud error contracts
+# ---------------------------------------------------------------------------
+
+def make_symbol_error(
+    received: str,
+    tool: str,
+    suggestions: list[str] | None = None,
+    alternative: str | None = None,
+) -> dict:
+    """Return a SYMBOL_ERROR structured response (not a wrap envelope)."""
+    return {
+        "status": "SYMBOL_ERROR",
+        "tool": tool,
+        "reason": "Could not resolve symbol format",
+        "received": received,
+        "suggestions": suggestions or ["Use bare symbol: 'INFY', 'NIFTY', or 'NSE:INFY'"],
+        "alternative": alternative,
+    }
+
+
+def make_deprecated_error(
+    tool: str,
+    reason: str,
+    alternative: str | None = None,
+    suggestions: list[str] | None = None,
+) -> dict:
+    """Return a TOOL_DEPRECATED structured response."""
+    return {
+        "status": "TOOL_DEPRECATED",
+        "tool": tool,
+        "reason": reason,
+        "alternative": alternative,
+        "suggestions": suggestions or [],
+    }
+
+
+def make_time_gated_error(
+    tool: str,
+    available_from: str = "09:15 IST",
+    available_until: str = "15:30 IST",
+    suggestions: list[str] | None = None,
+    alternative: str | None = None,
+) -> dict:
+    """Return a TOOL_TIME_GATED structured response."""
+    return {
+        "status": "TOOL_TIME_GATED",
+        "tool": tool,
+        "reason": "Tool unavailable outside allowed market hours",
+        "available_from": available_from,
+        "available_until": available_until,
+        "suggestions": suggestions or ["Use get_historical_data for offline analysis"],
+        "alternative": alternative,
+    }
 
 
 # ---------------------------------------------------------------------------

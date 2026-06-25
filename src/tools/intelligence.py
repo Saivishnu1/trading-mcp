@@ -1,5 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 
+from src import meta as _meta
+from src.market.symbols import normalize_symbol_extended as _norm
 from src.intelligence.vix import get_india_vix as _get_india_vix
 from src.intelligence.global_pulse import get_global_pulse as _get_global_pulse
 from src.intelligence.events import get_upcoming_events as _get_upcoming_events
@@ -23,7 +25,17 @@ def register(mcp: FastMCP) -> None:
 
         No authentication required.
         """
-        return _get_india_vix()
+        data = _get_india_vix()
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_INVALID if "error" in data else _meta.DQ_VALID,
+            source="yfinance",
+            account_type="MARKET_DATA_ONLY",
+            stale_threshold_seconds=300,
+            limitations=["^INDIAVIX via yfinance; 15-min delayed during session."],
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def get_global_pulse() -> dict:
@@ -37,7 +49,17 @@ def register(mcp: FastMCP) -> None:
 
         No authentication required.
         """
-        return _get_global_pulse()
+        data = _get_global_pulse()
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_INVALID if "error" in data else _meta.DQ_VALID,
+            source="yfinance",
+            account_type="MARKET_DATA_ONLY",
+            stale_threshold_seconds=900,
+            limitations=["Global asset prices via yfinance; ~15-min delayed."],
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def get_upcoming_events(days_ahead: int = 7) -> dict:
@@ -54,7 +76,17 @@ def register(mcp: FastMCP) -> None:
 
         No authentication required.
         """
-        return _get_upcoming_events(days_ahead)
+        data = _get_upcoming_events(days_ahead)
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_VALID,
+            source="internal_calendar",
+            account_type="MARKET_DATA_ONLY",
+            stale_threshold_seconds=86400,
+            limitations=["Event dates are manually maintained; verify against NSE/RBI official calendars."],
+        )
+        return _meta.wrap(data, m)
 
     @mcp.tool()
     def get_market_risk_score(symbol: str = "NIFTY") -> dict:
@@ -81,4 +113,22 @@ def register(mcp: FastMCP) -> None:
 
         No authentication required.
         """
-        return _get_market_risk_score(symbol)
+        sym, corrected, fmt = _norm(symbol, "get_market_risk_score")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "get_market_risk_score")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        result = _get_market_risk_score(sym)
+        result.setdefault("meta", _meta.build_meta(
+            type_=_meta.TYPE_INTERPRETATION,
+            validation_status=_meta.VALIDATION_UNVALIDATED,
+            data_quality=_meta.DQ_INVALID if "error" in result else _meta.DQ_VALID,
+            source="composite",
+            account_type="MARKET_DATA_ONLY",
+            **_norm_kw,
+        ))
+        return result
