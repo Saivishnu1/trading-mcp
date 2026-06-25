@@ -30,6 +30,49 @@ except Exception as exc:
     logger.warning("Could not restore session from DB: %s", exc)
 
 
+def _auto_login_from_env() -> None:
+    """Auto-login using env credentials when JUGAAD_USE_ENV_CREDENTIALS=true."""
+    if os.environ.get("JUGAAD_USE_ENV_CREDENTIALS", "").lower() != "true":
+        return
+    user_id     = os.environ.get("ZERODHA_USER_ID", "").strip()
+    password    = os.environ.get("ZERODHA_PASSWORD", "").strip()
+    totp_secret = os.environ.get("ZERODHA_TOTP_SECRET", "").strip()
+    if not (user_id and password and totp_secret):
+        logger.warning(
+            "JUGAAD_USE_ENV_CREDENTIALS=true but ZERODHA_USER_ID / "
+            "ZERODHA_PASSWORD / ZERODHA_TOTP_SECRET are not all set"
+        )
+        return
+    if get_broker().is_authenticated():
+        logger.info("Auto-login skipped: session already active")
+        return
+    try:
+        import pyotp
+        totp = pyotp.TOTP(totp_secret).now()
+    except ImportError:
+        logger.error(
+            "JUGAAD_USE_ENV_CREDENTIALS=true but pyotp is not installed; "
+            "run: uv add pyotp"
+        )
+        return
+    try:
+        broker = get_broker()
+        broker.login(user_id=user_id, password=password, totp=totp)
+        enctoken = broker.get_enctoken()
+        if enctoken:
+            session_store.save(user_id, enctoken)
+            api_key_store.get_or_create(user_id)
+            get_broker(user_id).set_enctoken(enctoken)
+        logger.info("Auto-login from env successful: %s", user_id)
+    except Exception as exc:
+        logger.error("Auto-login from env failed: %s", exc)
+
+
+try:
+    _auto_login_from_env()
+except Exception as exc:
+    logger.warning("Auto-login from env error: %s", exc)
+
 
 
 _public_host = os.environ.get("PUBLIC_HOST", "zerodha-mcp-production.up.railway.app")
@@ -401,6 +444,9 @@ async def app(scope, receive, send):
     # Resolve user from API key header before any route runs
     if scope["type"] == "http":
         uid = _resolve_user(scope)
+        # DEV_BYPASS_AUTH=true skips OAuth entirely — never set in production
+        if not uid and os.environ.get("DEV_BYPASS_AUTH", "").lower() == "true":
+            uid = session_store.get_active_user_id() or os.environ.get("ZERODHA_USER_ID", "dev")
         token = current_user.set(uid)
         path = scope.get("path", "")
         method = scope.get("method", "GET")
