@@ -2,7 +2,6 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 from src import meta as _meta
 from src.options.service import get_options_service
-from src.options.bse_service import get_bse_options_service
 from src.options import analytics
 from src.market.symbols import normalize_symbol_extended as _norm, parse as _parse
 
@@ -15,14 +14,6 @@ def register(mcp: FastMCP) -> None:
 
     def _fetch(symbol: str, expiry: Optional[str]) -> tuple[dict, Optional[str]]:
         svc = get_options_service()
-        metadata = svc.get_option_chain(symbol)
-        available = metadata.get("records", {}).get("expiryDates", [])
-        resolved = expiry if expiry in available else (available[0] if available else None)
-        chain = svc.get_option_chain(symbol, resolved)
-        return chain, resolved
-
-    def _fetch_bse(symbol: str, expiry: Optional[str]) -> tuple[dict, Optional[str]]:
-        svc = get_bse_options_service()
         metadata = svc.get_option_chain(symbol)
         available = metadata.get("records", {}).get("expiryDates", [])
         resolved = expiry if expiry in available else (available[0] if available else None)
@@ -144,44 +135,6 @@ def register(mcp: FastMCP) -> None:
         return _format_chain(chain, "BANKNIFTY", resolved, atm_range)
 
     @mcp.tool()
-    def get_sensex_option_chain(
-        expiry: Optional[str] = None,
-        atm_range: int = 20,
-    ) -> dict:
-        """Fetch the SENSEX index option chain from BSE.
-
-        Returns per-strike CE/PE open interest, volume, implied volatility,
-        last traded price, bid, and ask. No authentication required.
-
-        Args:
-            expiry: Expiry date as shown on BSE, e.g. '25 Jun 2026'.
-                    Defaults to the nearest weekly/monthly expiry.
-            atm_range: Number of strikes above and below ATM to return.
-                       Set to 0 to return all strikes.
-        """
-        chain, resolved = _fetch_bse("SENSEX", expiry)
-        return _format_chain(chain, "SENSEX", resolved, atm_range)
-
-    @mcp.tool()
-    def get_bankex_option_chain(
-        expiry: Optional[str] = None,
-        atm_range: int = 20,
-    ) -> dict:
-        """Fetch the BANKEX index option chain from BSE.
-
-        Returns per-strike CE/PE open interest, volume, implied volatility,
-        last traded price, bid, and ask. No authentication required.
-
-        Args:
-            expiry: Expiry date as shown on BSE, e.g. '25 Jun 2026'.
-                    Defaults to the nearest weekly/monthly expiry.
-            atm_range: Number of strikes above and below ATM to return.
-                       Set to 0 to return all strikes.
-        """
-        chain, resolved = _fetch_bse("BANKEX", expiry)
-        return _format_chain(chain, "BANKEX", resolved, atm_range)
-
-    @mcp.tool()
     def get_equity_option_chain(
         symbol: str,
         expiry: Optional[str] = None,
@@ -251,8 +204,15 @@ def register(mcp: FastMCP) -> None:
             expiry: Expiry date string. Defaults to nearest expiry.
             top_n: Number of top strikes to return per side (default 10).
         """
+        sym, corrected, fmt = _norm(symbol, "get_oi_analysis")
         if not symbol.strip():
             return _meta.make_symbol_error(symbol, "get_oi_analysis")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
         nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
         chain, resolved = _fetch(nse_sym, expiry)
         return analytics.get_oi_analysis(chain, resolved, top_n)
@@ -275,8 +235,15 @@ def register(mcp: FastMCP) -> None:
             expiry: Expiry date string. Defaults to nearest expiry.
             top_n: Number of levels to surface per side (default 5).
         """
+        sym, corrected, fmt = _norm(symbol, "identify_support_resistance_from_oi")
         if not symbol.strip():
             return _meta.make_symbol_error(symbol, "identify_support_resistance_from_oi")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
         nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
         chain, resolved = _fetch(nse_sym, expiry)
         return analytics.identify_support_resistance_from_oi(chain, resolved, top_n)
@@ -296,8 +263,15 @@ def register(mcp: FastMCP) -> None:
             symbol: 'NIFTY' or 'BANKNIFTY' (default 'NIFTY').
             expiry: Expiry date string. Defaults to nearest expiry.
         """
+        sym, corrected, fmt = _norm(symbol, "calculate_max_pain")
         if not symbol.strip():
             return _meta.make_symbol_error(symbol, "calculate_max_pain")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
         nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
         chain, resolved = _fetch(nse_sym, expiry)
         return analytics.calculate_max_pain(chain, resolved)

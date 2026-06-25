@@ -159,7 +159,7 @@ class TestIntelligenceRuntimeExecution:
         }):
             # Must not raise NameError
             result = tools["get_market_risk_score"].fn("BANKNIFTY")
-        assert "score" in result or "error" in result
+        assert "score" in result.get("data", result) or "error" in result
 
     def test_get_market_risk_score_meta_present(self):
         """Meta must be set even though PASSTHROUGH format produces corrected=False."""
@@ -174,11 +174,31 @@ class TestIntelligenceRuntimeExecution:
         assert "type" in result["meta"]
 
 # ---------------------------------------------------------------------------
-# D2 — Calendar provider → cache → fallback architecture
+# Helper for mocking the provider chain in calendar tests
+# ---------------------------------------------------------------------------
+
+def _make_provider_result(holidays: dict, status: str = "HEALTHY"):
+    from src.providers.base import ProviderResult
+    return ProviderResult(
+        data=holidays,
+        provider_name="MockProvider",
+        data_source="test",
+        authority="test",
+        status=status,
+        fallback_level=0,
+        cache_status="MISS",
+        cache_age_seconds=0,
+        ttl_seconds=86400,
+        last_refresh="2026-06-25T00:00:00Z",
+    )
+
+
+# ---------------------------------------------------------------------------
+# D2 — Calendar provider → cache → fallback architecture (Phase 24A)
 # ---------------------------------------------------------------------------
 
 class TestCalendarHolidayArchitecture:
-    """Test the three-tier holiday resolution architecture."""
+    """Test the provider chain holiday resolution architecture (JSON → Emergency)."""
 
     def setup_method(self):
         from src.market import calendar as _cal
@@ -188,75 +208,83 @@ class TestCalendarHolidayArchitecture:
         from src.market import calendar as _cal
         _cal._reset_holiday_cache()
 
-    def test_fallback_used_when_provider_returns_none(self):
-        from src.market.calendar import _load_holidays, _NSE_HOLIDAYS_2026
-        with patch("src.market.calendar._holiday_provider", return_value=None):
-            holidays, source = _load_holidays()
-        assert source == "not_configured"   # provider returned None → intentionally not configured
-        assert holidays is _NSE_HOLIDAYS_2026
-
-    def test_provider_data_used_when_available(self):
+    def test_json_data_loaded_on_first_call(self):
+        """JSON provider returns holidays when files are present."""
         custom = {date(2026, 3, 5): "Custom Holiday"}
-        from src.market.calendar import _load_holidays
-        with patch("src.market.calendar._holiday_provider", return_value=custom):
-            holidays, source = _load_holidays()
-        assert source == "provider"
-        assert holidays is custom
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom):
+            from src.providers.calendar.chain import get_calendar_provider
+            result = get_calendar_provider().fetch()
+        assert result.status == "HEALTHY"
+        assert date(2026, 3, 5) in result.data
 
-    def test_cache_populated_from_provider(self):
-        import src.market.calendar as _cal
+    def test_emergency_fallback_when_json_unavailable(self):
+        """When JSON files are missing, emergency provider data is used."""
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   side_effect=FileNotFoundError("no json")):
+            from src.providers.calendar.chain import get_calendar_provider
+            result = get_calendar_provider().fetch()
+        assert result.status == "EMERGENCY"
+        assert isinstance(result.data, dict)
+
+    def test_cache_hit_after_first_load(self):
+        """Second fetch within TTL returns from in-memory cache (status CACHED)."""
         custom = {date(2026, 3, 5): "Custom Holiday"}
-        with patch("src.market.calendar._holiday_provider", return_value=custom):
-            _cal._load_holidays()
-        assert _cal._holiday_cache is custom
-        assert _cal._holiday_source == "provider"
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom) as mock_load:
+            from src.providers.calendar.chain import get_calendar_provider
+            chain = get_calendar_provider()
+            chain.fetch()            # first load → HEALTHY, populates cache
+            result = chain.fetch()   # cache hit → CACHED
+        assert mock_load.call_count == 1   # JSON only read once
 
-    def test_provider_not_retried_after_first_load(self):
-        """Provider should be called exactly once per session."""
-        from src.market.calendar import _load_holidays
-        call_count = 0
+    def test_json_not_re_read_within_ttl(self):
+        """JSON file is not re-read on every call within the TTL window."""
+        custom = {date(2026, 3, 5): "Custom"}
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom) as mock_load:
+            from src.providers.calendar.chain import get_calendar_provider
+            chain = get_calendar_provider()
+            chain.fetch()
+            chain.fetch()
+            chain.fetch()
+        assert mock_load.call_count == 1   # cached after first read
 
-        def counting_provider():
-            nonlocal call_count
-            call_count += 1
-            return None
+    def test_emergency_fallback_when_json_raises(self):
+        """Any exception from JSON loading falls back to emergency provider."""
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   side_effect=RuntimeError("disk error")):
+            from src.providers.calendar.chain import get_calendar_provider
+            result = get_calendar_provider().fetch()
+        assert result.status == "EMERGENCY"
+        assert result.provider_name == "EmergencyCalendarProvider"
 
-        with patch("src.market.calendar._holiday_provider", side_effect=counting_provider):
-            _load_holidays()
-            _load_holidays()
-            _load_holidays()
-        assert call_count == 1
+    def test_cache_hit_returns_cached_status(self):
+        """Cache hit carries status=CACHED and cache_status=HIT."""
+        custom = {date(2026, 3, 5): "Custom"}
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom):
+            from src.providers.calendar.chain import get_calendar_provider
+            chain = get_calendar_provider()
+            chain.fetch()            # populate cache
+            result = chain.fetch()   # cache hit
+        assert result.status == "CACHED"
+        assert result.cache_status == "HIT"
 
-    def test_provider_exception_falls_back(self):
-        from src.market.calendar import _load_holidays, _NSE_HOLIDAYS_2026
-        with patch("src.market.calendar._holiday_provider", side_effect=RuntimeError("network")):
-            holidays, source = _load_holidays()
-        assert source == "offline"          # provider raised → configured but unavailable
-        assert holidays is _NSE_HOLIDAYS_2026
-
-    def test_cache_source_when_provider_pre_populated(self):
-        """If cache is already populated (by a prior provider call), source is 'cache'."""
-        import src.market.calendar as _cal
-        # Simulate cache already populated by a prior provider call
-        _cal._holiday_cache = {date(2026, 4, 1): "Test"}
-        _cal._holidays_loaded = True
-        _cal._holiday_source = "cache"
-        _, source = _cal._load_holidays()
-        assert source == "cache"
-
-    def test_reset_clears_all_state(self):
-        import src.market.calendar as _cal
-        _cal._holiday_cache = {date(2026, 1, 1): "Test"}
-        _cal._holidays_loaded = True
-        _cal._holiday_source = "provider"
-        _cal._reset_holiday_cache()
-        assert _cal._holiday_cache is None
-        assert _cal._holidays_loaded is False
-        assert _cal._holiday_source == "not_configured"
+    def test_reset_clears_cache_and_singleton(self):
+        """reset_calendar_provider clears cache; next fetch reloads from JSON."""
+        custom = {date(2026, 3, 5): "Custom"}
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom) as mock_load:
+            from src.providers.calendar.chain import get_calendar_provider, reset_calendar_provider
+            get_calendar_provider().fetch()   # first load
+            reset_calendar_provider()         # wipe singleton
+            get_calendar_provider().fetch()   # fresh load on new chain
+        assert mock_load.call_count == 2
 
 
 # ---------------------------------------------------------------------------
-# D3 — Calendar source_meta transparency
+# D3 — Calendar source_meta transparency (Phase 24A: provider-aware structure)
 # ---------------------------------------------------------------------------
 
 class TestCalendarSourceMeta:
@@ -274,11 +302,12 @@ class TestCalendarSourceMeta:
             cal = get_market_calendar()
         assert "source_meta" in cal
 
-    def test_source_meta_has_holiday_source(self):
+    def test_source_meta_has_provider_field(self):
+        """Phase 24A: source_meta now has 'provider' (was 'holiday_source')."""
         with patch("src.market.calendar._live_expiries", return_value={}):
             from src.market.calendar import get_market_calendar
             cal = get_market_calendar()
-        assert "holiday_source" in cal["source_meta"]
+        assert "provider" in cal["source_meta"]
 
     def test_source_meta_has_expiry_source(self):
         with patch("src.market.calendar._live_expiries", return_value={}):
@@ -299,20 +328,26 @@ class TestCalendarSourceMeta:
             cal = get_market_calendar()
         assert cal["source_meta"]["expiry_source"] == "algorithmic"
 
-    def test_holiday_source_not_configured_when_no_provider(self):
-        with patch("src.market.calendar._holiday_provider", return_value=None):
-            with patch("src.market.calendar._live_expiries", return_value={}):
-                from src.market.calendar import get_market_calendar
-                cal = get_market_calendar()
-        assert cal["source_meta"]["holiday_source"] == "not_configured"
-
-    def test_holiday_source_provider_when_provider_returns_data(self):
+    def test_source_meta_provider_is_json_provider_when_json_loads(self):
+        """When JSON files load successfully, provider is JSONCalendarProvider."""
         custom = {date(2026, 5, 1): "Test Holiday"}
-        with patch("src.market.calendar._holiday_provider", return_value=custom):
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom):
             with patch("src.market.calendar._live_expiries", return_value={}):
                 from src.market.calendar import get_market_calendar
                 cal = get_market_calendar()
-        assert cal["source_meta"]["holiday_source"] == "provider"
+        assert cal["source_meta"]["provider"] == "JSONCalendarProvider"
+        assert cal["source_meta"]["status"] in ("HEALTHY", "CACHED")
+
+    def test_source_meta_provider_is_emergency_when_json_fails(self):
+        """When JSON files are unavailable, emergency provider is reported."""
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   side_effect=FileNotFoundError("no json")):
+            with patch("src.market.calendar._live_expiries", return_value={}):
+                from src.market.calendar import get_market_calendar
+                cal = get_market_calendar()
+        assert cal["source_meta"]["provider"] == "EmergencyCalendarProvider"
+        assert cal["source_meta"]["status"] == "EMERGENCY"
 
     def test_source_meta_propagates_to_mcp_wrapper(self):
         """MCP wrapper must expose source_meta inside data."""
@@ -338,36 +373,41 @@ class TestCalendarExpiredHolidayAdjustment:
         from src.market import calendar as _cal
         _cal._reset_holiday_cache()
 
+    def _mock_chain(self, holidays: dict):
+        from unittest.mock import MagicMock
+        chain = MagicMock()
+        chain.fetch.return_value = _make_provider_result(holidays)
+        chain.last_result = None
+        chain.health.return_value = {"status": "HEALTHY", "severity": "INFO",
+                                     "holiday_source": "json", "expiry_source": "algorithmic"}
+        return chain
+
     def test_expiry_rolls_back_on_holiday(self):
         """If computed Thursday is a holiday, expiry becomes Wednesday."""
         from src.market.calendar import _nearest_expiry_algorithmic
-
-        # Find the next Thursday
-        today = date(2026, 6, 22)  # Monday
+        today = date(2026, 6, 22)   # Monday
         next_thu = date(2026, 6, 25)  # Thursday
-
-        # Make Thursday a holiday
         mock_holidays = {next_thu: "Test Holiday"}
-        with patch("src.market.calendar._load_holidays", return_value=(mock_holidays, "provider")):
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain(mock_holidays)):
             result = _nearest_expiry_algorithmic("nifty", today)
-
         assert result is not None
         assert result < next_thu  # must be before the holiday
 
     def test_expiry_rolls_back_on_weekend(self):
         """Algorithmic expiry must not fall on a Saturday or Sunday."""
         from src.market.calendar import _nearest_expiry_algorithmic
-
-        with patch("src.market.calendar._load_holidays", return_value=({}, "fallback")):
-            # Use a date where we can predict the result
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain({})):
             result = _nearest_expiry_algorithmic("nifty", date(2026, 6, 22))
         if result:
-            assert result.weekday() < 5  # must be a weekday
+            assert result.weekday() < 5
 
     def test_next_trading_day_skips_weekend(self):
         from src.market.calendar import _next_trading_day
-        friday = date(2026, 6, 19)  # Friday
-        with patch("src.market.calendar._load_holidays", return_value=({}, "fallback")):
+        friday = date(2026, 6, 19)
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain({})):
             nxt = _next_trading_day(friday)
         assert nxt.weekday() == 0  # Monday
 
@@ -376,31 +416,29 @@ class TestCalendarExpiredHolidayAdjustment:
         monday = date(2026, 6, 22)
         tuesday = date(2026, 6, 23)
         wednesday = date(2026, 6, 24)
-        # Make Tuesday a holiday
-        with patch("src.market.calendar._load_holidays",
-                   return_value=({tuesday: "Test"}, "provider")):
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain({tuesday: "Test"})):
             nxt = _next_trading_day(monday)
         assert nxt == wednesday
 
     def test_is_holiday_false_for_non_holiday(self):
         from src.market.calendar import _is_holiday
-        from src.market import calendar as _cal
-        _cal._reset_holiday_cache()
-        with patch("src.market.calendar._holiday_provider", return_value={}):
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain({})):
             assert not _is_holiday(date(2026, 6, 22))
 
     def test_upcoming_holidays_returns_list(self):
         from src.market.calendar import _upcoming_holidays
-        from src.market import calendar as _cal
-        _cal._reset_holiday_cache()
-        with patch("src.market.calendar._holiday_provider", return_value=None):
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain({})):
             result = _upcoming_holidays(date(2026, 6, 1), days_ahead=60)
         assert isinstance(result, list)
 
     def test_upcoming_holidays_within_window(self):
         from src.market.calendar import _upcoming_holidays
         custom = {date(2026, 6, 25): "Test Holiday"}
-        with patch("src.market.calendar._load_holidays", return_value=(custom, "provider")):
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain(custom)):
             result = _upcoming_holidays(date(2026, 6, 20), days_ahead=10)
         assert len(result) == 1
         assert result[0]["date"] == "2026-06-25"
@@ -408,7 +446,8 @@ class TestCalendarExpiredHolidayAdjustment:
     def test_upcoming_holidays_excludes_past(self):
         from src.market.calendar import _upcoming_holidays
         custom = {date(2026, 6, 15): "Past Holiday", date(2026, 6, 25): "Future Holiday"}
-        with patch("src.market.calendar._load_holidays", return_value=(custom, "provider")):
+        with patch("src.market.calendar.get_calendar_provider",
+                   return_value=self._mock_chain(custom)):
             result = _upcoming_holidays(date(2026, 6, 20), days_ahead=10)
         dates = [r["date"] for r in result]
         assert "2026-06-15" not in dates
@@ -446,35 +485,38 @@ class TestToolHealthCalendarIntegration:
         cal_entry = result["data"]["tools"]["get_market_calendar"]
         assert "expiry_source" in cal_entry
 
-    def test_calendar_not_degraded_when_not_configured(self):
-        """No provider configured → CONFIGURATION_LIMITED → tool status stays healthy."""
-        with patch("src.market.calendar._holiday_provider", return_value=None):
-            result = self._get_health()
-        cal_entry = result["data"]["tools"]["get_market_calendar"]
-        # not_configured → CONFIGURATION_LIMITED → NOT degraded (system functioning normally)
-        assert cal_entry["status"] == "healthy"
-        assert cal_entry["holiday_source"] == "not_configured"
-        assert cal_entry["calendar_status"] == "CONFIGURATION_LIMITED"
-
-    def test_calendar_healthy_when_provider_active(self):
-        """When provider returns data, calendar is healthy (expiry source is irrelevant)."""
+    def test_calendar_not_degraded_when_json_available(self):
+        """JSON calendar available → HEALTHY/CACHED → not degraded."""
         custom = {date(2026, 12, 25): "Christmas"}
-        with patch("src.market.calendar._holiday_provider", return_value=custom):
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom):
             result = self._get_health()
         cal_entry = result["data"]["tools"]["get_market_calendar"]
         assert cal_entry["status"] == "healthy"
-        assert cal_entry["holiday_source"] == "provider"
+        assert cal_entry["calendar_status"] in ("HEALTHY", "CACHED")
 
-    def test_degraded_count_increases_when_provider_offline(self):
-        """Provider raising an exception → OFFLINE → calendar counts as degraded."""
-        with patch("src.market.calendar._holiday_provider", side_effect=RuntimeError("down")):
+    def test_calendar_healthy_when_json_loads(self):
+        """When JSON loads fresh, calendar_status is HEALTHY and tool is healthy."""
+        custom = {date(2026, 12, 25): "Christmas"}
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   return_value=custom):
+            result = self._get_health()
+        cal_entry = result["data"]["tools"]["get_market_calendar"]
+        assert cal_entry["status"] == "healthy"
+        assert cal_entry["holiday_source"] in ("json", "cache")
+
+    def test_degraded_count_increases_when_json_unavailable(self):
+        """JSON unavailable → EMERGENCY → calendar counts as degraded."""
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   side_effect=FileNotFoundError("no json")):
             result = self._get_health()
         summary = result["data"]["summary"]
         assert summary["degraded"] >= 1
 
     def test_tool_health_has_reason_when_degraded(self):
-        """When provider is offline (exception), entry has a non-empty reason."""
-        with patch("src.market.calendar._holiday_provider", side_effect=RuntimeError("down")):
+        """When JSON is unavailable (EMERGENCY), the tool entry has a reason."""
+        with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
+                   side_effect=FileNotFoundError("no json")):
             result = self._get_health()
         cal_entry = result["data"]["tools"]["get_market_calendar"]
         assert cal_entry["status"] == "degraded"

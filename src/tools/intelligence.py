@@ -123,12 +123,12 @@ def register(mcp: FastMCP) -> None:
             symbol_format_applied=fmt if corrected else None,
         )
         result = _get_market_risk_score(sym)
-        result.setdefault("meta", _meta.build_meta(
+        m = _meta.build_meta(
             type_=_meta.TYPE_INTERPRETATION,
             validation_status=_meta.VALIDATION_UNVALIDATED,
             data_quality=_meta.DQ_INVALID if "error" in result else _meta.DQ_VALID,
             source="composite",
             account_type="MARKET_DATA_ONLY",
             **_norm_kw,
-        ))
-        return result
+        )
+        return _meta.wrap(result, m)

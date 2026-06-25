@@ -63,6 +63,8 @@ mcp = FastMCP(
         "  get_expiries('NIFTY')                      — available expiry dates\n"
         "  get_nifty_option_chain([expiry])           — NIFTY chain (CE/PE OI, IV, LTP)\n"
         "  get_banknifty_option_chain([expiry])       — BANKNIFTY chain\n"
+        "  get_sensex_option_chain([expiry])          — SENSEX chain\n"
+        "  get_bankex_option_chain([expiry])          — BANKEX chain\n"
         "  get_equity_option_chain('RELIANCE')        — any NSE F&O equity chain\n"
         "  calculate_pcr('NIFTY')                     — put-call ratio + sentiment\n"
         "  get_oi_analysis('NIFTY')                   — top OI strikes\n"

@@ -1,5 +1,5 @@
 """
-Phase 23 — Market calendar service.
+Phase 24A — Market calendar service (provider-backed).
 
 get_market_calendar() is the canonical source for:
   - today's trading status
@@ -8,10 +8,9 @@ get_market_calendar() is the canonical source for:
   - upcoming holidays
   - next trading day
 
-Holiday resolution order:
-  1. Holiday provider (external source — no live provider exists yet)
-  2. Holiday cache   (populated from provider on first successful call)
-  3. Hardcoded fallback (_NSE_HOLIDAYS_2026)
+Holiday resolution (via CalendarProviderChain):
+  1. JSONCalendarProvider  — resources/calendar/YYYY.json (with in-memory TTL cache)
+  2. EmergencyCalendarProvider — minimal hardcoded fallback
 
 Expiry resolution order:
   1. Options service (live expiry dates from NSE)
@@ -22,31 +21,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
-# ---------------------------------------------------------------------------
-# 2026 NSE holiday list — FINAL FALLBACK ONLY
-# Source: NSE circular. Accurate as of June 2026.
-# ---------------------------------------------------------------------------
-
-_NSE_HOLIDAYS_2026: dict[date, str] = {
-    date(2026, 1, 26): "Republic Day",
-    date(2026, 2, 26): "Maha Shivratri",
-    date(2026, 3, 17): "Holi",
-    date(2026, 3, 30): "Id-Ul-Fitr (Ramadan Eid)",
-    date(2026, 4, 2):  "Ram Navami",
-    date(2026, 4, 3):  "Good Friday",
-    date(2026, 4, 14): "Dr. Baba Saheb Ambedkar Jayanti",
-    date(2026, 5, 1):  "Maharashtra Day",
-    date(2026, 6, 17): "Bakri Id",
-    date(2026, 8, 15): "Independence Day",
-    date(2026, 8, 27): "Ganesh Chaturthi",
-    date(2026, 9, 16): "Milad-un-Nabi (Id-E-Milad)",
-    date(2026, 10, 2): "Mahatma Gandhi Jayanti",
-    date(2026, 10, 20): "Dussehra",
-    date(2026, 11, 2): "Diwali (Laxmi Pujan)",
-    date(2026, 11, 3): "Diwali (Balipratipada)",
-    date(2026, 11, 25): "Gurunanak Jayanti",
-    date(2026, 12, 25): "Christmas",
-}
+from src.providers.calendar.chain import get_calendar_provider, reset_calendar_provider
 
 # ---------------------------------------------------------------------------
 # Expiry day-of-week per index (0=Mon … 6=Sun)
@@ -60,81 +35,18 @@ _EXPIRY_WEEKDAY: dict[str, int] = {
     "sensex":       4,  # Friday
 }
 
-# ---------------------------------------------------------------------------
-# Holiday provider → cache → fallback architecture
-# ---------------------------------------------------------------------------
-
-# Module-level state — reset by tests via _reset_holiday_cache()
-_holiday_cache: dict[date, str] | None = None
-_holidays_loaded: bool = False
-_holiday_source: str = "not_configured"
-
 # Updated on each get_market_calendar() call — read by get_calendar_health()
 _last_expiry_source: str = "algorithmic"
 
 
-def _holiday_provider() -> dict[date, str] | None:
-    """
-    External holiday provider interface.
-
-    No live holiday API is integrated — this stub always returns None.
-    A real implementation would fetch from NSE/Bombay Exchange APIs here.
-    When a provider is available, populate this function and the cache
-    architecture will automatically prefer live data.
-    """
-    return None
-
-
-def _load_holidays() -> tuple[dict[date, str], str]:
-    """
-    Return (holidays_dict, source) with provider → cache → fallback resolution.
-
-    Source values:
-      "provider"       — live provider responded with data
-      "cache"          — prior provider data still in cache
-      "not_configured" — provider intentionally not configured (returned None)
-      "offline"        — provider raised an exception (configured but unavailable)
-
-    Provider is attempted exactly once per process (no retry storm).
-    """
-    global _holiday_cache, _holidays_loaded, _holiday_source
-
-    if _holidays_loaded:
-        return (_holiday_cache if _holiday_cache is not None else _NSE_HOLIDAYS_2026), _holiday_source
-
-    _holidays_loaded = True
-
-    # 1. Try provider
-    _provider_raised = False
-    try:
-        data = _holiday_provider()
-        if data is not None:
-            _holiday_cache = data
-            _holiday_source = "provider"
-            return _holiday_cache, "provider"
-        # Provider returned None — intentionally not configured
-        _pending_source = "not_configured"
-    except Exception:
-        # Provider raised — configured but unavailable
-        _provider_raised = True
-        _pending_source = "offline"
-
-    # 2. Cache still valid from a prior session bootstrap (rare path)
-    if _holiday_cache is not None:
-        _holiday_source = "cache"
-        return _holiday_cache, "cache"
-
-    # 3. Hardcoded fallback — source reflects WHY we fell back
-    _holiday_source = _pending_source
-    return _NSE_HOLIDAYS_2026, _holiday_source
-
+# ---------------------------------------------------------------------------
+# Backward-compat reset helper (used by tests)
+# ---------------------------------------------------------------------------
 
 def _reset_holiday_cache() -> None:
-    """Reset module state — for tests only."""
-    global _holiday_cache, _holidays_loaded, _holiday_source, _last_expiry_source
-    _holiday_cache = None
-    _holidays_loaded = False
-    _holiday_source = "not_configured"
+    """Reset provider chain and expiry source state — for tests only."""
+    global _last_expiry_source
+    reset_calendar_provider()
     _last_expiry_source = "algorithmic"
 
 
@@ -143,8 +55,8 @@ def _reset_holiday_cache() -> None:
 # ---------------------------------------------------------------------------
 
 def _is_holiday(d: date) -> bool:
-    holidays, _ = _load_holidays()
-    return d in holidays
+    result = get_calendar_provider().fetch()
+    return d in result.data
 
 
 def _is_trading_day(d: date) -> bool:
@@ -166,11 +78,9 @@ def _nearest_expiry_algorithmic(index: str, from_date: date) -> Optional[date]:
     if weekday is None:
         return None
 
-    # Find the next occurrence of the expiry weekday (including today)
     days_ahead = (weekday - from_date.weekday()) % 7
     candidate = from_date + timedelta(days=days_ahead)
 
-    # If the candidate is a holiday, roll back to the preceding trading day
     while _is_holiday(candidate) or candidate.weekday() >= 5:
         candidate -= timedelta(days=1)
 
@@ -178,7 +88,8 @@ def _nearest_expiry_algorithmic(index: str, from_date: date) -> Optional[date]:
 
 
 def _upcoming_holidays(from_date: date, days_ahead: int = 30) -> list[dict]:
-    holidays, _ = _load_holidays()
+    result = get_calendar_provider().fetch()
+    holidays = result.data
     end = from_date + timedelta(days=days_ahead)
     return [
         {"date": d.isoformat(), "name": name}
@@ -238,70 +149,35 @@ def _live_expiries() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Health accessor — read module-level state, no API calls
+# Health accessor — reads provider chain state, no live API calls
 # ---------------------------------------------------------------------------
-
-_CALENDAR_HEALTH_STATUS: dict[str, str] = {
-    "provider":       "HEALTHY",
-    "cache":          "CACHED",
-    "not_configured": "CONFIGURATION_LIMITED",
-    "offline":        "OFFLINE",
-}
-
-_CALENDAR_HEALTH_REASON: dict[str, str | None] = {
-    "provider":       None,
-    "cache":          "Holiday provider unavailable; serving from previously populated cache.",
-    "not_configured": "No live holiday provider configured; using hardcoded 2026 list. System functioning normally.",
-    "offline":        "Holiday provider is offline; using hardcoded fallback.",
-}
-
-_CALENDAR_HEALTH_SEVERITY: dict[str, str] = {
-    "HEALTHY":              "INFO",
-    "CONFIGURATION_LIMITED": "INFO",
-    "CACHED":               "WARNING",
-    "OFFLINE":              "WARNING",
-    "FAILED":               "ERROR",
-}
-
-_CALENDAR_HEALTH_ACTION: dict[str, str | None] = {
-    "HEALTHY":               None,
-    "CONFIGURATION_LIMITED": "System functioning normally. Configure a live provider to enable automatic holiday updates.",
-    "CACHED":                "Monitor provider connectivity. Cache will expire if the process restarts without a provider.",
-    "OFFLINE":               "Check holiday provider connectivity. Hardcoded list used until provider recovers.",
-    "FAILED":                "Calendar service unavailable. Check logs immediately.",
-}
-
 
 def get_calendar_health() -> dict:
     """
-    Return calendar data-source health without making live API calls.
+    Return calendar data-source health.
 
     Status values:
-      HEALTHY              — live provider responding
-      CONFIGURATION_LIMITED — no provider configured; fallback expected; normal operation
-      CACHED               — cache serving after provider failure
-      OFFLINE              — provider raised an exception; hardcoded fallback in use
-      FAILED               — no calendar data available (should not occur in practice)
+      HEALTHY   — JSON calendar loaded fresh
+      CACHED    — serving from in-memory TTL cache (normal operation)
+      EMERGENCY — emergency hardcoded fallback in use (JSON files unavailable)
+      FAILED    — all providers exhausted
+
+    Extended fields (Phase 24B):
+      version          — JSON file version ("YYYY.N") or None for old format
+      source.runtime   — always "JSONCalendarProvider"
+      source.refresh   — always "NSEOfficialProvider"
     """
-    _, h_source = _load_holidays()
-    e_source = _last_expiry_source
-
-    status = _CALENDAR_HEALTH_STATUS.get(h_source, "FAILED")
-    reason = _CALENDAR_HEALTH_REASON.get(h_source)
-    severity = _CALENDAR_HEALTH_SEVERITY.get(status, "ERROR")
-    recommended_action = _CALENDAR_HEALTH_ACTION.get(status)
-
-    result: dict = {
-        "holiday_source": h_source,
-        "expiry_source": e_source,
-        "status": status,
-        "severity": severity,
+    chain = get_calendar_provider()
+    if chain.last_result is None:
+        chain.fetch()  # Initialize so health reflects actual state
+    chain_health = chain.health()
+    chain_health["expiry_source"] = _last_expiry_source
+    chain_health["version"] = chain.version()
+    chain_health["source"] = {
+        "runtime": "JSONCalendarProvider",
+        "refresh": "NSEOfficialProvider",
     }
-    if reason:
-        result["reason"] = reason
-    if recommended_action:
-        result["recommended_action"] = recommended_action
-    return result
+    return chain_health
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +189,8 @@ def get_market_calendar() -> dict:
     global _last_expiry_source
 
     today = date.today()
-    holidays, h_source = _load_holidays()
+    cal_result = get_calendar_provider().fetch()
+    holidays = cal_result.data
     holiday_name = holidays.get(today)
     is_holiday_today = holiday_name is not None
     is_weekend = today.weekday() >= 5
@@ -349,7 +226,6 @@ def get_market_calendar() -> dict:
             days_to_expiry[idx] = (exp_date - today).days
         per_index_expiry_source[idx] = src
 
-    # Aggregate expiry source: "live" if any index got live data
     agg_expiry_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "algorithmic"
     _last_expiry_source = agg_expiry_source
 
@@ -370,7 +246,9 @@ def get_market_calendar() -> dict:
             "expiry_days_this_week": _expiry_days_this_week(today),
         },
         "source_meta": {
-            "holiday_source": h_source,
+            **cal_result.as_source_meta(),
             "expiry_source": agg_expiry_source,
+            "expiry_source_per_index": per_index_expiry_source,
+            "provider_meta": cal_result.as_provider_meta(),
         },
     }
