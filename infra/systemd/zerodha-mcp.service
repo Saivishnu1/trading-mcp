@@ -1,6 +1,6 @@
 [Unit]
 Description=Zerodha MCP — Personal Trading Intelligence Server
-Documentation=file:///home/ubuntu/zerodha-mcp/infra/README.md
+Documentation=file:///home/ubuntu/trading-mcp/infra/README.md
 After=network-online.target postgresql.service
 Wants=network-online.target
 Requires=postgresql.service
@@ -9,7 +9,7 @@ Requires=postgresql.service
 Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/zerodha-mcp
+WorkingDirectory=/home/ubuntu/trading-mcp
 
 # Load secrets from /etc/zerodha-mcp/.env (owned root:ubuntu, mode 640)
 # This file is NEVER committed to git.
@@ -36,7 +36,7 @@ SyslogIdentifier=zerodha-mcp
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/zerodha-mcp /var/lib/zerodha-mcp
+ReadWritePaths=/home/ubuntu/trading-mcp /var/lib/zerodha-mcp
 PrivateTmp=true
 
 [Install]
