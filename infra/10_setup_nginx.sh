@@ -37,13 +37,17 @@ apt update -q
 apt install -y nginx certbot python3-certbot-nginx
 
 # ---------------------------------------------------------------------------
-# 2. Open firewall ports 80 + 443
+# 2. Open firewall ports 80 + 443 (ufw if present; OCI uses Security Lists)
 # ---------------------------------------------------------------------------
-echo "==> Opening ports 80 and 443 in ufw..."
-ufw allow 80/tcp  comment 'HTTP (cert renewal)'
-ufw allow 443/tcp comment 'HTTPS (MCP server)'
-ufw --force enable
-ufw status
+if command -v ufw &>/dev/null; then
+  echo "==> Opening ports 80 and 443 in ufw..."
+  ufw allow 80/tcp  comment 'HTTP (cert renewal)'
+  ufw allow 443/tcp comment 'HTTPS (MCP server)'
+  ufw --force enable
+  ufw status
+else
+  echo "==> ufw not found — assuming OCI Security List already allows 80/443."
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Write Nginx config (HTTP first — certbot will upgrade to HTTPS)
