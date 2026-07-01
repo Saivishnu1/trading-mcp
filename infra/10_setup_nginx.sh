@@ -37,16 +37,26 @@ apt update -q
 apt install -y nginx certbot python3-certbot-nginx
 
 # ---------------------------------------------------------------------------
-# 2. Open firewall ports 80 + 443 (ufw if present; OCI uses Security Lists)
+# 2. Open firewall ports 80 + 443
+# OCI ARM instances block ports via iptables even when Security List allows them.
 # ---------------------------------------------------------------------------
+echo "==> Opening ports 80 and 443 in iptables..."
+iptables -I INPUT -p tcp --dport 80  -j ACCEPT
+iptables -I INPUT -p tcp --dport 443 -j ACCEPT
+
+# Persist rules across reboots
+if ! dpkg -l iptables-persistent &>/dev/null; then
+  # Pre-answer the save prompt so it's non-interactive
+  echo iptables-persistent iptables-persistent/autosave_v4 boolean true | debconf-set-selections
+  echo iptables-persistent iptables-persistent/autosave_v6 boolean true | debconf-set-selections
+  apt install -y iptables-persistent
+fi
+netfilter-persistent save
+echo "  iptables rules saved."
+
 if command -v ufw &>/dev/null; then
-  echo "==> Opening ports 80 and 443 in ufw..."
-  ufw allow 80/tcp  comment 'HTTP (cert renewal)'
-  ufw allow 443/tcp comment 'HTTPS (MCP server)'
-  ufw --force enable
-  ufw status
-else
-  echo "==> ufw not found — assuming OCI Security List already allows 80/443."
+  ufw allow 80/tcp
+  ufw allow 443/tcp
 fi
 
 # ---------------------------------------------------------------------------
