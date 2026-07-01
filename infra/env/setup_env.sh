@@ -69,7 +69,9 @@ prompt_plain() {
 }
 
 echo "--- PostgreSQL ---"
-prompt_secret  DB_PASSWORD     "zerodha_app DB password (from infra/deploy.sh setup)"
+prompt_plain   DB_USER         "DB username"                  "zerodha"
+prompt_plain   DB_NAME         "DB name"                      "zerodha_mcp"
+prompt_secret  DB_PASSWORD     "DB password"
 echo ""
 
 echo "--- Security ---"
@@ -106,7 +108,7 @@ echo ""
 # ---------------------------------------------------------------------------
 # Write the file
 # ---------------------------------------------------------------------------
-DATABASE_URL="postgresql+asyncpg://zerodha_app:${DB_PASSWORD}@127.0.0.1:5432/zerodha_mcp"
+DATABASE_URL="postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}"
 
 cat > "${ENV_FILE}" << ENVEOF
 # =============================================================================

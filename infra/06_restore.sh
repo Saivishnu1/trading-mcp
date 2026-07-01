@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
-# Restores zerodha_mcp from a pg_dump backup file.
-# Run as: sudo bash 06_restore.sh [/path/to/backup.sql.gz]
+# Restores database from a pg_dump backup file.
+# Reads DB_NAME and DB_USER from DATABASE_URL in /etc/zerodha-mcp/.env
 #
 # Without an argument, lists available backups and exits.
 # With an argument, drops and recreates the database, then restores.
+#
+# Run as: sudo bash infra/06_restore.sh [/path/to/backup.sql.gz]
 set -euo pipefail
 
+ENV_FILE="/etc/zerodha-mcp/.env"
 BACKUP_DIR="/var/backups/postgresql"
-DB_NAME="zerodha_mcp"
-DB_USER="zerodha_app"
 BACKUP_FILE="${1:-}"
+
+# Parse DB_NAME and DB_USER from DATABASE_URL
+_URL=""
+if [ -f "${ENV_FILE}" ]; then
+  _URL=$(grep '^DATABASE_URL=' "${ENV_FILE}" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
+fi
+if [ -z "${_URL}" ]; then
+  echo "ERROR: DATABASE_URL not found in ${ENV_FILE}" >&2
+  exit 1
+fi
+_URL=$(echo "${_URL}" | sed 's|postgresql+asyncpg://|postgresql://|')
+DB_USER=$(echo "${_URL}" | sed 's|postgresql://\([^:]*\):.*|\1|')
+DB_NAME=$(echo "${_URL}" | sed 's|.*/\([^?]*\).*|\1|')
 
 list_backups() {
   echo "Available backups in ${BACKUP_DIR}:"
@@ -21,7 +35,7 @@ list_backups() {
 
 if [ -z "${BACKUP_FILE}" ]; then
   list_backups
-  echo "Usage: sudo bash 06_restore.sh <backup_file.sql.gz>"
+  echo "Usage: sudo bash infra/06_restore.sh <backup_file.sql.gz>"
   exit 0
 fi
 
@@ -34,11 +48,12 @@ fi
 
 SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
 echo "============================================================"
-echo " RESTORE zerodha_mcp"
+echo " RESTORE ${DB_NAME}"
 echo "============================================================"
 echo " Backup file : ${BACKUP_FILE}"
 echo " File size   : ${SIZE}"
 echo " Target DB   : ${DB_NAME}"
+echo " Owner       : ${DB_USER}"
 echo "============================================================"
 echo ""
 echo "WARNING: This will DROP the existing '${DB_NAME}' database"
