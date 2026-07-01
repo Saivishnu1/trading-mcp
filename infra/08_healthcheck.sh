@@ -52,13 +52,13 @@ echo "--- Connectivity ---"
 PG_VERSION=$(sudo -u postgres psql -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
 check "superuser psql (Unix socket)" "${PG_VERSION}"
 
-APP_VERSION=$(PGPASSWORD="${PGPASSWORD:-}" psql -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
-if [ -z "${APP_VERSION}" ] && [ -f "/etc/zerodha-mcp/.env" ]; then
-  # Extract password from env file for the TCP connectivity check
-  _DB_PASS=$(grep '^DATABASE_URL=' /etc/zerodha-mcp/.env 2>/dev/null | sed 's|.*://[^:]*:\([^@]*\)@.*|\1|' || echo "")
-  APP_VERSION=$(PGPASSWORD="${_DB_PASS}" psql -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
-  unset _DB_PASS
+# Extract password from env file — needed for TCP auth (scram-sha-256)
+_DB_PASS=""
+if [ -f "/etc/zerodha-mcp/.env" ]; then
+  _DB_PASS=$(grep '^DATABASE_URL=' /etc/zerodha-mcp/.env 2>/dev/null | sed 's|.*://[^:]*:\([^@]*\)@.*|\1|' || true)
 fi
+APP_VERSION=$(PGPASSWORD="${_DB_PASS}" psql -w -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
+unset _DB_PASS
 check "zerodha_app TCP localhost" "${APP_VERSION}"
 
 echo ""
