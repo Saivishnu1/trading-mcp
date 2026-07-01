@@ -3,22 +3,28 @@ name = "zerodha-mcp"
 version = "0.1.1"
 description = "Zerodha personal-account MCP server"
 requires-python = ">=3.12,<3.14"
+
 dependencies = [
     "mcp[cli]>=1.3.0",
     "python-dotenv>=1.0.0",
     "uvicorn[standard]>=0.30.0",
     "starlette>=0.37.0",
+
     # broker backends
     "httpx>=0.27.0",          # primary: direct Zerodha web API
-    "jugaad-trader>=0.20",    # fallback broker (latest: 0.20)
+    "jugaad-trader>=0.20",    # fallback broker
+
     # market data
-    "jugaad-data>=0.33.1",   # primary: NSE live quotes (latest: 0.33.1)
+    "jugaad-data>=0.33.1",    # primary: NSE live quotes
     "yfinance>=0.2.40",       # fallback + historical data
+
     # auth
     "pyotp>=2.9.0",           # TOTP generation from secret
-    # journal persistence (Linux/Railway only — Windows has no pre-built wheel)
-    "libsql-experimental>=0.0.6; sys_platform == 'linux'",
-    # PostgreSQL — Oracle VM production database (Linux only; not needed on Windows dev)
+
+    # journal persistence (Railway x86_64 only; Oracle ARM uses PostgreSQL)
+    "libsql-experimental>=0.0.6; platform_machine == 'x86_64'",
+
+    # PostgreSQL — Oracle VM production database
     "sqlalchemy[asyncio]>=2.0.0; sys_platform == 'linux'",
     "asyncpg>=0.29.0; sys_platform == 'linux'",
     "alembic>=1.13.0; sys_platform == 'linux'",
