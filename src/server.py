@@ -75,12 +75,23 @@ except Exception as exc:
 
 
 
-_public_host = os.environ.get("PUBLIC_HOST", "zerodha-mcp-production.up.railway.app")
+_public_host = os.environ.get("PUBLIC_HOST", "")
+_allowed_hosts = ["localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000"]
+if _public_host:
+    _allowed_hosts += [_public_host, f"{_public_host}:443"]
+# Also accept host derived from PUBLIC_URL if set
+_public_url = os.environ.get("PUBLIC_URL", "")
+if _public_url:
+    from urllib.parse import urlparse as _urlparse
+    _pu = _urlparse(_public_url)
+    if _pu.hostname and _pu.hostname not in _allowed_hosts:
+        _allowed_hosts.append(_pu.hostname)
+        _allowed_hosts.append(f"{_pu.hostname}:443")
 
 mcp = FastMCP(
     name="Zerodha Personal MCP",
     transport_security=TransportSecuritySettings(
-        allowed_hosts=[_public_host, f"{_public_host}:443", "localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000"],
+        allowed_hosts=_allowed_hosts,
     ),
     instructions=(
         "Zerodha personal-account MCP server — no paid Kite Connect subscription needed.\n\n"

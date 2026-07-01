@@ -84,6 +84,7 @@ CUR_TURSO_TOKEN=$(load_existing "TURSO_AUTH_TOKEN")
 CUR_REDIS=$(load_existing "REDIS_URL")
 CUR_BROKER=$(load_existing "BROKER_BACKEND")
 CUR_BROKER="${CUR_BROKER:-zerodha_web}"
+CUR_PUBLIC_URL=$(load_existing "PUBLIC_URL")
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -129,6 +130,15 @@ prompt_plain   TURSO_DATABASE_URL  "TURSO_DATABASE_URL"  "${CUR_TURSO_URL}"
 prompt_secret  TURSO_AUTH_TOKEN    "TURSO_AUTH_TOKEN"    "${CUR_TURSO_TOKEN}"
 echo ""
 
+echo "--- Public URL (for OAuth redirect) ---"
+_IP_GUESS=$(curl -sf https://api.ipify.org 2>/dev/null || true)
+_DEFAULT_URL=""
+if [ -n "${_IP_GUESS}" ]; then
+  _DEFAULT_URL="https://${_IP_GUESS//./-}.sslip.io"
+fi
+prompt_plain   PUBLIC_URL  "PUBLIC_URL (e.g. https://140-245-202-88.sslip.io)"  "${CUR_PUBLIC_URL:-${_DEFAULT_URL}}"
+echo ""
+
 echo "--- Optional ---"
 prompt_plain   REDIS_URL  "Redis URL (blank to skip)"  "${CUR_REDIS}"
 echo ""
@@ -158,6 +168,7 @@ ZERODHA_USER_ID=${ZERODHA_USER_ID}
 ZERODHA_PASSWORD=${ZERODHA_PASSWORD}
 ZERODHA_TOTP_SECRET=${ZERODHA_TOTP_SECRET}
 BROKER_BACKEND=${BROKER_BACKEND}
+PUBLIC_URL=${PUBLIC_URL}
 SESSION_FILE=/var/lib/zerodha-mcp/.session.json
 JOURNAL_DB=/var/lib/zerodha-mcp/journal.db
 TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
