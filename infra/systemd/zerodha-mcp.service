@@ -1,0 +1,43 @@
+[Unit]
+Description=Zerodha MCP — Personal Trading Intelligence Server
+Documentation=file:///home/ubuntu/zerodha-mcp/infra/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/zerodha-mcp
+
+# Load secrets from /etc/zerodha-mcp/.env (owned root:ubuntu, mode 640)
+# This file is NEVER committed to git.
+EnvironmentFile=/etc/zerodha-mcp/.env
+
+# Start the application via uv (manages the venv automatically)
+ExecStart=/home/ubuntu/.local/bin/uv run zerodha-mcp
+
+# Restart policy: restart on any failure, with exponential backoff
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Graceful shutdown timeout
+TimeoutStopSec=30
+
+# Logging — view with: journalctl -u zerodha-mcp -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zerodha-mcp
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/zerodha-mcp /var/lib/zerodha-mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

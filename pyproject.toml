@@ -18,6 +18,10 @@ dependencies = [
     "pyotp>=2.9.0",           # TOTP generation from secret
     # journal persistence (Linux/Railway only — Windows has no pre-built wheel)
     "libsql-experimental>=0.0.6; sys_platform == 'linux'",
+    # PostgreSQL — Oracle VM production database (Linux only; not needed on Windows dev)
+    "sqlalchemy[asyncio]>=2.0.0; sys_platform == 'linux'",
+    "asyncpg>=0.29.0; sys_platform == 'linux'",
+    "alembic>=1.13.0; sys_platform == 'linux'",
 ]
 
 [project.scripts]

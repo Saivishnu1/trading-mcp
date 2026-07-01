@@ -1,0 +1,13 @@
+[Unit]
+Description=PostgreSQL daily backup — zerodha_mcp
+Documentation=file:///home/ubuntu/zerodha-mcp/infra/README.md
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/home/ubuntu/scripts/backup_postgres.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=backup_postgres

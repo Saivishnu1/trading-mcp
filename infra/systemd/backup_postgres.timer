@@ -1,0 +1,11 @@
+[Unit]
+Description=Run PostgreSQL backup daily at 02:00 IST
+Documentation=file:///home/ubuntu/zerodha-mcp/infra/README.md
+
+[Timer]
+OnCalendar=*-*-* 02:00:00
+TimeZone=Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target
