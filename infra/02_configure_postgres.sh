@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
 # Writes tuned postgresql.conf and pg_hba.conf for the Oracle VM (24 GB RAM, 4 OCPU).
 # Run as: sudo bash 02_configure_postgres.sh
+#
+# Auto-detects the installed PostgreSQL major version (works with 15, 16, 17+).
 set -euo pipefail
 
-PG_CONF="/etc/postgresql/17/main/postgresql.conf"
-PG_HBA="/etc/postgresql/17/main/pg_hba.conf"
+# Auto-detect installed PostgreSQL major version
+PG_VERSION=$(pg_lsclusters --no-header 2>/dev/null | awk '{print $1}' | sort -rn | head -1)
+if [ -z "${PG_VERSION}" ]; then
+  # Fallback: check pg_config
+  PG_VERSION=$(pg_config --version 2>/dev/null | grep -oP '\d+' | head -1 || echo "")
+fi
+if [ -z "${PG_VERSION}" ]; then
+  echo "ERROR: Could not detect PostgreSQL version. Is PostgreSQL installed?"
+  exit 1
+fi
+
+echo "==> Detected PostgreSQL ${PG_VERSION}"
+PG_CONF="/etc/postgresql/${PG_VERSION}/main/postgresql.conf"
+PG_HBA="/etc/postgresql/${PG_VERSION}/main/pg_hba.conf"
+
+if [ ! -f "${PG_CONF}" ]; then
+  echo "ERROR: ${PG_CONF} not found."
+  exit 1
+fi
 
 echo "==> Backing up original config files..."
 cp "${PG_CONF}" "${PG_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
@@ -13,7 +32,7 @@ cp "${PG_HBA}"  "${PG_HBA}.bak.$(date +%Y%m%d_%H%M%S)"
 echo "==> Writing postgresql.conf..."
 cat > "${PG_CONF}" << 'EOF'
 # -----------------------------------------------------------------------------
-# PostgreSQL 17 — Oracle VM.Standard.A1.Flex (4 OCPU, 24 GB RAM, ARM64)
+# PostgreSQL — Oracle VM.Standard.A1.Flex (4 OCPU, 24 GB RAM, ARM64)
 # Mixed workload: PostgreSQL + FastAPI + Docker + Nginx on the same host.
 # -----------------------------------------------------------------------------
 
