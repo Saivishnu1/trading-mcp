@@ -48,10 +48,9 @@ echo ""
 
 cd "${REPO_ROOT}"
 
-python3 - <<'PYEOF'
+uv run python3 - <<'PYEOF'
 import json
 import os
-import sys
 from pathlib import Path
 
 # Parse DATABASE_URL into psycopg2-compatible kwargs
@@ -59,15 +58,8 @@ db_url = os.environ["DATABASE_URL"]
 # Strip asyncpg driver prefix if present
 db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
 
-try:
-    import psycopg2
-    import psycopg2.extras
-except ImportError:
-    print("Installing psycopg2-binary for migration tooling...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg2-binary", "-q"])
-    import psycopg2
-    import psycopg2.extras
+import psycopg2
+import psycopg2.extras
 
 script_dir = Path(__file__).parent
 export_dir = script_dir / "export"

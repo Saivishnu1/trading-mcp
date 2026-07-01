@@ -38,8 +38,8 @@ fi
 
 DATESTAMP=$(date +%Y%m%d)
 
-python3 - <<PYEOF
-import json, os, sys
+uv run python3 - <<PYEOF
+import json, os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,12 +49,7 @@ datestamp = "${DATESTAMP}"
 script_dir = Path("${SCRIPT_DIR}")
 export_dir = script_dir / "export"
 
-try:
-    import psycopg2
-except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg2-binary", "-q"])
-    import psycopg2
+import psycopg2
 
 conn = psycopg2.connect(db_url)
 conn.autocommit = False
