@@ -48,21 +48,18 @@ echo ""
 
 cd "${REPO_ROOT}"
 
-uv run python3 - <<'PYEOF'
+EXPORT_DIR_PY="${EXPORT_DIR}"
+uv run python3 - <<PYEOF
 import json
 import os
 from pathlib import Path
 
-# Parse DATABASE_URL into psycopg2-compatible kwargs
-db_url = os.environ["DATABASE_URL"]
-# Strip asyncpg driver prefix if present
-db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+db_url = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
 
 import psycopg2
 import psycopg2.extras
 
-script_dir = Path(__file__).parent
-export_dir = script_dir / "export"
+export_dir = Path("${EXPORT_DIR_PY}")
 
 conn = psycopg2.connect(db_url)
 conn.autocommit = False

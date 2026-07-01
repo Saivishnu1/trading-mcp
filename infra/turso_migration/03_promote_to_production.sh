@@ -39,7 +39,7 @@ fi
 DATESTAMP=$(date +%Y%m%d)
 
 uv run python3 - <<PYEOF
-import json, os
+import json, os, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -130,7 +130,11 @@ if dry_run:
     sys.exit(0)
 
 print("")
-confirm = input("Type 'promote' to continue: ").strip()
+# stdin is the heredoc body — read user input directly from the terminal
+sys.stdout.write("Type 'promote' to continue: ")
+sys.stdout.flush()
+with open("/dev/tty") as tty:
+    confirm = tty.readline().strip()
 if confirm != "promote":
     print("Aborted.")
     conn.close()
