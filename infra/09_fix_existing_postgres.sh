@@ -127,21 +127,22 @@ echo "  PostgreSQL restarted."
 echo ""
 echo "==> Applying database-level fixes..."
 
-sudo -u postgres psql << SQLEOF
--- Create role if missing, set password from DATABASE_URL
-DO \$\$
+sudo -u postgres psql -v db_user="${DB_USER}" -v db_pass="${DB_PASS}" -v db_name="${DB_NAME}" << 'SQLEOF'
+-- Create role if missing, set password — use psql variables to keep
+-- the password out of pg_stat_statements query text
+DO $$
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
-    CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';
-    RAISE NOTICE 'Created role ${DB_USER}';
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'db_user') THEN
+    EXECUTE format('CREATE USER %I WITH PASSWORD %L', :'db_user', :'db_pass');
+    RAISE NOTICE 'Created role %', :'db_user';
   ELSE
-    ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';
-    RAISE NOTICE 'Updated password for ${DB_USER}';
+    EXECUTE format('ALTER USER %I WITH PASSWORD %L', :'db_user', :'db_pass');
+    RAISE NOTICE 'Updated password for %', :'db_user';
   END IF;
 END
-\$\$;
+$$;
 
-GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
+GRANT ALL PRIVILEGES ON DATABASE :db_name TO :db_user;
 SQLEOF
 
 sudo -u postgres psql -d "${DB_NAME}" << SQLEOF
