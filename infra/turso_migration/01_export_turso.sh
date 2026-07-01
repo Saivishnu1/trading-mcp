@@ -92,8 +92,12 @@ def turso_query(sql: str) -> list[dict]:
     for raw_row in result["response"]["result"]["rows"]:
         row = {}
         for col, cell in zip(cols, raw_row):
-            # Turso returns {"type": "...", "value": "..."} cells
-            row[col] = cell["value"] if isinstance(cell, dict) else cell
+            if isinstance(cell, dict):
+                # Turso cell: {"type": "text"|"integer"|"float"|"blob"|"null", "value": ...}
+                # "null" type has no "value" key
+                row[col] = cell.get("value")  # None for null cells
+            else:
+                row[col] = cell
         rows.append(row)
     return rows
 

@@ -52,7 +52,13 @@ echo "--- Connectivity ---"
 PG_VERSION=$(sudo -u postgres psql -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
 check "superuser psql (Unix socket)" "${PG_VERSION}"
 
-APP_VERSION=$(psql -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
+APP_VERSION=$(PGPASSWORD="${PGPASSWORD:-}" psql -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
+if [ -z "${APP_VERSION}" ] && [ -f "/etc/zerodha-mcp/.env" ]; then
+  # Extract password from env file for the TCP connectivity check
+  _DB_PASS=$(grep '^DATABASE_URL=' /etc/zerodha-mcp/.env 2>/dev/null | sed 's|.*://[^:]*:\([^@]*\)@.*|\1|' || echo "")
+  APP_VERSION=$(PGPASSWORD="${_DB_PASS}" psql -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -tAc "SELECT version();" 2>/dev/null | head -1 || echo "")
+  unset _DB_PASS
+fi
 check "zerodha_app TCP localhost" "${APP_VERSION}"
 
 echo ""
@@ -73,7 +79,16 @@ check "database ${DB_NAME} exists" "${DB_EXISTS}" "${DB_NAME}"
 
 SCHEMAS=$(sudo -u postgres psql -d "${DB_NAME}" -tAc \
   "SELECT string_agg(nspname, ',' ORDER BY nspname) FROM pg_namespace WHERE nspname IN ('zerodha','migration','public');" | tr -d ' ')
-check "schemas (migration,public,zerodha)" "${SCHEMAS}" "migration,public,zerodha"
+check "bootstrap schemas (migration,public,zerodha)" "${SCHEMAS}" "migration,public,zerodha"
+
+# Alembic-managed schemas — present only after first migration run
+ALEMBIC_SCHEMAS=$(sudo -u postgres psql -d "${DB_NAME}" -tAc \
+  "SELECT string_agg(nspname, ',' ORDER BY nspname) FROM pg_namespace WHERE nspname IN ('auth','journal');" | tr -d ' ')
+if [ -n "${ALEMBIC_SCHEMAS}" ]; then
+  check "alembic schemas (auth,journal)" "${ALEMBIC_SCHEMAS}" "auth,journal"
+else
+  echo "  [INFO] auth,journal schemas not yet created — run alembic upgrade head first"
+fi
 
 EXTENSIONS=$(sudo -u postgres psql -d "${DB_NAME}" -tAc \
   "SELECT string_agg(extname, ',' ORDER BY extname) FROM pg_extension WHERE extname IN ('pg_stat_statements','pgcrypto','uuid-ossp');" | tr -d ' ')

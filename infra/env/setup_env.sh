@@ -94,6 +94,11 @@ prompt_plain   GEMINI_API_KEY  "Gemini API key (or Enter to skip)"  ""
 prompt_plain   OPENAI_API_KEY  "OpenAI API key (or Enter to skip)"  ""
 echo ""
 
+echo "--- Turso (source-of-truth SQLite on Railway — needed for data migration) ---"
+prompt_plain   TURSO_DATABASE_URL  "TURSO_DATABASE_URL (libsql://...)" ""
+prompt_secret  TURSO_AUTH_TOKEN    "TURSO_AUTH_TOKEN (JWT from turso db tokens create)"
+echo ""
+
 echo "--- Optional ---"
 prompt_plain   REDIS_URL  "Redis URL (or Enter to skip)" ""
 echo ""
@@ -123,6 +128,8 @@ ZERODHA_TOTP_SECRET=${ZERODHA_TOTP_SECRET}
 BROKER_BACKEND=zerodha_web
 SESSION_FILE=/var/lib/zerodha-mcp/.session.json
 JOURNAL_DB=/var/lib/zerodha-mcp/journal.db
+TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
+TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}
 REDIS_URL=${REDIS_URL}
 HOST=127.0.0.1
 PORT=8000
