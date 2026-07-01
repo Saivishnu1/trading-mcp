@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Step 1 of 3 — Export data from Turso to local SQLite files.
+# Step 1 of 3 — Export data from Turso to JSON files.
 #
-# Requires the Turso CLI: https://docs.turso.tech/cli/installation
-#   curl -sSfL https://get.tur.so/install.sh | bash
-#   turso auth login
+# Uses the Turso HTTP API directly (no CLI dependency) — more reliable than
+# parsing turso db shell output which is designed for interactive terminals.
 #
 # Usage:
 #   bash infra/turso_migration/01_export_turso.sh
@@ -34,12 +33,6 @@ if [ -z "${TURSO_DATABASE_URL:-}" ] || [ -z "${TURSO_AUTH_TOKEN:-}" ]; then
   exit 1
 fi
 
-if ! command -v turso &>/dev/null; then
-  echo "ERROR: turso CLI not found."
-  echo "Install: curl -sSfL https://get.tur.so/install.sh | bash"
-  exit 1
-fi
-
 mkdir -p "${EXPORT_DIR}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -48,85 +41,95 @@ echo "    Output: ${EXPORT_DIR}/"
 echo ""
 
 # ---------------------------------------------------------------------------
-# Helper: run a SQL query against Turso and save JSON output
+# Export via Turso HTTP API — returns clean JSON, no CLI formatting
 # ---------------------------------------------------------------------------
-turso_query() {
-  local query="$1"
-  # turso db shell outputs tab-separated rows; we use Python to convert to JSON
-  turso db shell "${TURSO_DATABASE_URL}" \
-    --auth-token "${TURSO_AUTH_TOKEN}" \
-    "${query}" 2>/dev/null
-}
-
-# ---------------------------------------------------------------------------
-# Export trades
-# ---------------------------------------------------------------------------
-echo "==> Exporting trades..."
-turso_query "SELECT * FROM trades;" > "${EXPORT_DIR}/trades_raw.tsv"
-
-python3 - <<PYEOF
-import csv, json, sys
-
-with open("${EXPORT_DIR}/trades_raw.tsv") as f:
-    reader = csv.DictReader(f, delimiter='\t')
-    rows = list(reader)
-
-with open("${EXPORT_DIR}/trades.json", "w") as f:
-    json.dump(rows, f, indent=2, default=str)
-
-print(f"  trades: {len(rows)} rows")
-PYEOF
-
-# ---------------------------------------------------------------------------
-# Export recommendation_log
-# ---------------------------------------------------------------------------
-echo "==> Exporting recommendation_log..."
-turso_query "SELECT * FROM recommendation_log;" > "${EXPORT_DIR}/recommendation_log_raw.tsv"
-
-python3 - <<PYEOF
-import csv, json, sys
-
-with open("${EXPORT_DIR}/recommendation_log_raw.tsv") as f:
-    reader = csv.DictReader(f, delimiter='\t')
-    rows = list(reader)
-
-with open("${EXPORT_DIR}/recommendation_log.json", "w") as f:
-    json.dump(rows, f, indent=2, default=str)
-
-print(f"  recommendation_log: {len(rows)} rows")
-PYEOF
-
-# ---------------------------------------------------------------------------
-# Export metadata
-# ---------------------------------------------------------------------------
-echo "==> Writing export metadata..."
-TRADES_COUNT=$(python3 -c "import json; print(len(json.load(open('${EXPORT_DIR}/trades.json'))))")
-REC_COUNT=$(python3 -c "import json; print(len(json.load(open('${EXPORT_DIR}/recommendation_log.json'))))")
-
 python3 - <<PYEOF
 import json
+import os
+import sys
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 
+db_url   = os.environ["TURSO_DATABASE_URL"].rstrip("/")
+token    = os.environ["TURSO_AUTH_TOKEN"]
+http_url = db_url.replace("libsql://", "https://") + "/v2/pipeline"
+export_dir = "${EXPORT_DIR}"
+
+def turso_query(sql: str) -> list[dict]:
+    """Execute SQL against Turso HTTP API and return list of row dicts."""
+    payload = json.dumps({
+        "requests": [
+            {"type": "execute", "stmt": {"sql": sql}},
+            {"type": "close"}
+        ]
+    }).encode()
+
+    req = urllib.request.Request(
+        http_url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        print(f"ERROR: HTTP {e.code} from Turso API", file=sys.stderr)
+        print(e.read().decode(), file=sys.stderr)
+        sys.exit(1)
+
+    result = body["results"][0]
+    if result["type"] == "error":
+        print(f"ERROR from Turso: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+
+    cols = [c["name"] for c in result["response"]["result"]["cols"]]
+    rows = []
+    for raw_row in result["response"]["result"]["rows"]:
+        row = {}
+        for col, cell in zip(cols, raw_row):
+            # Turso returns {"type": "...", "value": "..."} cells
+            row[col] = cell["value"] if isinstance(cell, dict) else cell
+        rows.append(row)
+    return rows
+
+
+# Export trades
+print("==> Exporting trades...")
+trades = turso_query("SELECT * FROM trades")
+with open(f"{export_dir}/trades.json", "w") as f:
+    json.dump(trades, f, indent=2, default=str)
+print(f"  trades: {len(trades)} rows")
+
+# Export recommendation_log
+print("==> Exporting recommendation_log...")
+recs = turso_query("SELECT * FROM recommendation_log")
+with open(f"{export_dir}/recommendation_log.json", "w") as f:
+    json.dump(recs, f, indent=2, default=str)
+print(f"  recommendation_log: {len(recs)} rows")
+
+# Write export metadata
+print("")
+print("==> Writing export metadata...")
 meta = {
     "exported_at": datetime.now(timezone.utc).isoformat(),
     "export_timestamp": "${TIMESTAMP}",
     "source": "${TURSO_DATABASE_URL}",
     "tables": {
-        "trades": ${TRADES_COUNT},
-        "recommendation_log": ${REC_COUNT},
+        "trades": len(trades),
+        "recommendation_log": len(recs),
     },
     "excluded_tables": ["sessions", "api_keys"],
     "excluded_reason": "ephemeral — regenerate on first login",
 }
-
-with open("${EXPORT_DIR}/export_meta.json", "w") as f:
+with open(f"{export_dir}/export_meta.json", "w") as f:
     json.dump(meta, f, indent=2)
-
 print(json.dumps(meta, indent=2))
 PYEOF
-
-# Clean up raw TSV files (JSON is the canonical export format)
-rm -f "${EXPORT_DIR}/trades_raw.tsv" "${EXPORT_DIR}/recommendation_log_raw.tsv"
 
 echo ""
 echo "Export complete: ${EXPORT_DIR}/"
