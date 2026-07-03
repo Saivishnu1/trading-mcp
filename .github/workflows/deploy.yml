@@ -39,7 +39,7 @@ jobs:
             git fetch origin
             git reset --hard origin/main
 
-            uv sync
+            ~/.local/bin/uv sync
 
             sudo systemctl daemon-reload
             sudo systemctl restart zerodha-mcp
