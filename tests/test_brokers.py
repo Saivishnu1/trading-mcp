@@ -148,8 +148,15 @@ class TestINDmoneyBroker:
     async def test_get_funds_success(self):
         b = self._broker()
         payload = {
-            "detailed_avl_balance": 50000.0,
-            "utilized": 10000.0,
+            "status": "success",
+            "data": {
+                "sod_balance": 4996.47,
+                "detailed_avl_balance": {
+                    "option_buy": 4449.65,
+                    "eq_cnc": 2980.40,
+                },
+                "realized_pnl": -751.92,
+            },
         }
         resp = _make_httpx_response(200, payload)
         client_mock = MagicMock()
@@ -158,9 +165,8 @@ class TestINDmoneyBroker:
             funds = await b.get_funds()
         assert len(funds) == 1
         f = funds[0]
-        assert f.available == 50000.0
-        assert f.used == 10000.0
-        assert f.total == 60000.0
+        assert f.available == 4449.65
+        assert f.total == 4996.47
         assert f.broker == "indmoney"
 
     @pytest.mark.anyio
@@ -176,17 +182,23 @@ class TestINDmoneyBroker:
     @pytest.mark.anyio
     async def test_get_positions_success(self):
         b = self._broker()
-        payload = [
-            {
-                "trading_symbol": "NIFTY24JUN25000CE",
-                "exchange_segment": "NFO",
-                "net_quantity": 50,
-                "average_price": 120.0,
-                "last_traded_price": 150.0,
-                "pnl_absolute": 1500.0,
-                "position_type": "INTRADAY",
-            }
-        ]
+        payload = {
+            "status": "success",
+            "data": {
+                "net_positions": [
+                    {
+                        "trading_symbol": "NIFTY25MAYFUT",
+                        "exchange_segment": "NSE_FNO",
+                        "net_quantity": 50,
+                        "average_price": 120.0,
+                        "last_traded_price": 150.0,
+                        "pnl_absolute": 1500.0,
+                        "position_type": "open",
+                    }
+                ],
+                "day_positions": [],
+            },
+        }
         resp = _make_httpx_response(200, payload)
         client_mock = MagicMock()
         client_mock.get = AsyncMock(return_value=resp)
@@ -194,7 +206,8 @@ class TestINDmoneyBroker:
             positions = await b.get_positions()
         assert len(positions) == 1
         p = positions[0]
-        assert p.symbol == "NIFTY24JUN25000CE"
+        assert p.symbol == "NIFTY25MAYFUT"
+        assert p.exchange == "NSE"
         assert p.quantity == 50
         assert p.broker == "indmoney"
 
@@ -203,17 +216,25 @@ class TestINDmoneyBroker:
     @pytest.mark.anyio
     async def test_get_orders_success(self):
         b = self._broker()
-        payload = [
-            {
-                "order_id": "ORD001",
-                "trading_symbol": "TCS",
-                "exchange_segment": "NSE",
-                "transaction_type": "BUY",
-                "quantity": 5,
-                "price": 3500.0,
-                "status": "COMPLETE",
-            }
-        ]
+        payload = {
+            "status": "success",
+            "data": [
+                {
+                    "id": "DRV-28131451",
+                    "name": "NIFTY 3 JUL 25700 CE",
+                    "security_id": "56998",
+                    "txn_type": "BUY",
+                    "exchange": "NSE",
+                    "segment": "DERIVATIVE",
+                    "product": "MARGIN",
+                    "traded_qty": 75,
+                    "requested_qty": 75,
+                    "traded_price": "43.55",
+                    "requested_price": "43.55",
+                    "status": "SUCCESS",
+                }
+            ],
+        }
         resp = _make_httpx_response(200, payload)
         client_mock = MagicMock()
         client_mock.get = AsyncMock(return_value=resp)
@@ -221,9 +242,12 @@ class TestINDmoneyBroker:
             orders = await b.get_orders()
         assert len(orders) == 1
         o = orders[0]
-        assert o.order_id == "ORD001"
-        assert o.symbol == "TCS"
+        assert o.order_id == "DRV-28131451"
+        assert o.symbol == "NIFTY 3 JUL 25700 CE"
         assert o.transaction_type == "BUY"
+        assert o.quantity == 75
+        assert o.price == 43.55
+        assert o.status == "SUCCESS"
         assert o.broker == "indmoney"
 
     # --- get_option_chain (not_available stub) ---

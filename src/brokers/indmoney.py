@@ -79,13 +79,20 @@ class INDmoneyBroker(BrokerAdapter):
                 )
                 if r.status_code != 200:
                     return []
-                data = r.json()
-                if not data:
+                body = r.json()
+                if not body:
                     return []
-                # INDstocks funds response fields
-                available = float(data.get("detailed_avl_balance", data.get("sod_balance", 0)) or 0)
-                used = float(data.get("utilized", data.get("collateral_utilised", 0)) or 0)
-                total = available + used
+                data = body.get("data", body)
+                # detailed_avl_balance is a dict of segment-wise limits; use option_buy as the broadest
+                avl = data.get("detailed_avl_balance") or {}
+                if isinstance(avl, dict):
+                    available = float(avl.get("option_buy") or avl.get("eq_cnc") or data.get("sod_balance") or 0)
+                else:
+                    available = float(avl or data.get("sod_balance") or 0)
+                sod = float(data.get("sod_balance") or 0)
+                realized = float(data.get("realized_pnl") or 0)
+                used = max(0.0, sod - available + realized)
+                total = sod
                 return [Fund(
                     available=available,
                     used=used,
@@ -114,14 +121,16 @@ class INDmoneyBroker(BrokerAdapter):
                 items = raw if isinstance(raw, list) else raw.get("data", raw.get("holdings", []))
                 result = []
                 for h in items:
-                    qty = int(h.get("quantity", 0))
-                    avg = float(h.get("average_price", 0) or 0)
-                    ltp = float(h.get("last_traded_price", 0) or 0)
-                    pnl = float(h.get("pnl_absolute", 0) or 0)
-                    pnl_pct = float(h.get("pnl_percent", 0) or 0)
+                    qty = int(h.get("quantity") or 0)
+                    avg = float(h.get("average_price") or 0)
+                    ltp = float(h.get("last_traded_price") or 0)
+                    pnl = float(h.get("pnl_absolute") or 0)
+                    pnl_pct = float(h.get("pnl_percent") or 0)
+                    # exchange_segment is "NSE_EQ" — strip the suffix for display
+                    exch = (h.get("exchange_segment") or "NSE").split("_")[0]
                     result.append(Holding(
-                        symbol=h.get("trading_symbol", ""),
-                        exchange=h.get("exchange_segment", "NSE"),
+                        symbol=h.get("trading_symbol") or h.get("security_id") or "",
+                        exchange=exch,
                         quantity=qty,
                         avg_price=avg,
                         current_price=ltp,
@@ -148,17 +157,23 @@ class INDmoneyBroker(BrokerAdapter):
                 raw = r.json()
                 if not raw:
                     return []
-                items = raw if isinstance(raw, list) else raw.get("data", raw.get("positions", []))
+                # positions response: data.net_positions + data.day_positions
+                data = raw if isinstance(raw, list) else raw.get("data", raw)
+                if isinstance(data, dict):
+                    items = data.get("net_positions", []) + data.get("day_positions", [])
+                else:
+                    items = data
                 result = []
                 for p in items:
-                    qty = int(p.get("net_quantity", 0))
-                    avg = float(p.get("average_price", 0) or 0)
-                    ltp = float(p.get("last_traded_price", 0) or 0)
-                    pnl = float(p.get("pnl_absolute", 0) or 0)
+                    qty = int(p.get("net_quantity") or 0)
+                    avg = float(p.get("average_price") or 0)
+                    ltp = float(p.get("last_traded_price") or 0)
+                    pnl = float(p.get("pnl_absolute") or 0)
+                    exch = (p.get("exchange_segment") or "NSE").split("_")[0]
                     result.append(Position(
-                        symbol=p.get("trading_symbol", ""),
-                        exchange=p.get("exchange_segment", "NSE"),
-                        product=p.get("position_type", ""),
+                        symbol=p.get("trading_symbol") or p.get("security_id") or "",
+                        exchange=exch,
+                        product=p.get("position_type") or "",
                         quantity=qty,
                         avg_price=avg,
                         current_price=ltp,
@@ -229,31 +244,31 @@ class INDmoneyBroker(BrokerAdapter):
                 if not raw:
                     return []
                 items = raw if isinstance(raw, list) else raw.get("data", raw.get("orders", []))
-                if items and isinstance(items[0], dict):
-                    logger.info("INDstocks order-book fields: %s", list(items[0].keys()))
                 result = []
                 for o in items:
                     if not isinstance(o, dict):
                         continue
-                    # _pick returns first non-None, non-empty-string value cast to type
-                    def _pick(*keys, cast=str, default=""):
-                        for k in keys:
-                            v = o.get(k)
-                            if v is not None and v != "":
-                                try:
-                                    return cast(v)
-                                except (ValueError, TypeError):
-                                    continue
-                        return default
-
+                    # traded_price when filled, else requested_price for limit orders
+                    price_str = o.get("traded_price") or o.get("requested_price") or o.get("sl_trigger_price") or ""
+                    try:
+                        price = float(price_str) if price_str else 0.0
+                    except (ValueError, TypeError):
+                        price = 0.0
+                    # traded_qty when filled, else requested_qty
+                    qty_raw = o.get("traded_qty") if o.get("traded_qty") else o.get("requested_qty")
+                    try:
+                        qty = int(qty_raw or 0)
+                    except (ValueError, TypeError):
+                        qty = 0
+                    exch = (o.get("exchange") or "NSE")
                     result.append(Order(
-                        order_id=_pick("order_id", "orderId", "id"),
-                        symbol=_pick("trading_symbol", "tradingSymbol", "security_id", "symbol", "scrip_code", "ticker"),
-                        exchange=_pick("exchange_segment", "exchange", "exch") or "NSE",
-                        transaction_type=_pick("transaction_type", "transactionType", "txn_type", "side"),
-                        quantity=_pick("quantity", "qty", "order_quantity", cast=int, default=0),
-                        price=_pick("price", "limit_price", "avg_price", "trigger_price", cast=float, default=0.0),
-                        status=_pick("status", "orderStatus", "order_status"),
+                        order_id=str(o.get("id") or ""),
+                        symbol=o.get("name") or o.get("trading_symbol") or o.get("security_id") or "",
+                        exchange=exch,
+                        transaction_type=o.get("txn_type") or "",
+                        quantity=qty,
+                        price=price,
+                        status=o.get("status") or "",
                         broker="indmoney",
                     ))
                 return result
