@@ -229,21 +229,31 @@ class INDmoneyBroker(BrokerAdapter):
                 if not raw:
                     return []
                 items = raw if isinstance(raw, list) else raw.get("data", raw.get("orders", []))
-                # Log first item keys for field discovery
-                if items:
-                    logger.info("INDstocks order-book fields: %s", list(items[0].keys()) if isinstance(items[0], dict) else type(items[0]))
+                if items and isinstance(items[0], dict):
+                    logger.info("INDstocks order-book fields: %s", list(items[0].keys()))
                 result = []
                 for o in items:
                     if not isinstance(o, dict):
                         continue
+                    # _pick returns first non-None, non-empty-string value cast to type
+                    def _pick(*keys, cast=str, default=""):
+                        for k in keys:
+                            v = o.get(k)
+                            if v is not None and v != "":
+                                try:
+                                    return cast(v)
+                                except (ValueError, TypeError):
+                                    continue
+                        return default
+
                     result.append(Order(
-                        order_id=str(o.get("order_id") or o.get("orderId") or o.get("id") or ""),
-                        symbol=o.get("trading_symbol") or o.get("tradingSymbol") or o.get("symbol") or o.get("scrip_code") or "",
-                        exchange=o.get("exchange_segment") or o.get("exchange") or o.get("exch") or "NSE",
-                        transaction_type=o.get("transaction_type") or o.get("transactionType") or o.get("txn_type") or o.get("side") or "",
-                        quantity=int(o.get("quantity") or o.get("qty") or 0),
-                        price=float(o.get("price") or o.get("limit_price") or o.get("avg_price") or 0),
-                        status=o.get("status") or o.get("orderStatus") or o.get("order_status") or "",
+                        order_id=_pick("order_id", "orderId", "id"),
+                        symbol=_pick("trading_symbol", "tradingSymbol", "security_id", "symbol", "scrip_code", "ticker"),
+                        exchange=_pick("exchange_segment", "exchange", "exch") or "NSE",
+                        transaction_type=_pick("transaction_type", "transactionType", "txn_type", "side"),
+                        quantity=_pick("quantity", "qty", "order_quantity", cast=int, default=0),
+                        price=_pick("price", "limit_price", "avg_price", "trigger_price", cast=float, default=0.0),
+                        status=_pick("status", "orderStatus", "order_status"),
                         broker="indmoney",
                     ))
                 return result
