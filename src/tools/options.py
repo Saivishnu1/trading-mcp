@@ -241,7 +241,9 @@ def register(mcp: FastMCP) -> None:
         expiry: Optional[str] = None,
         top_n: int = 10,
     ) -> dict:
-        """Return the top-OI call and put strikes for an index.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Return the top-OI call and put strikes for an index.
 
         Shows where large option positions are concentrated, useful for
         identifying key market levels and detecting unwinding/buildup.
@@ -263,7 +265,9 @@ def register(mcp: FastMCP) -> None:
         expiry: Optional[str] = None,
         top_n: int = 5,
     ) -> dict:
-        """Identify support and resistance levels from option OI concentration.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Identify support and resistance levels from option OI concentration.
 
         Resistance: strikes with the highest call OI — writers defend these levels.
         Support:    strikes with the highest put  OI — writers defend these levels.

@@ -6,7 +6,7 @@ Zerodha Personal MCP
 
 Current Phase: 22H — OAuth 2.0 + PKCE, multi-user isolation, security model
 
-Current Tool Count: 69
+Current Tool Count: 58
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
@@ -23,9 +23,7 @@ Build a personal trading intelligence MCP server with reusable analysis, plannin
 
 Reuse chain:
 
-generate_trade_setup
-→ recommend_strategy
-→ create_trade_plan
+create_trade_plan
 → build_option_strategy
 → review_trade
 → dashboard
@@ -35,21 +33,6 @@ generate_trade_setup
 ## Backward Compatibility
 
 Never remove existing response fields unless explicitly requested.
-
-Maintain compatibility for:
-
-generate_trade_setup:
-
-* entry
-* stoploss
-* target
-
-alongside:
-
-* entry_above
-* entry_below
-* bull_target
-* bear_target
 
 Preserve existing dashboard consumers.
 
@@ -122,8 +105,7 @@ When generating tests:
 * Journal DB is schema v7. `user_id` column in `trades` and `recommendation_log` tables. Multi-user isolation via `current_user` ContextVar + `_user_filter()`. Partition constants in src/recommendation_log/service.py — NEVER flip bootstrap_period/bias_contaminated automatically; only on conscious human decision.
 * `confidence`, `signal`, `trade_quality`, `quality`, `bullish_probability` are DELETED (Phase 22F). Do not add them back.
 * `detect_market_regime` returns `market_structure` (boolean facts + descriptor array), not `regime`/`confidence`. The `regime` key is deleted.
-* `generate_trade_setup` returns `entry/stoploss/target/entry_above/entry_below/bull_target/bear_target/reasoning/market_structure/_migration`. `reasoning` is observation-only — no predictive language.
-* `_migration` block in both tools is TEMPORARY — remove in Phase 23.
+* `generate_trade_setup` (internal service function, not an MCP tool) returns `entry/stoploss/target/entry_above/entry_below/bull_target/bear_target/reasoning/market_structure`. `reasoning` is observation-only — no predictive language.
 * DB schema v5 in meta layer (`meta["schema_version"] == 5`). Journal DB is schema v7 (user_id isolation).
 * `require_broker()` must be used for all personal Zerodha data tools (portfolio, profile, orders, positions, margins). `_require_user()` for journal/recommendation tools. NEVER use `get_broker()` directly for personal data access — it bypasses the auth check.
 * OAuth 2.0 + PKCE endpoints: `/oauth/authorize`, `/oauth/token`, `/oauth/register`. Well-known metadata at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.

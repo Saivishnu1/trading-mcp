@@ -1,109 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 from src import meta as _meta
 
-from src.catalyst.news import (
-    _aggregate_sentiment,
-    get_symbol_news as _get_symbol_news,
-)
 from src.market.symbols import normalize_symbol_extended as _norm
 from src.catalyst.earnings import get_earnings_calendar as _get_earnings_calendar
 from src.catalyst.event_risk import get_event_risk as _get_event_risk
 
 
 def register(mcp: FastMCP) -> None:
-
-    @mcp.tool()
-    def get_symbol_news(symbol: str, count: int = 10) -> dict:
-        """Get recent news headlines for a stock or index symbol.
-
-        Returns up to *count* articles (default 10, max 50) with per-article
-        sentiment classification (POSITIVE / NEGATIVE / NEUTRAL) based on
-        keyword matching. No ML model or external API key required.
-
-        Each headline includes:
-          title        — article headline
-          publisher    — news source
-          published_at — ISO-8601 UTC timestamp
-          link         — article URL
-          sentiment    — POSITIVE / NEGATIVE / NEUTRAL
-
-        For index symbols (NIFTY, BANKNIFTY) news reflects broad market coverage.
-
-        Args:
-            symbol: NSE symbol, index alias, or exchange-prefixed (e.g. NSE:INFY,
-                    INFY, NIFTY, BANKNIFTY).
-            count:  Max articles to return (default 10).
-
-        No authentication required.
-        """
-        sym, corrected, fmt = _norm(symbol, "get_symbol_news")
-        if not symbol.strip():
-            return _meta.make_symbol_error(symbol, "get_symbol_news")
-        _norm_kw: dict = dict(
-            symbol_corrected=corrected,
-            symbol_original=symbol if corrected else None,
-            symbol_normalized=sym if corrected else None,
-            symbol_format_applied=fmt if corrected else None,
-        )
-        result = _get_symbol_news(sym, count)
-        result.setdefault("meta", _meta.build_meta(
-            type_=_meta.TYPE_INTERPRETATION,
-            validation_status=_meta.VALIDATION_UNVALIDATED,
-            data_quality=_meta.DQ_INVALID if "error" in result else _meta.DQ_VALID,
-            source="yfinance/news",
-            account_type="MARKET_DATA_ONLY",
-            **_norm_kw,
-        ))
-        return result
-
-    @mcp.tool()
-    def get_news_sentiment(symbol: str) -> dict:
-        """Get aggregate news sentiment for a symbol based on recent headlines.
-
-        Internally calls get_symbol_news (cached) and aggregates per-article
-        sentiment into a single score. No additional yfinance fetch is made.
-
-        Returns:
-          sentiment            — VERY_POSITIVE / POSITIVE / NEUTRAL /
-                                 NEGATIVE / VERY_NEGATIVE
-          sentiment_score      — continuous score from -1.0 to +1.0
-          positive_count       — articles with positive keyword hits
-          negative_count       — articles with negative keyword hits
-          neutral_count        — articles with no keyword signal
-          total_articles       — total fetched
-          summary              — one-line plain-English summary
-          top_positive_headline — best positive headline (or null)
-          top_negative_headline — most negative headline (or null)
-
-        Args:
-            symbol: NSE symbol, index alias, or exchange-prefixed form.
-
-        No authentication required.
-        """
-        sym, corrected, fmt = _norm(symbol, "get_news_sentiment")
-        if not symbol.strip():
-            return _meta.make_symbol_error(symbol, "get_news_sentiment")
-        _norm_kw: dict = dict(
-            symbol_corrected=corrected,
-            symbol_original=symbol if corrected else None,
-            symbol_normalized=sym if corrected else None,
-            symbol_format_applied=fmt if corrected else None,
-        )
-        news = _get_symbol_news(sym)
-        sentiment = _aggregate_sentiment(news.get("headlines", []))
-        result = {
-            "symbol": symbol.upper().strip().split(":")[-1],
-            **sentiment,
-        }
-        result.setdefault("meta", _meta.build_meta(
-            type_=_meta.TYPE_INTERPRETATION,
-            validation_status=_meta.VALIDATION_UNVALIDATED,
-            data_quality=_meta.DQ_INVALID if "error" in result else _meta.DQ_VALID,
-            source="yfinance/news",
-            account_type="MARKET_DATA_ONLY",
-            **_norm_kw,
-        ))
-        return result
 
     @mcp.tool()
     def get_earnings_calendar(symbol: str) -> dict:

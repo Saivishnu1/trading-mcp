@@ -86,7 +86,9 @@ def register(mcp: FastMCP) -> None:
         period: int = 14,
         lookback_days: int = 60,
     ) -> dict:
-        """Calculate the Relative Strength Index (RSI) for a symbol.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Calculate the Relative Strength Index (RSI) for a symbol.
 
         RSI > 70 is conventionally overbought; RSI < 30 oversold.
         Data: daily candles via Yahoo Finance. No authentication required.
@@ -139,7 +141,9 @@ def register(mcp: FastMCP) -> None:
         period: int = 20,
         lookback_days: int = 60,
     ) -> dict:
-        """Calculate the Exponential Moving Average (EMA) for a symbol.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Calculate the Exponential Moving Average (EMA) for a symbol.
 
         Compares the latest close to the EMA to indicate trend direction.
         Data: daily candles via Yahoo Finance. No authentication required.
@@ -182,7 +186,9 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def calculate_macd(symbol: str, lookback_days: int = 120) -> dict:
-        """Calculate MACD (12/26/9) for a symbol.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Calculate MACD (12/26/9) for a symbol.
 
         Returns macd line, signal line and histogram. A positive histogram
         (macd above signal) is bullish momentum; negative is bearish.
@@ -231,7 +237,9 @@ def register(mcp: FastMCP) -> None:
         period: int = 14,
         lookback_days: int = 150,
     ) -> dict:
-        """Calculate the Average Directional Index (ADX) for a symbol.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Calculate the Average Directional Index (ADX) for a symbol.
 
         ADX > 25 indicates a trending market; < 20 indicates range/chop.
         +DI above -DI is bullish directional pressure, and vice versa.
@@ -325,7 +333,9 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def analyze_technicals(symbol: str, lookback_days: int = 150) -> dict:
-        """Compute a bundle of technical indicators for a symbol in one call.
+        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
+
+        Compute a bundle of technical indicators for a symbol in one call.
 
         Returns RSI(14), EMA(20), EMA(50), MACD(12/26/9), ADX(14) and ATR(14)
         with each indicator's individual read. Data: daily candles via Yahoo

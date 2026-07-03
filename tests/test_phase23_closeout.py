@@ -143,14 +143,6 @@ class TestIntelligenceSymbolNormalization:
             _, _, fmt = normalize_symbol_extended("INFY", tool)
             assert fmt == "PASSTHROUGH", f"{tool} expected PASSTHROUGH, got {fmt}"
 
-    def test_catalyst_tools_passthrough_documented(self):
-        """Catalyst tools intentionally use PASSTHROUGH — service layer handles resolution."""
-        from src.market.symbols import normalize_symbol_extended
-        for tool in ("get_symbol_news", "get_news_sentiment",
-                     "get_earnings_calendar", "get_event_risk"):
-            _, _, fmt = normalize_symbol_extended("INFY", tool)
-            assert fmt == "PASSTHROUGH", f"{tool} expected PASSTHROUGH, got {fmt}"
-
     def test_intelligence_risk_passthrough_documented(self):
         """get_market_risk_score uses PASSTHROUGH — PCR requires bare NSE names."""
         from src.market.symbols import normalize_symbol_extended

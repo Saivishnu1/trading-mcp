@@ -38,12 +38,6 @@ def _market_mcp():
     return {t.name: t for t in mcp._tool_manager.list_tools()}
 
 
-def _analysis_mcp():
-    from src.tools import analysis
-    mcp = _FastMCP("test")
-    analysis.register(mcp)
-    return {t.name: t for t in mcp._tool_manager.list_tools()}
-
 
 # ---------------------------------------------------------------------------
 # Pre-condition 1 — TOOL_TIME_GATED error contract
@@ -110,37 +104,6 @@ class TestToolTimeGatedContract:
         from src.tools.meta_tools import _TIME_GATED
         for name in ("calculate_rsi", "calculate_ema", "calculate_macd", "analyze_technicals"):
             assert name in _TIME_GATED, f"{name} missing from _TIME_GATED"
-
-
-# ---------------------------------------------------------------------------
-# Pre-condition 2 — generate_trade_setup meta propagation
-# ---------------------------------------------------------------------------
-
-class TestGenerateTradeSetupMetaPropagation:
-    """_norm_kw must appear in meta even when generate_trade_setup hits an early-return path."""
-
-    def _get_fn(self):
-        return _analysis_mcp()["generate_trade_setup"].fn
-
-    def test_error_path_carries_norm_kw(self):
-        """When regime service returns an error, meta still carries symbol_corrected."""
-        fn = self._get_fn()
-        with patch("src.analysis.regime.generate_trade_setup", return_value={"error": "service down"}):
-            result = fn("NSE:INFY")
-        meta = result.get("meta", {})
-        assert meta.get("symbol_corrected") is True
-        assert meta.get("symbol_original") == "NSE:INFY"
-
-    def test_ms_error_path_carries_norm_kw(self):
-        """When detect_market_regime returns an error, meta still carries symbol info."""
-        fn = self._get_fn()
-        with (
-            patch("src.analysis.regime.generate_trade_setup", return_value={"entry": 100, "stoploss": 90, "target": 120}),
-            patch("src.analysis.regime.detect_market_regime", return_value={"error": "regime fail"}),
-        ):
-            result = fn("NSE:INFY")
-        meta = result.get("meta", {})
-        assert meta.get("symbol_corrected") is True
 
 
 # ---------------------------------------------------------------------------

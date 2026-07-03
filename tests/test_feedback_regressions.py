@@ -16,29 +16,6 @@ def _full_curve(trade_count=_MIN_CALIBRATION_SAMPLE):
     ]
 
 
-def _base_plan(raw=70.0, calibrated=70.0, applied=False):
-    return {
-        "signal": "BUY", "trade_allowed": True, "confidence": int(raw),
-        "raw_confidence": raw, "calibrated_confidence": calibrated,
-        "confidence_adjustment": round(calibrated - raw, 1),
-        "calibration_applied": applied,
-        "entry": 1000.0, "stoploss": 950.0, "target": 1100.0,
-        "trade_quality": "GOOD", "data_basis": None,
-        "position": {"position_size": 10, "capital": 100000, "risk_percent": 1.0, "risk_amount": 1000},
-        "risk_reward": {"rr": 2.0, "risk": 50.0, "reward": 100.0},
-        "strategy": {"recommended": "Bull Call Spread", "secondary": None, "reason": ""},
-        "market_context": {"regime": "BULL_TREND"},
-        "risk_score": None,
-    }
-
-
-def _mock_recommend_deps(monkeypatch, plan):
-    import src.recommendations.engine as eng
-    monkeypatch.setattr(eng, "_create_trade_plan", lambda *a, **kw: plan)
-    monkeypatch.setattr(eng, "_get_open_trades", lambda *a, **kw: {"trades": []})
-    monkeypatch.setattr(eng, "_get_event_risk", lambda s: {"event_risk_score": 20, "event_risk_rating": "LOW", "confidence": 0.9})
-    monkeypatch.setattr(eng, "_get_india_vix", lambda: {"vix": 13.0, "caution_level": "LOW"})
-
 
 class TestFB1NoCalibrationHistoryRecommendationUnchanged:
     """FB-1: No calibration history → calibration_applied=False, no size change."""
@@ -48,13 +25,6 @@ class TestFB1NoCalibrationHistoryRecommendationUnchanged:
         assert r["calibration_applied"] is False
         assert r["calibrated_confidence"] == 75.0
         assert r["confidence_adjustment"] == 0
-
-    def test_recommend_trade_size_unchanged_without_calibration(self, monkeypatch):
-        from src.recommendations.engine import recommend_trade
-        _mock_recommend_deps(monkeypatch, _base_plan(raw=70.0, calibrated=70.0, applied=False))
-        r = recommend_trade("INFY")
-        assert r["position_size"] == 10
-        assert r["calibration_applied"] is False
 
 
 class TestFB2LowSampleBucketNoCalibration:
@@ -136,13 +106,6 @@ class TestFB6ExistingSchemaUnchanged:
         "market_context", "risk_score", "data_basis", "summary",
     }
 
-    def test_recommend_trade_has_all_original_keys(self, monkeypatch):
-        from src.recommendations.engine import recommend_trade
-        _mock_recommend_deps(monkeypatch, _base_plan())
-        r = recommend_trade("INFY")
-        for key in self.REQUIRED_RECOMMEND_KEYS:
-            assert key in r, f"missing key: {key}"
-
     def test_create_trade_plan_has_all_original_keys(self, monkeypatch):
         from src.planner import trade_plan as tp
         snap = {
@@ -164,31 +127,3 @@ class TestFB6ExistingSchemaUnchanged:
         for key in self.REQUIRED_PLAN_KEYS:
             assert key in plan, f"missing key: {key}"
 
-    def test_recommend_trade_new_keys_additive(self, monkeypatch):
-        from src.recommendations.engine import recommend_trade
-        _mock_recommend_deps(monkeypatch, _base_plan())
-        r = recommend_trade("INFY")
-        # New Phase 18 keys
-        for key in ("raw_confidence", "calibrated_confidence", "confidence_adjustment", "calibration_applied"):
-            assert key in r, f"Phase 18 key missing: {key}"
-
-
-class TestFB7PositionSizeReductionAppliedOnce:
-    """FB-7: Calibration size factor appears once; not compounded from both callers."""
-
-    def test_calibration_factor_applied_once(self, monkeypatch):
-        # calibrated=40 → factor=0.50; base=10 → final=5
-        plan = _base_plan(raw=80.0, calibrated=40.0, applied=True)
-        _mock_recommend_deps(monkeypatch, plan)
-        from src.recommendations.engine import recommend_trade
-        r = recommend_trade("INFY")
-        # 10 * 0.50 = 5; if applied twice it would be 10 * 0.50 * 0.50 = 2 or 3
-        assert r["position_size"] == 5
-
-    def test_calibration_note_appears_once_in_risk_adjustments(self, monkeypatch):
-        plan = _base_plan(raw=80.0, calibrated=50.0, applied=True)
-        _mock_recommend_deps(monkeypatch, plan)
-        from src.recommendations.engine import recommend_trade
-        r = recommend_trade("INFY")
-        cal_notes = [a for a in r.get("risk_adjustments", []) if "calibrated" in a.lower()]
-        assert len(cal_notes) == 1

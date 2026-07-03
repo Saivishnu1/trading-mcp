@@ -10,7 +10,6 @@ import pytest
 from src.options.service import OptionsService
 from src.analysis.regime import (
     generate_trade_setup,
-    recommend_strategy,
 )
 from src.planner.trade_plan import _trade_quality, create_trade_plan
 
@@ -28,22 +27,6 @@ def _tech(rsi=65.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0,
                  "histogram": round(macd_val - macd_sig, 4)},
         "adx_14": {"adx": adx, "plus_di": 28.0, "minus_di": 12.0},
         "atr_14": atr,
-    }
-
-
-def _mock_regime(regime, rsi=50.0, adx=15.0):
-    return {
-        "symbol": "NIFTY", "regime": regime, "rsi": rsi, "adx": adx,
-        "confidence": 65, "price": 100.0, "ema20": 100.0, "ema50": 98.0, "atr": 2.0,
-    }
-
-
-def _mock_setup(signal, confidence=70):
-    return {
-        "symbol": "NIFTY", "signal": signal, "confidence": confidence,
-        "entry": 101.0, "stoploss": 98.0, "target": 106.0,
-        "entry_above": 101.0, "entry_below": 99.5,
-        "bull_target": 106.0, "bear_target": 95.0, "reasoning": [],
     }
 
 
@@ -101,76 +84,6 @@ class TestReg1SymbolNormalization:
         assert calls == ["RELIANCE"], (
             f"Expected bare 'RELIANCE', got {calls}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Regression 2 — Phase 4.1: BUY + RANGE_BOUND must give Bull Call Spread
-# ---------------------------------------------------------------------------
-
-class TestReg2BuyRangeBoundConflict:
-    """
-    Bug: recommend_strategy() used regime alone, ignoring signal.
-    When regime=RANGE_BOUND and signal=BUY, it returned Iron Condor.
-    Fix: signal-first priority (Signal > Regime > RSI > ADX).
-    """
-
-    def test_buy_range_bound_returns_bull_call_spread(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime("RANGE_BOUND", rsi=65.0, adx=15.0))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup("BUY"))
-        r = recommend_strategy("NIFTY")
-        assert r["recommended"] == "Bull Call Spread", (
-            f"Expected 'Bull Call Spread', got '{r['recommended']}'"
-        )
-
-    def test_buy_range_bound_not_iron_condor_as_primary(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime("RANGE_BOUND", rsi=65.0, adx=15.0))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup("BUY"))
-        r = recommend_strategy("NIFTY")
-        assert r["recommended"] != "Iron Condor"
-
-    def test_iron_condor_demoted_to_secondary(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime("RANGE_BOUND", rsi=65.0, adx=15.0))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup("BUY"))
-        r = recommend_strategy("NIFTY")
-        assert r.get("secondary") == "Iron Condor"
-
-
-# ---------------------------------------------------------------------------
-# Regression 3 — Phase 4.1: SELL + RANGE_BOUND must give Bear Put Spread
-# ---------------------------------------------------------------------------
-
-class TestReg3SellRangeBoundConflict:
-    """Same class of bug as Regression 2, but for the bearish direction."""
-
-    def test_sell_range_bound_returns_bear_put_spread(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime("RANGE_BOUND", rsi=35.0, adx=15.0))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup("SELL"))
-        r = recommend_strategy("NIFTY")
-        assert r["recommended"] == "Bear Put Spread"
-
-    def test_sell_range_bound_not_iron_condor_as_primary(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime("RANGE_BOUND", rsi=35.0, adx=15.0))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup("SELL"))
-        r = recommend_strategy("NIFTY")
-        assert r["recommended"] != "Iron Condor"
-
-    def test_iron_condor_demoted_to_secondary(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime("RANGE_BOUND", rsi=35.0, adx=15.0))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup("SELL"))
-        r = recommend_strategy("NIFTY")
-        assert r.get("secondary") == "Iron Condor"
 
 
 # ---------------------------------------------------------------------------

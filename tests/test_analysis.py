@@ -2,9 +2,7 @@
 Unit tests for src/analysis/regime.py.
 
 calculate_risk_reward and calculate_position_size are pure math — no mocking.
-detect_market_regime and generate_trade_setup mock _analyze_technicals.
-recommend_strategy mocks detect_market_regime + generate_trade_setup directly
-to test every strategy-selection branch in isolation.
+detect_market_regime mocks _analyze_technicals.
 """
 import pytest
 
@@ -13,8 +11,6 @@ from src.analysis.regime import (
     calculate_position_size,
     calculate_risk_reward,
     detect_market_regime,
-    generate_trade_setup,
-    recommend_strategy,
 )
 
 # ---------------------------------------------------------------------------
@@ -52,17 +48,6 @@ NR    = _tech("NIFTY", rsi=50.0, ema20=102.0, ema50=100.0, adx=22.0, price=99.0,
 # Perfectly balanced → NEUTRAL signal
 NEUT  = _tech("NIFTY", rsi=50.0, ema20=100.0, ema50=100.0, adx=15.0, price=100.0,
               macd_val=0.1, macd_sig=0.1)
-# RANGE_BOUND regime + BUY signal (historical conflict bug)
-RNG_BUY  = _tech("NIFTY", rsi=65.0, ema20=100.0, ema50=99.0, adx=15.0, price=101.0)
-# RANGE_BOUND + moderate bearish (3/4 conditions) → NEUTRAL_BEARISH, not SELL
-# bearish=50 (rsi<45+price<ema20+price<ema50), bullish=0, bearish<60 → NEUTRAL_BEARISH
-RNG_SELL = _tech("NIFTY", rsi=35.0, ema20=102.0, ema50=100.0, adx=15.0, price=99.0,
-                 macd_val=-0.1, macd_sig=-0.3)
-# RSI overbought (>70): all else bullish — tests Fix 4 overbought tier
-OVERBOUGHT = _tech("NIFTY", rsi=74.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
-# RSI oversold (<30): all else bearish — tests Fix 4 oversold tier
-OVERSOLD_BEAR = _tech("NIFTY", rsi=25.0, ema20=90.0, ema50=100.0, adx=28.0, price=89.0,
-                      macd_val=-0.5, macd_sig=-0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -242,216 +227,6 @@ class TestDetectMarketRegime:
 
 
 # ---------------------------------------------------------------------------
-# generate_trade_setup — mocks _analyze_technicals
-# ---------------------------------------------------------------------------
-
-class TestGenerateTradeSetup:
-
-    def _setup(self, monkeypatch, tech):
-        monkeypatch.setattr("src.analysis.regime._analyze_technicals",
-                            lambda s, lookback_days=150: tech)
-        return generate_trade_setup("NIFTY")
-
-    def test_bull_signal(self, monkeypatch):
-        r = self._setup(monkeypatch, BULL)
-        assert r["signal"] == "BUY"
-
-    def test_bear_signal(self, monkeypatch):
-        r = self._setup(monkeypatch, BEAR)
-        assert r["signal"] == "SELL"
-
-    def test_neutral_signal(self, monkeypatch):
-        r = self._setup(monkeypatch, NEUT)
-        assert r["signal"] == "NEUTRAL"
-
-    def test_neutral_bullish_signal(self, monkeypatch):
-        r = self._setup(monkeypatch, RANGE)
-        # RANGE: price>ema20(+15)+price>ema50(+15)+macd>sig(+20)=50 → NEUTRAL_BULLISH
-        assert r["signal"] == "NEUTRAL_BULLISH"
-
-    def test_neutral_bearish_signal(self, monkeypatch):
-        r = self._setup(monkeypatch, RNG_SELL)
-        assert r["signal"] == "NEUTRAL_BEARISH"
-
-    def test_legacy_schema_always_present(self, monkeypatch):
-        """Regression: entry/stoploss/target must be present in all signal paths."""
-        for tech in (BULL, BEAR, RANGE, NEUT):
-            r = self._setup(monkeypatch, tech)
-            assert "entry" in r, f"missing 'entry' for signal {r.get('signal')}"
-            assert "stoploss" in r
-            assert "target" in r
-
-    def test_zone_schema_always_present(self, monkeypatch):
-        """Regression: zone fields must be present alongside legacy fields."""
-        for tech in (BULL, BEAR, RANGE, NEUT):
-            r = self._setup(monkeypatch, tech)
-            for field in ("entry_above", "entry_below", "bull_target", "bear_target"):
-                assert field in r, f"missing '{field}' for signal {r.get('signal')}"
-
-    def test_reasoning_is_list(self, monkeypatch):
-        r = self._setup(monkeypatch, BULL)
-        assert isinstance(r["reasoning"], list)
-        assert len(r["reasoning"]) > 0
-
-    def test_confidence_between_0_and_85(self, monkeypatch):
-        for tech in (BULL, BEAR, RANGE, NEUT):
-            r = self._setup(monkeypatch, tech)
-            assert 0 <= r["confidence"] <= 85
-
-    def test_buy_entry_above_spot(self, monkeypatch):
-        r = self._setup(monkeypatch, BULL)
-        assert r["signal"] == "BUY"
-        assert r["entry"] == pytest.approx(r["entry_above"], rel=1e-4)
-
-    def test_sell_entry_below_spot(self, monkeypatch):
-        r = self._setup(monkeypatch, BEAR)
-        assert r["signal"] == "SELL"
-        assert r["entry"] == pytest.approx(r["entry_below"], rel=1e-4)
-
-    def test_error_propagation(self, monkeypatch):
-        monkeypatch.setattr("src.analysis.regime._analyze_technicals",
-                            lambda s, lookback_days=150: {"error": "no data"})
-        r = generate_trade_setup("NIFTY")
-        assert "error" in r
-
-    def test_rsi_overbought_adds_bearish_not_bullish(self, monkeypatch):
-        r = self._setup(monkeypatch, OVERBOUGHT)
-        reasoning_text = " ".join(r.get("reasoning", []))
-        assert "overbought" in reasoning_text.lower(), (
-            "RSI > 70 must include overbought warning in reasoning"
-        )
-        assert r["confidence"] <= 85
-        assert r["signal"] == "BUY", (
-            "Other bullish indicators must dominate RSI overbought penalty: "
-            f"signal was {r['signal']}"
-        )
-
-    def test_rsi_near_70_adds_boundary_caution(self, monkeypatch):
-        import src.analysis.regime as regime
-        near = _tech("NIFTY", rsi=71.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
-        monkeypatch.setattr(regime, "_analyze_technicals",
-                            lambda s, lookback_days=150: near)
-        r = generate_trade_setup("NIFTY")
-        assert any("boundary" in line.lower() for line in r["reasoning"])
-
-    def test_rsi_mid_range_no_boundary_caution(self, monkeypatch):
-        import src.analysis.regime as regime
-        mid = _tech("NIFTY", rsi=60.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0)
-        monkeypatch.setattr(regime, "_analyze_technicals",
-                            lambda s, lookback_days=150: mid)
-        r = generate_trade_setup("NIFTY")
-        assert not any("boundary" in line.lower() for line in r["reasoning"])
-
-    def test_rsi_oversold_adds_bullish_not_bearish(self, monkeypatch):
-        r = self._setup(monkeypatch, OVERSOLD_BEAR)
-        reasoning_text = " ".join(r.get("reasoning", []))
-        assert "oversold" in reasoning_text.lower(), (
-            "RSI < 30 must include oversold note in reasoning"
-        )
-        assert r["confidence"] <= 85
-        assert r["signal"] == "SELL", (
-            "Other bearish indicators must dominate RSI oversold bounce: "
-            f"signal was {r['signal']}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# recommend_strategy — mocks detect_market_regime + generate_trade_setup
-# ---------------------------------------------------------------------------
-
-def _mock_regime(regime, rsi, adx):
-    return {
-        "symbol": "NIFTY", "regime": regime, "rsi": rsi, "adx": adx,
-        "confidence": 70, "price": 100.0, "ema20": 100.0, "ema50": 98.0, "atr": 2.0,
-    }
-
-
-def _mock_setup(signal, confidence=70):
-    return {
-        "symbol": "NIFTY", "signal": signal, "confidence": confidence,
-        "entry": 101.0, "stoploss": 98.0, "target": 106.0,
-        "entry_above": 101.0, "entry_below": 99.5,
-        "bull_target": 106.0, "bear_target": 95.0, "reasoning": [],
-    }
-
-
-class TestRecommendStrategy:
-
-    def _apply(self, monkeypatch, regime_name, rsi, adx, signal):
-        monkeypatch.setattr("src.analysis.regime.detect_market_regime",
-                            lambda s: _mock_regime(regime_name, rsi, adx))
-        monkeypatch.setattr("src.analysis.regime.generate_trade_setup",
-                            lambda s: _mock_setup(signal))
-        return recommend_strategy("NIFTY")
-
-    def test_bull_trend_high_rsi_long_call(self, monkeypatch):
-        r = self._apply(monkeypatch, "BULL_TREND", rsi=65.0, adx=30.0, signal="BUY")
-        assert r["recommended"] == "Long Call"
-
-    def test_bull_trend_low_rsi_bull_spread(self, monkeypatch):
-        r = self._apply(monkeypatch, "BULL_TREND", rsi=55.0, adx=30.0, signal="BUY")
-        assert r["recommended"] == "Bull Call Spread"
-
-    def test_bear_trend_low_rsi_long_put(self, monkeypatch):
-        r = self._apply(monkeypatch, "BEAR_TREND", rsi=35.0, adx=28.0, signal="SELL")
-        assert r["recommended"] == "Long Put"
-
-    def test_bear_trend_high_rsi_bear_spread(self, monkeypatch):
-        r = self._apply(monkeypatch, "BEAR_TREND", rsi=50.0, adx=28.0, signal="SELL")
-        assert r["recommended"] == "Bear Put Spread"
-
-    def test_range_bound_neutral_iron_condor(self, monkeypatch):
-        r = self._apply(monkeypatch, "RANGE_BOUND", rsi=50.0, adx=15.0, signal="NEUTRAL")
-        assert r["recommended"] == "Iron Condor"
-
-    def test_neutral_bullish_signal_bull_spread(self, monkeypatch):
-        r = self._apply(monkeypatch, "RANGE_BOUND", rsi=50.0, adx=15.0,
-                        signal="NEUTRAL_BULLISH")
-        assert r["recommended"] == "Bull Call Spread"
-
-    def test_neutral_bearish_signal_bear_spread(self, monkeypatch):
-        r = self._apply(monkeypatch, "RANGE_BOUND", rsi=50.0, adx=15.0,
-                        signal="NEUTRAL_BEARISH")
-        assert r["recommended"] == "Bear Put Spread"
-
-    def test_breakout_high_adx_long_straddle(self, monkeypatch):
-        r = self._apply(monkeypatch, "BREAKOUT_POTENTIAL", rsi=60.0, adx=23.0,
-                        signal="NEUTRAL")
-        assert r["recommended"] == "Long Straddle"
-
-    def test_breakout_low_adx_long_strangle(self, monkeypatch):
-        r = self._apply(monkeypatch, "BREAKOUT_POTENTIAL", rsi=60.0, adx=22.0,
-                        signal="NEUTRAL")
-        assert r["recommended"] == "Long Strangle"
-
-    def test_returns_strategy_key_for_compat(self, monkeypatch):
-        """Dashboard reads strat_result.get('strategy') — both keys must exist."""
-        r = self._apply(monkeypatch, "BULL_TREND", rsi=65.0, adx=30.0, signal="BUY")
-        assert "strategy" in r
-        assert "recommended" in r
-        assert r["strategy"] == r["recommended"]
-
-    def test_returns_signal_and_regime(self, monkeypatch):
-        r = self._apply(monkeypatch, "BULL_TREND", rsi=65.0, adx=30.0, signal="BUY")
-        assert r["signal"] == "BUY"
-        assert r["regime"] == "BULL_TREND"
-
-    # --- Phase 4.1 conflict-resolution regression ---
-
-    def test_buy_range_bound_gives_bull_spread_not_iron_condor(self, monkeypatch):
-        r = self._apply(monkeypatch, "RANGE_BOUND", rsi=65.0, adx=15.0, signal="BUY")
-        assert r["recommended"] == "Bull Call Spread"
-        assert r["recommended"] != "Iron Condor"
-        assert r.get("secondary") == "Iron Condor"  # Iron Condor demoted to secondary
-
-    def test_sell_range_bound_gives_bear_spread_not_iron_condor(self, monkeypatch):
-        r = self._apply(monkeypatch, "RANGE_BOUND", rsi=35.0, adx=15.0, signal="SELL")
-        assert r["recommended"] == "Bear Put Spread"
-        assert r["recommended"] != "Iron Condor"
-        assert r.get("secondary") == "Iron Condor"
-
-
-# ---------------------------------------------------------------------------
 # TestConfidenceScale — B1 (Phase 14.6): one 0–85 scale, rescaled not clamped
 # ---------------------------------------------------------------------------
 
@@ -471,55 +246,6 @@ class TestConfidenceScale:
         r = detect_market_regime("NIFTY")
         assert 0 <= r["confidence"] <= 85
 
-    def test_setup_confidence_within_band(self, monkeypatch):
-        import src.analysis.regime as regime
-        monkeypatch.setattr(regime, "_analyze_technicals",
-                            lambda s, lookback_days=150: BULL)
-        r = generate_trade_setup("NIFTY")
-        assert 0 <= r["confidence"] <= 85
-
-    def test_regime_and_setup_share_ceiling(self, monkeypatch):
-        import src.analysis.regime as regime
-        strong = _tech("NIFTY", rsi=68.0, ema20=100.0, ema50=90.0, adx=40.0, price=101.0)
-        monkeypatch.setattr(regime, "_analyze_technicals",
-                            lambda s, lookback_days=150: strong)
-        assert detect_market_regime("NIFTY")["confidence"] <= 85
-        assert generate_trade_setup("NIFTY")["confidence"] <= 85
-
-
-# ---------------------------------------------------------------------------
-# TestDataBasis — B4 (Phase 14.6): provenance surfaced from real candles
-# ---------------------------------------------------------------------------
-
-class TestDataBasis:
-    def _candles(self, n=160, last_date="2026-06-15"):
-        # Rising series so all indicators are valid; last candle dated for staleness.
-        candles = [
-            {"date": f"2026-01-{(i % 28) + 1:02d}T00:00:00",
-             "open": 100.0 + i, "high": 102.0 + i, "low": 99.0 + i,
-             "close": 100.5 + i, "volume": 1000}
-            for i in range(n)
-        ]
-        candles[-1]["date"] = f"{last_date}T00:00:00"
-        return candles
-
-    def test_setup_includes_data_basis(self, monkeypatch):
-        import src.analysis.regime as regime
-        monkeypatch.setattr(regime, "_load_candles", lambda s, l, interval="1d": self._candles())
-        r = generate_trade_setup("NIFTY")
-        assert "data_basis" in r
-        assert r["data_basis"]["source"] == "yfinance_eod_adjusted"
-        assert r["data_basis"]["last_candle_date"].startswith("2026-06-15")
-        assert isinstance(r["data_basis"]["staleness_days"], int)
-
-    def test_staleness_helper(self):
-        from src.analysis.regime import _staleness_days
-        from datetime import date, timedelta
-        five_ago = (date.today() - timedelta(days=5)).isoformat()
-        assert _staleness_days(five_ago) == 5
-        assert _staleness_days(None) is None
-        assert _staleness_days("not-a-date") is None
-
 
 # ---------------------------------------------------------------------------
 # TestAnalysisCache — C1 (Phase 14.6): one fetch per (symbol, lookback) flow
@@ -533,23 +259,6 @@ class TestAnalysisCache:
              "close": 100.5 + i, "volume": 1000}
             for i in range(n)
         ]
-
-    def test_repeated_calls_fetch_once(self, monkeypatch):
-        import src.analysis.regime as regime
-        calls = {"n": 0}
-
-        def _counting_loader(symbol, lookback, interval="1d"):
-            calls["n"] += 1
-            return self._candles()
-
-        monkeypatch.setattr(regime, "_load_candles", _counting_loader)
-        regime.clear_analysis_cache()
-
-        # A single setup triggers setup + regime (+ strategy via recommend paths);
-        # all share one cached fetch for the same (symbol, lookback).
-        regime.generate_trade_setup("NIFTY")
-        regime.detect_market_regime("NIFTY")
-        assert calls["n"] == 1, "repeated analysis must reuse one cached fetch"
 
     def test_clear_cache_forces_refetch(self, monkeypatch):
         import src.analysis.regime as regime

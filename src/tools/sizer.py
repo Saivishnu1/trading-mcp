@@ -1,46 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 
 from src.sizer.engine import (
-    size_equity_trade as _size_equity_trade,
     size_options_trade as _size_options_trade,
     size_from_recommendation as _size_from_recommendation,
 )
 
 
 def register(mcp: FastMCP) -> None:
-
-    @mcp.tool()
-    def size_equity_trade(
-        symbol: str,
-        direction: str,
-        entry: float,
-        stoploss: float,
-        capital: float = 100_000,
-        risk_percent: float = 1.0,
-        target: float = None,
-    ) -> dict:
-        """Calculate position size for an equity trade using fixed-risk sizing.
-
-        Computes quantity, capital_required, and max_loss from your stoploss
-        distance and risk budget. Adjusts size downward when portfolio heat is
-        ELEVATED (≥7%) or CRITICAL (≥9%), and when the broker portfolio risk
-        score is HIGH or EXTREME.
-
-        Returns log_trade_params ready to pass directly to log_trade().
-
-        direction: LONG or SHORT
-        risk_percent: percentage of capital to risk (default 1.0 = 1%)
-        target: optional — included in log_trade_params and used to compute risk_reward
-        """
-        return _size_equity_trade(
-            symbol=symbol,
-            direction=direction,
-            entry=entry,
-            stoploss=stoploss,
-            capital=capital,
-            risk_percent=risk_percent,
-            target=target,
-        )
 
     @mcp.tool()
     def size_options_trade(

@@ -1,37 +1,12 @@
 from mcp.server.fastmcp import FastMCP
 
 from src.recommendations.engine import (
-    recommend_trade as _recommend_trade,
     review_open_trades as _review_open_trades,
     get_daily_brief as _get_daily_brief,
 )
 
 
 def register(mcp: FastMCP) -> None:
-
-    @mcp.tool()
-    def recommend_trade(
-        symbol: str,
-        capital: float = 100_000,
-        risk_percent: float = 1.0,
-    ) -> dict:
-        """Get a portfolio-aware trade recommendation for a symbol.
-
-        Combines full market analysis (create_trade_plan) with:
-          - Existing journal exposure check (warns if you already hold same direction)
-          - Event risk intelligence (blocks trade when earnings/catalyst risk ≥ 80)
-          - VIX context (blocks when EXTREME; cautions when HIGH)
-          - Position size adjustments for HIGH event risk and duplicate exposure
-
-        recommendation:
-          ENTER — conditions are favourable, trade is actionable
-          WAIT  — conditions are ok but cautions present (size adjusted)
-          AVOID — trade not recommended (NEUTRAL signal, extreme risk, or poor RR)
-
-        Also returns: direction, entry/stoploss/target, position_size, strategy,
-        event_risk_score, vix_caution, duplicate_exposure, cautions, risk_adjustments.
-        """
-        return _recommend_trade(symbol=symbol, capital=capital, risk_percent=risk_percent)
 
     @mcp.tool()
     def review_open_trades() -> dict:

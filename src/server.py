@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker, current_user
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, calibration, recommendation_log, meta_tools
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, recommendation_log, meta_tools
 import src.session_store as session_store
 import src.api_key_store as api_key_store
 
@@ -134,8 +134,6 @@ mcp = FastMCP(
         "  Symbols: 'NIFTY','BANKNIFTY','NSE:INFY', or raw yfinance tickers.\n\n"
         "ANALYSIS tools (deterministic trade analysis, no auth needed):\n"
         "  detect_market_regime('NIFTY')             — bull/bear/range/breakout regime\n"
-        "  generate_trade_setup('NIFTY')             — BUY/SELL/NEUTRAL setup\n"
-        "  recommend_strategy('NIFTY')               — options strategy suggestion\n"
         "  calculate_risk_reward(100, 95, 110)       — risk/reward ratio\n"
         "  calculate_position_size(100000, 1, 100, 95) — sizing by capital risk\n\n"
         "DASHBOARD tools (single-call daily briefing, no auth needed):\n"
@@ -159,25 +157,16 @@ mcp = FastMCP(
         "  get_portfolio_risk_report()       — per-position risk scores + portfolio risk + recommendations\n"
         "  get_portfolio_regime_analysis()   — regime distribution + directional bias across holdings\n"
         "  get_portfolio_exposure_breakdown() — long/short exposure, concentration, diversification\n\n"
-        "CATALYST INTELLIGENCE tools (news, earnings, event risk, no auth needed):\n"
-        "  get_symbol_news('INFY', count=10) — recent headlines + per-article sentiment\n"
-        "  get_news_sentiment('INFY')        — aggregate sentiment score and counts\n"
+        "CATALYST INTELLIGENCE tools (earnings, event risk, no auth needed):\n"
         "  get_earnings_calendar('INFY')     — next earnings date, EPS estimate, dividends, splits\n"
         "  get_event_risk('INFY')            — composite 0-100 event risk: earnings + news + market\n\n"
         "POSITION SIZING tools (portfolio-aware, no auth needed):\n"
-        "  size_equity_trade('INFY', 'LONG', entry=1540, stoploss=1490, capital=100000)\n"
-        "    — quantity, capital_required, max_loss; adjusts for portfolio heat\n"
-        "    — returns log_trade_params with risk_amount, capital_at_risk, portfolio_heat_at_entry\n"
         "  size_options_trade('NIFTY', 'LONG', premium=120, stoploss_premium=60, lot_size=50)\n"
         "    — lots, quantity, capital_required; warns when single-position risk > 5%\n"
         "  size_from_recommendation('INFY', capital=100000, risk_percent=1)\n"
         "    — calls recommend_trade() then adds full absolute sizing + log_trade_params\n"
         "    — returns null sizing fields when recommendation is AVOID\n\n"
         "TRADE RECOMMENDATIONS tools (portfolio-aware, no auth needed):\n"
-        "  recommend_trade('INFY', capital=100000, risk_percent=1)\n"
-        "    — ENTER / WAIT / AVOID with direction, sizing, event risk, VIX context\n"
-        "    — warns on duplicate journal exposure; blocks on extreme event risk or VIX\n"
-        "    — position_size adjusted for HIGH event risk (−30%) and duplicate exposure (−50%)\n"
         "  review_open_trades()\n"
         "    — live review of all open journal positions: HOLD / REDUCE / EXIT\n"
         "    — current_price, current_pnl, stoploss_breached, target_reached per position\n"
@@ -221,7 +210,6 @@ catalyst.register(mcp)
 journal.register(mcp)
 recommendations.register(mcp)
 sizer.register(mcp)
-calibration.register(mcp)
 recommendation_log.register(mcp)
 meta_tools.register(mcp)
 

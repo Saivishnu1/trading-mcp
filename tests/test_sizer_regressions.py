@@ -67,20 +67,6 @@ def _setup_clean(monkeypatch):
 # ---------------------------------------------------------------------------
 
 class TestPS1QuantityFloor:
-    def test_equity_tiny_capital_quantity_at_least_one(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade(
-            "INFY", "LONG", 1540.0, 1490.0, capital=10, risk_percent=1.0
-        )
-        assert result["quantity"] >= 1
-
-    def test_equity_huge_distance_quantity_at_least_one(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade(
-            "INFY", "LONG", 1000.0, 1.0, capital=100_000, risk_percent=0.01
-        )
-        assert result["quantity"] >= 1
-
     def test_options_tiny_capital_lots_at_least_one(self, monkeypatch):
         _setup_clean(monkeypatch)
         result = sizer_engine.size_options_trade(
@@ -118,22 +104,6 @@ class TestPS1QuantityFloor:
 # ---------------------------------------------------------------------------
 
 class TestPS2MaxLossFormula:
-    def test_equity_long_max_loss(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        entry, sl = 1540.0, 1490.0
-        result = sizer_engine.size_equity_trade("INFY", "LONG", entry, sl)
-        qty = result["quantity"]
-        expected = round(qty * (entry - sl), 2)
-        assert result["max_loss"] == expected
-
-    def test_equity_short_max_loss(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        entry, sl = 1540.0, 1590.0
-        result = sizer_engine.size_equity_trade("INFY", "SHORT", entry, sl)
-        qty = result["quantity"]
-        expected = round(qty * (sl - entry), 2)
-        assert result["max_loss"] == expected
-
     def test_options_max_loss(self, monkeypatch):
         _setup_clean(monkeypatch)
         premium, sl_premium, lot_size = 120.0, 60.0, 50
@@ -143,20 +113,10 @@ class TestPS2MaxLossFormula:
         expected = round(lots * lot_size * (premium - sl_premium), 2)
         assert result["max_loss"] == expected
 
-    def test_risk_amount_equals_max_loss_equity(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade("INFY", "LONG", 1000.0, 950.0)
-        assert result["risk_amount"] == result["max_loss"]
-
     def test_risk_amount_equals_max_loss_options(self, monkeypatch):
         _setup_clean(monkeypatch)
         result = sizer_engine.size_options_trade("NIFTY", "LONG", 120.0, 60.0, 50)
         assert result["risk_amount"] == result["max_loss"]
-
-    def test_log_trade_params_risk_amount_equals_max_loss(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade("INFY", "LONG", 1000.0, 950.0)
-        assert result["log_trade_params"]["risk_amount"] == result["max_loss"]
 
     def test_from_recommendation_max_loss_matches_formula(self, monkeypatch):
         rec = _recommendation(entry=1540.0, stoploss=1490.0, position_size=6)
@@ -284,15 +244,6 @@ class TestPS4PortfolioHeatMissingStoploss:
         assert len(cautions) == 1
         assert "connection failed" in cautions[0]
 
-    def test_equity_trade_still_sized_when_heat_unavailable(self, monkeypatch):
-        monkeypatch.setattr(sizer_engine, "_get_open_trades",
-                            lambda: {"error": "db down"})
-        monkeypatch.setattr(sizer_engine, "_get_portfolio_risk_report",
-                            lambda: _port_low())
-        result = sizer_engine.size_equity_trade("INFY", "LONG", 1000.0, 950.0)
-        assert "error" not in result
-        assert result["quantity"] >= 1
-
 
 # ---------------------------------------------------------------------------
 # PS-5: log_trade_params validity
@@ -301,16 +252,6 @@ class TestPS4PortfolioHeatMissingStoploss:
 class TestPS5LogTradeParamsValidity:
     # These are the parameter names accepted by log_trade()
     VALID_LOG_TRADE_PARAMS = frozenset(inspect.signature(_log_trade).parameters.keys())
-
-    def test_equity_log_trade_params_keys_valid(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade("INFY", "LONG", 1000.0, 950.0,
-                                                 target=1100.0)
-        lp = result["log_trade_params"]
-        for key in lp:
-            assert key in self.VALID_LOG_TRADE_PARAMS, (
-                f"log_trade_params key '{key}' is not a valid log_trade() parameter"
-            )
 
     def test_options_log_trade_params_keys_valid(self, monkeypatch):
         _setup_clean(monkeypatch)
@@ -348,18 +289,3 @@ class TestPS5LogTradeParamsValidity:
         assert result["log_trade_params"] is None
         assert result["log_trade_params"] != {}
 
-    def test_log_trade_params_has_three_snapshot_fields(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade("INFY", "LONG", 1000.0, 950.0)
-        lp = result["log_trade_params"]
-        assert "risk_amount" in lp
-        assert "capital_at_risk" in lp
-        assert "portfolio_heat_at_entry" in lp
-
-    def test_snapshot_fields_numeric_when_trade_valid(self, monkeypatch):
-        _setup_clean(monkeypatch)
-        result = sizer_engine.size_equity_trade("INFY", "LONG", 1000.0, 950.0)
-        lp = result["log_trade_params"]
-        assert isinstance(lp["risk_amount"], (int, float))
-        assert isinstance(lp["capital_at_risk"], (int, float))
-        assert isinstance(lp["portfolio_heat_at_entry"], (int, float))

@@ -60,18 +60,6 @@ def _clear_caches():
 # ---------------------------------------------------------------------------
 
 class TestER1YfinanceRaises:
-    def test_news_raises_returns_error_dict(self, monkeypatch):
-        import src.catalyst.news as mod
-        _clear_caches()
-        monkeypatch.setattr(mod, "_get_ticker", lambda t: _raising_ticker())
-
-        from src.catalyst.news import get_symbol_news
-        result = get_symbol_news("INFY")
-
-        assert "error" in result
-        assert result["count"] == 0
-        assert result["headlines"] == []
-
     def test_earnings_raises_returns_error_dict(self, monkeypatch):
         import src.catalyst.earnings as mod
         _clear_caches()
@@ -100,14 +88,6 @@ class TestER1YfinanceRaises:
         assert "event_risk_score" in result
         assert "error" not in result
 
-    def test_no_exception_propagates_from_news(self, monkeypatch):
-        import src.catalyst.news as mod
-        _clear_caches()
-        monkeypatch.setattr(mod, "_get_ticker", lambda t: _raising_ticker())
-        from src.catalyst.news import get_symbol_news
-        # Must not raise
-        get_symbol_news("TCS")
-
     def test_no_exception_propagates_from_earnings(self, monkeypatch):
         import src.catalyst.earnings as mod
         _clear_caches()
@@ -115,56 +95,6 @@ class TestER1YfinanceRaises:
         from src.catalyst.earnings import get_earnings_calendar
         # Must not raise
         get_earnings_calendar("RELIANCE")
-
-
-# ---------------------------------------------------------------------------
-# ER-2: Empty news list → valid structured response
-# ---------------------------------------------------------------------------
-
-class TestER2EmptyNewsList:
-    def test_empty_news_returns_valid_structure(self, monkeypatch):
-        import src.catalyst.news as mod
-        _clear_caches()
-        monkeypatch.setattr(mod, "_get_ticker", lambda t: _empty_ticker())
-
-        from src.catalyst.news import get_symbol_news
-        result = get_symbol_news("INFY")
-
-        assert "error" not in result
-        assert result["count"] == 0
-        assert result["headlines"] == []
-        assert "symbol" in result
-        assert "yf_ticker" in result
-
-    def test_news_sentiment_with_empty_news_is_neutral(self, monkeypatch):
-        import src.catalyst.news as mod
-        _clear_caches()
-        monkeypatch.setattr(mod, "_get_ticker", lambda t: _empty_ticker())
-
-        from src.catalyst.news import _aggregate_sentiment, get_symbol_news
-        news = get_symbol_news("INFY")
-        agg = _aggregate_sentiment(news.get("headlines", []))
-
-        assert agg["sentiment"] == "NEUTRAL"
-        assert agg["total_articles"] == 0
-        assert agg["top_positive_headline"] is None
-        assert agg["top_negative_headline"] is None
-
-    def test_empty_news_no_crash_in_event_risk(self, monkeypatch):
-        import src.catalyst.news as nm
-        import src.catalyst.earnings as em
-        _clear_caches()
-        monkeypatch.setattr(nm, "_get_ticker", lambda t: _empty_ticker())
-        monkeypatch.setattr(em, "_get_ticker", lambda t: _empty_ticker())
-        monkeypatch.setattr(
-            "src.intelligence.risk.get_market_risk_score",
-            lambda sym: {"score": 40, "rating": "MODERATE"},
-        )
-
-        from src.catalyst.event_risk import get_event_risk
-        result = get_event_risk("INFY")
-        assert "error" not in result
-        assert 0 <= result["event_risk_score"] <= 100
 
 
 # ---------------------------------------------------------------------------

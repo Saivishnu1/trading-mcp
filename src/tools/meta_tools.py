@@ -57,10 +57,7 @@ _DATA_LAG: dict[str, str] = {
     "calculate_atr": "end_of_day",
     "analyze_technicals": "end_of_day",
     "detect_market_regime": "end_of_day",
-    "generate_trade_setup": "end_of_day",
     "get_regime_alignment": "end_of_day",
-    "get_symbol_news": "15-60 min",
-    "get_news_sentiment": "15-60 min",
     "get_earnings_calendar": "end_of_day",
     "get_event_risk": "15-60 min",
     "get_market_risk_score": "15 min",
@@ -70,7 +67,15 @@ _DATA_LAG: dict[str, str] = {
 }
 
 # Deprecated tools: still callable but emit a deprecation notice
-_KNOWN_DEPRECATED: list[str] = []
+_KNOWN_DEPRECATED: list[str] = [
+    "calculate_rsi",
+    "calculate_ema",
+    "calculate_macd",
+    "calculate_adx",
+    "analyze_technicals",
+    "get_oi_analysis",
+    "identify_support_resistance_from_oi",
+]
 
 # Broken tools: registered but known non-functional (separate from deprecated)
 _KNOWN_BROKEN: list[str] = []
