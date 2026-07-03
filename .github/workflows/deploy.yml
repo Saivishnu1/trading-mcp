@@ -41,6 +41,7 @@ jobs:
 
             uv sync
 
+            sudo systemctl daemon-reload
             sudo systemctl restart zerodha-mcp
 
             sudo systemctl is-active zerodha-mcp
