@@ -155,3 +155,26 @@ def register(mcp: FastMCP) -> None:
         result = await broker.get_greeks(tokens)
         m = _broker_meta()
         return _meta.wrap(result, m)
+
+    @mcp.tool()
+    async def get_indmoney_raw(endpoint: str = "order-book") -> dict:
+        """Returns raw INDstocks API response for field discovery and debugging.
+
+        Args:
+            endpoint: "order-book" | "holdings" | "positions" | "funds" (default "order-book")
+
+        Use this to inspect actual field names returned by the API.
+        """
+        broker = INDmoneyBroker()
+        if endpoint == "order-book":
+            result = await broker.get_raw_order_book()
+        elif endpoint == "holdings":
+            result = await broker.get_raw_holdings()
+        elif endpoint == "positions":
+            result = await broker.get_raw_positions()
+        elif endpoint == "funds":
+            result = await broker.get_raw_funds()
+        else:
+            result = {"error": f"Unknown endpoint: {endpoint}"}
+        m = _broker_meta()
+        return _meta.wrap(result, m)

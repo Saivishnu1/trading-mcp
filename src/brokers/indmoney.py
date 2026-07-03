@@ -170,6 +170,50 @@ class INDmoneyBroker(BrokerAdapter):
             logger.debug("INDmoneyBroker.get_positions error: %s", exc)
             return []
 
+    async def get_raw_order_book(self) -> dict:
+        """Return raw /order-book response for field discovery."""
+        if not self._token:
+            return {"error": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{INDSTOCKS_BASE}/order-book", headers=self._headers())
+                return {"status_code": r.status_code, "body": r.json()}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    async def get_raw_holdings(self) -> dict:
+        """Return raw /portfolio/holdings response for field discovery."""
+        if not self._token:
+            return {"error": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{INDSTOCKS_BASE}/portfolio/holdings", headers=self._headers())
+                return {"status_code": r.status_code, "body": r.json()}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    async def get_raw_funds(self) -> dict:
+        """Return raw /funds response for field discovery."""
+        if not self._token:
+            return {"error": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{INDSTOCKS_BASE}/funds", headers=self._headers())
+                return {"status_code": r.status_code, "body": r.json()}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    async def get_raw_positions(self) -> dict:
+        """Return raw /portfolio/positions response for field discovery."""
+        if not self._token:
+            return {"error": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{INDSTOCKS_BASE}/portfolio/positions", headers=self._headers())
+                return {"status_code": r.status_code, "body": r.json()}
+        except Exception as exc:
+            return {"error": str(exc)}
+
     async def get_orders(self) -> list[Order]:
         if not self._token:
             return []
@@ -185,16 +229,21 @@ class INDmoneyBroker(BrokerAdapter):
                 if not raw:
                     return []
                 items = raw if isinstance(raw, list) else raw.get("data", raw.get("orders", []))
+                # Log first item keys for field discovery
+                if items:
+                    logger.info("INDstocks order-book fields: %s", list(items[0].keys()) if isinstance(items[0], dict) else type(items[0]))
                 result = []
                 for o in items:
+                    if not isinstance(o, dict):
+                        continue
                     result.append(Order(
-                        order_id=str(o.get("order_id", o.get("orderId", ""))),
-                        symbol=o.get("trading_symbol", o.get("tradingSymbol", "")),
-                        exchange=o.get("exchange_segment", o.get("exchange", "NSE")),
-                        transaction_type=o.get("transaction_type", o.get("transactionType", "")),
-                        quantity=int(o.get("quantity", 0)),
-                        price=float(o.get("price", 0) or 0),
-                        status=o.get("status", o.get("orderStatus", "")),
+                        order_id=str(o.get("order_id") or o.get("orderId") or o.get("id") or ""),
+                        symbol=o.get("trading_symbol") or o.get("tradingSymbol") or o.get("symbol") or o.get("scrip_code") or "",
+                        exchange=o.get("exchange_segment") or o.get("exchange") or o.get("exch") or "NSE",
+                        transaction_type=o.get("transaction_type") or o.get("transactionType") or o.get("txn_type") or o.get("side") or "",
+                        quantity=int(o.get("quantity") or o.get("qty") or 0),
+                        price=float(o.get("price") or o.get("limit_price") or o.get("avg_price") or 0),
+                        status=o.get("status") or o.get("orderStatus") or o.get("order_status") or "",
                         broker="indmoney",
                     ))
                 return result
