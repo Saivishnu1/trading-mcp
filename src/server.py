@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker, current_user
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, recommendation_log, meta_tools
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, recommendation_log, meta_tools, brokers
 import src.session_store as session_store
 import src.api_key_store as api_key_store
 
@@ -187,6 +187,15 @@ mcp = FastMCP(
         "    — query history + summary: win_rate, total_pnl, avg_holding_days, best/worst trade\n\n"
         "Symbol format: 'EXCHANGE:SYMBOL' e.g. 'NSE:INFY', 'BSE:RELIANCE'.\n"
         "Indices: 'NSE:NIFTY 50', 'NSE:SENSEX', or yfinance tickers like '^NSEI'.\n\n"
+        "BROKER INTELLIGENCE tools (multi-broker unified access):\n"
+        "  get_unified_holdings([broker])   — demat holdings from zerodha, indmoney, or both\n"
+        "  get_unified_positions([broker])  — open positions from zerodha, indmoney, or both\n"
+        "  get_unified_funds([broker])      — available funds from zerodha, indmoney, or both\n"
+        "  get_unified_orders([broker])     — today's orders from zerodha, indmoney, or both\n"
+        "  get_broker_status()              — authentication status for each configured broker\n"
+        "  get_indmoney_greeks(tokens)      — option Greeks via INDmoney (coming soon)\n"
+        "  broker param: 'zerodha' | 'indmoney' | 'all' (default 'all')\n"
+        "  INDmoney requires INDSTOCKS_TOKEN env var.\n\n"
         "BROKER BACKEND (set BROKER_BACKEND env var):\n"
         "  zerodha_web (default) — direct httpx calls to kite.zerodha.com\n"
         "  jugaad               — jugaad-trader fallback\n"
@@ -212,6 +221,7 @@ recommendations.register(mcp)
 sizer.register(mcp)
 recommendation_log.register(mcp)
 meta_tools.register(mcp)
+brokers.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
