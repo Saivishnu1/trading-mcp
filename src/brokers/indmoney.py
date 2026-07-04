@@ -293,19 +293,16 @@ class INDmoneyBroker(BrokerAdapter):
                 for o in items:
                     if not isinstance(o, dict):
                         continue
-                    # traded_price when filled, else requested_price for limit orders
                     price_str = o.get("traded_price") or o.get("requested_price") or o.get("sl_trigger_price") or ""
                     try:
                         price = float(price_str) if price_str else 0.0
                     except (ValueError, TypeError):
                         price = 0.0
-                    # traded_qty when filled, else requested_qty
-                    qty_raw = o.get("traded_qty") if o.get("traded_qty") else o.get("requested_qty")
                     try:
-                        qty = int(qty_raw or 0)
+                        qty = int(o.get("requested_qty") or 0)
                     except (ValueError, TypeError):
                         qty = 0
-                    exch = (o.get("exchange") or "NSE")
+                    exch = o.get("exchange") or "NSE"
                     result.append(Order(
                         order_id=str(o.get("id") or ""),
                         symbol=o.get("name") or o.get("trading_symbol") or o.get("security_id") or "",
