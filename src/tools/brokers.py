@@ -161,7 +161,8 @@ def register(mcp: FastMCP) -> None:
         """Returns raw INDstocks API response for field discovery and debugging.
 
         Args:
-            endpoint: "order-book" | "holdings" | "positions" | "funds" (default "order-book")
+            endpoint: "order-book" | "holdings" | "positions" | "funds" | "trade-book"
+                      (default "order-book")
 
         Use this to inspect actual field names returned by the API.
         """
@@ -174,7 +175,25 @@ def register(mcp: FastMCP) -> None:
             result = await broker.get_raw_positions()
         elif endpoint == "funds":
             result = await broker.get_raw_funds()
+        elif endpoint == "trade-book":
+            result = await broker.get_raw_trade_book()
         else:
             result = {"error": f"Unknown endpoint: {endpoint}"}
         m = _broker_meta()
         return _meta.wrap(result, m)
+
+    @mcp.tool()
+    async def get_indmoney_trades(order_id: str = "") -> dict:
+        """Returns past executed trades from INDmoney.
+
+        Args:
+            order_id: optional order ID to fetch trades for a specific order
+                      (e.g. "DRV-28131451"). Omit to return the full trade book.
+
+        Returns raw trade records as returned by the INDstocks API.
+        """
+        broker = INDmoneyBroker()
+        oid = order_id.strip() or None
+        trades = await broker.get_trades(order_id=oid)
+        m = _broker_meta()
+        return _meta.wrap({"trades": trades, "total": len(trades)}, m)

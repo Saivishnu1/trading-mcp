@@ -229,6 +229,46 @@ class INDmoneyBroker(BrokerAdapter):
         except Exception as exc:
             return {"error": str(exc)}
 
+    async def get_raw_trade_book(self) -> dict:
+        """Return raw /trade-book response for field discovery."""
+        if not self._token:
+            return {"error": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{INDSTOCKS_BASE}/trade-book", headers=self._headers())
+                return {"status_code": r.status_code, "body": r.json()}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    async def get_trades(self, order_id: str | None = None) -> list[dict]:
+        """Return executed trades from /trade-book or /trades/{order_id}."""
+        if not self._token:
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                if order_id:
+                    r = await client.get(
+                        f"{INDSTOCKS_BASE}/trades/{order_id}",
+                        headers=self._headers(),
+                    )
+                else:
+                    r = await client.get(
+                        f"{INDSTOCKS_BASE}/trade-book",
+                        headers=self._headers(),
+                    )
+                if r.status_code != 200:
+                    return []
+                body = r.json()
+                if not body:
+                    return []
+                data = body if isinstance(body, list) else body.get("data", [])
+                if isinstance(data, list):
+                    return data
+                return [data] if data else []
+        except Exception as exc:
+            logger.debug("INDmoneyBroker.get_trades error: %s", exc)
+            return []
+
     async def get_orders(self) -> list[Order]:
         if not self._token:
             return []
