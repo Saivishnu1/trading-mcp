@@ -3,6 +3,10 @@ Unit and integration tests for src/dashboard/service.py.
 
 _build_summary is pure — no mocking required.
 build_dashboard mocks _analyze_technicals, _load_closes, and get_options_service.
+
+Phase 22F: dashboard output is factual only — no signal/confidence/
+trade_setup/strategy fields. _build_summary reads market_structure from
+the analysis dict, not a raw regime/signal.
 """
 import pytest
 
@@ -35,8 +39,19 @@ def _make_opts_section(pcr=1.1):
     }
 
 
-def _make_analysis_section(regime="BULL_TREND", confidence=75):
-    return {"regime": regime, "confidence": confidence, "signal": "BUY"}
+def _make_analysis_section(adx_note="trend_absent", rsi_note="momentum_elevated"):
+    return {
+        "market_structure": {
+            "price": 101.0, "ema20": 100.0, "ema50": 98.0, "adx": 18.0, "rsi": 60.0,
+            "price_above_ema20": True, "ema20_above_ema50": True,
+            "adx_above_25": False, "rsi_above_60": False,
+            "descriptor": ["price_above_ema20", "ema20_above_ema50"],
+            "indicator_interpretation": {
+                "type": "INTERPRETATION", "validation_status": "UNVALIDATED",
+                "adx_note": adx_note, "rsi_note": rsi_note,
+            },
+        }
+    }
 
 
 def _tech(rsi=65.0, ema20=100.0, ema50=90.0, adx=30.0, price=101.0,
@@ -63,86 +78,82 @@ class TestBuildSummary:
     def test_above_both_emas_clause(self):
         tech = _make_tech_section(ema20=100.0, ema50=98.0)
         s = _build_summary("NIFTY", spot=101.0, tech=tech,
-                            opts=_make_opts_section(), analysis=_make_analysis_section(),
-                            signal="BUY")
-        assert "above both" in s.lower()
+                            opts=_make_opts_section(), analysis=_make_analysis_section())
+        assert "above ema20" in s.lower() and "and ema50" in s.lower()
 
     def test_below_both_emas_clause(self):
         tech = _make_tech_section(ema20=102.0, ema50=100.0)
         s = _build_summary("NIFTY", spot=99.0, tech=tech,
-                            opts=_make_opts_section(), analysis=_make_analysis_section(),
-                            signal="SELL")
-        assert "below both" in s.lower()
+                            opts=_make_opts_section(), analysis=_make_analysis_section())
+        assert "below ema20" in s.lower() and "and ema50" in s.lower()
 
-    def test_bullish_pcr_clause(self):
+    def test_pcr_interpretation_included(self):
         tech = _make_tech_section()
         s = _build_summary("NIFTY", spot=101.0, tech=tech,
                             opts=_make_opts_section(pcr=1.4),
-                            analysis=_make_analysis_section(), signal="BUY")
-        assert "bullish" in s.lower()
-
-    def test_bearish_pcr_clause(self):
-        tech = _make_tech_section()
-        s = _build_summary("NIFTY", spot=101.0, tech=tech,
-                            opts=_make_opts_section(pcr=0.5),
-                            analysis=_make_analysis_section(), signal="SELL")
-        assert "bearish" in s.lower()
+                            analysis=_make_analysis_section())
+        assert "pcr 1.40" in s.lower()
 
     def test_no_pcr_unavailable_clause(self):
         opts = _make_opts_section()
         opts["pcr"] = None
         tech = _make_tech_section()
-        s = _build_summary("NIFTY", 101.0, tech, opts, _make_analysis_section(), "BUY")
+        s = _build_summary("NIFTY", 101.0, tech, opts, _make_analysis_section())
         assert "unavailable" in s.lower()
 
-    def test_strong_rsi_momentum_clause(self):
+    def test_rsi_value_present(self):
         tech = _make_tech_section(rsi=70.0)
         s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
-        assert "strong" in s.lower() or "overbought" in s.lower()
+                            _make_analysis_section())
+        assert "rsi 70.0" in s.lower()
 
-    def test_neutral_rsi_momentum_clause(self):
-        tech = _make_tech_section(rsi=50.0)
-        s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
-        assert "neutral" in s.lower()
-
-    def test_high_adx_trend_strength(self):
-        tech = _make_tech_section(adx=35.0)
-        s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
-        assert "strong" in s.lower()
-
-    def test_low_adx_trend_strength(self):
+    def test_adx_note_present(self):
         tech = _make_tech_section(adx=12.0)
         s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
-        assert "low" in s.lower()
+                            _make_analysis_section(adx_note="trend_absent"))
+        assert "trend absent" in s.lower()
 
-    def test_buy_bias_clause(self):
+    def test_macd_positive_clause(self):
+        tech = _make_tech_section()
+        tech["macd"] = {"macd": 0.5, "signal": 0.3, "histogram": 0.2}
+        s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
+                            _make_analysis_section())
+        assert "macd positive" in s.lower()
+
+    def test_macd_negative_clause(self):
+        tech = _make_tech_section()
+        tech["macd"] = {"macd": 0.1, "signal": 0.3, "histogram": -0.2}
+        s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
+                            _make_analysis_section())
+        assert "macd negative" in s.lower()
+
+    def test_no_signal_or_bias_language(self):
+        """Phase 22F: summary must not contain directional bias/recommendation language."""
         tech = _make_tech_section()
         s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
-        assert "bullish" in s.lower()
-
-    def test_sell_bias_clause(self):
-        tech = _make_tech_section()
-        s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(regime="BEAR_TREND"), "SELL")
-        assert "bearish" in s.lower()
+                            _make_analysis_section())
+        lowered = s.lower()
+        for forbidden in ("bullish bias", "bearish bias", "overall bias", "signal is"):
+            assert forbidden not in lowered
 
     def test_symbol_in_summary(self):
         tech = _make_tech_section()
         s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
+                            _make_analysis_section())
         assert "NIFTY" in s
 
     def test_returns_non_empty_string(self):
         tech = _make_tech_section()
         s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
-                            _make_analysis_section(), "BUY")
+                            _make_analysis_section())
         assert isinstance(s, str)
         assert len(s) > 20
+
+    def test_max_pain_included(self):
+        tech = _make_tech_section()
+        s = _build_summary("NIFTY", 101.0, tech, _make_opts_section(),
+                            _make_analysis_section())
+        assert "max pain 24,000" in s.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -176,8 +187,22 @@ class TestBuildDashboard:
         self._patch_all(monkeypatch, chain_data)
         r = build_dashboard("NIFTY")
         for key in ("symbol", "spot_price", "options", "technicals",
-                    "analysis", "trade_setup", "strategy", "summary"):
+                    "analysis", "intelligence", "summary"):
             assert key in r
+
+    def test_no_deleted_fields_at_top_level(self, monkeypatch, chain_data):
+        """Phase 22F: trade_setup/strategy must not be present on the dashboard."""
+        self._patch_all(monkeypatch, chain_data)
+        r = build_dashboard("NIFTY")
+        assert "trade_setup" not in r
+        assert "strategy" not in r
+
+    def test_analysis_has_no_signal_or_confidence(self, monkeypatch, chain_data):
+        self._patch_all(monkeypatch, chain_data)
+        r = build_dashboard("NIFTY")
+        assert "signal" not in r["analysis"]
+        assert "confidence" not in r["analysis"]
+        assert "regime" not in r["analysis"]
 
     def test_symbol_uppercased(self, monkeypatch, chain_data):
         self._patch_all(monkeypatch, chain_data)
@@ -202,20 +227,11 @@ class TestBuildDashboard:
         assert "rsi" in r["technicals"]
         assert r["technicals"]["rsi"] is not None
 
-    def test_analysis_section_has_regime(self, monkeypatch, chain_data):
+    def test_analysis_section_has_market_structure(self, monkeypatch, chain_data):
         self._patch_all(monkeypatch, chain_data)
         r = build_dashboard("NIFTY")
-        assert "regime" in r["analysis"]
-        assert r["analysis"]["regime"] is not None
-
-    def test_trade_setup_has_both_schemas(self, monkeypatch, chain_data):
-        self._patch_all(monkeypatch, chain_data)
-        r = build_dashboard("NIFTY")
-        ts = r["trade_setup"]
-        if "error" not in ts:
-            for field in ("entry", "stoploss", "target",
-                          "entry_above", "entry_below"):
-                assert field in ts
+        assert "market_structure" in r["analysis"]
+        assert r["analysis"]["market_structure"] is not None
 
     def test_summary_is_non_empty_string(self, monkeypatch, chain_data):
         self._patch_all(monkeypatch, chain_data)
@@ -239,7 +255,7 @@ class TestBuildDashboard:
         assert "error" in r["options"]
         # But technicals and analysis should still be present and not errored
         assert "rsi" in r["technicals"]
-        assert "regime" in r["analysis"]
+        assert "market_structure" in r["analysis"]
 
     def test_technicals_failure_isolated(self, monkeypatch, chain_data):
         """A failed technicals section must NOT prevent options/analysis."""
@@ -256,9 +272,45 @@ class TestBuildDashboard:
                             lambda: _raise_svc())
         r = build_dashboard("NIFTY")
         assert "error" in r["technicals"]
-        assert "regime" in r["analysis"]
+        assert "market_structure" in r["analysis"]
 
 
 class _raise_svc:
     def get_option_chain(self, *a, **kw):
         raise RuntimeError("NSE unavailable in tests")
+
+
+# ---------------------------------------------------------------------------
+# Tool registration — get_sensex_dashboard
+# ---------------------------------------------------------------------------
+
+class TestDashboardToolRegistration:
+    def test_get_sensex_dashboard_is_registered(self):
+        from mcp.server.fastmcp import FastMCP
+        from src.tools import dashboard as dashboard_tools
+
+        mcp = FastMCP("test")
+        dashboard_tools.register(mcp)
+        tools = {t.name for t in mcp._tool_manager.list_tools()}
+
+        assert "get_nifty_dashboard" in tools
+        assert "get_banknifty_dashboard" in tools
+        assert "get_sensex_dashboard" in tools
+
+    def test_get_sensex_dashboard_calls_build_dashboard_with_sensex(self, monkeypatch):
+        from mcp.server.fastmcp import FastMCP
+        from src.tools import dashboard as dashboard_tools
+
+        calls = []
+        monkeypatch.setattr(
+            "src.tools.dashboard.build_dashboard",
+            lambda symbol: calls.append(symbol) or {"symbol": symbol},
+        )
+
+        mcp = FastMCP("test")
+        dashboard_tools.register(mcp)
+        tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "get_sensex_dashboard")
+        result = tool.fn()
+
+        assert calls == ["SENSEX"]
+        assert result == {"symbol": "SENSEX"}

@@ -5,13 +5,15 @@ Pulls one option chain, one OHLCV series, then delegates to the existing
 analytics/regime/indicator functions — no calculations are duplicated here.
 
 Call graph (per dashboard build):
-  _options_section  → OptionsService.get_option_chain (1 NSE fetch, 60s cached)
-                       → analytics.calculate_pcr / max_pain / identify_sr
-  _technicals_section → _load_closes (1 yfinance fetch)
-                         → all indicators.*
-  detect_market_regime → _analyze_technicals → _load_closes (1 yfinance fetch)
-  generate_trade_setup → _analyze_technicals + detect_market_regime (2 fetches)
-  recommend_strategy   → detect_market_regime (1 fetch)
+  _options_section    → OptionsService/BSEOptionsService.get_option_chain
+                         (1 fetch, cached) → analytics.calculate_pcr / max_pain / identify_sr
+  _technicals_section → _load_closes (1 yfinance fetch) → all indicators.*
+  _analysis_section   → detect_market_regime → _analyze_technicals (1 yfinance fetch)
+                         → _build_market_structure (Phase 22F factual descriptor)
+
+Dashboard output is factual only — no signal/confidence/trade_setup/strategy
+fields (Phase 22F). Use create_trade_plan / build_option_strategy for
+directional trade construction.
 
 yfinance returns from its in-process HTTP cache for repeated same-day,
 same-ticker requests, so the duplicate analysis fetches are negligible.
@@ -27,11 +29,15 @@ from src.intelligence.risk import get_market_risk_score
 from src.intelligence.vix import get_india_vix
 from src.intelligence.global_pulse import get_global_pulse
 from src.options import analytics
+from src.options.bse_service import get_bse_options_service
 from src.options.service import get_options_service
 from src.technical import indicators
+from src.tools.analysis import _build_market_structure
 from src.tools.technicals import _load_closes
 
 logger = logging.getLogger(__name__)
+
+_BSE_INDICES = {"SENSEX", "BANKEX"}
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +49,7 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
 
     Returns (section_dict, spot_price).
     """
-    svc = get_options_service()
+    svc = get_bse_options_service() if symbol.upper() in _BSE_INDICES else get_options_service()
     chain = svc.get_option_chain(symbol)
     records = chain.get("records", {})
     spot: float | None = records.get("underlyingValue")
@@ -91,52 +97,18 @@ def _technicals_section(symbol: str) -> tuple[dict, float | None]:
     }, round(closes[-1], 4)
 
 
-def _analysis_section(symbol: str) -> tuple[dict, dict, dict]:
-    """Regime + trade setup + strategy.
+def _analysis_section(symbol: str) -> dict:
+    """Factual market structure only (Phase 22F) — no signal/confidence/trade_setup/strategy.
 
-    Returns (analysis_dict, trade_setup_dict, strategy_dict).
+    Reuses the same regime → market_structure conversion as the
+    detect_market_regime MCP tool, so the dashboard and the standalone
+    tool never disagree on what counts as a "fact".
     """
     regime_result = regime_mod.detect_market_regime(symbol)
-    setup_result = regime_mod.generate_trade_setup(symbol)
-    strat_result = regime_mod.recommend_strategy(symbol)
-
-    analysis: dict = (
-        {"error": regime_result["error"]}
-        if "error" in regime_result
-        else {
-            "regime": regime_result.get("regime"),
-            "confidence": regime_result.get("confidence"),
-            "signal": setup_result.get("signal") if "error" not in setup_result else None,
-        }
-    )
-
-    trade_setup: dict = (
-        {"error": setup_result["error"]}
-        if "error" in setup_result
-        else {
-            "signal": setup_result.get("signal"),
-            "confidence": setup_result.get("confidence"),
-            "entry": setup_result.get("entry"),
-            "stoploss": setup_result.get("stoploss"),
-            "target": setup_result.get("target"),
-            "entry_above": setup_result.get("entry_above"),
-            "entry_below": setup_result.get("entry_below"),
-            "bull_target": setup_result.get("bull_target"),
-            "bear_target": setup_result.get("bear_target"),
-            "reasoning": setup_result.get("reasoning", []),
-        }
-    )
-
-    strategy: dict = (
-        {"error": strat_result["error"]}
-        if "error" in strat_result
-        else {
-            "recommended": strat_result.get("strategy"),
-            "reason": strat_result.get("reason"),
-        }
-    )
-
-    return analysis, trade_setup, strategy
+    structured = _build_market_structure(regime_result)
+    if "error" in structured:
+        return structured
+    return {"market_structure": structured["market_structure"]}
 
 
 # ---------------------------------------------------------------------------
@@ -159,9 +131,8 @@ def _intelligence_section(symbol: str) -> dict:
         "global_sentiment": glob.get("overall_sentiment") if "error" not in glob else None,
         "upcoming_events":  evts.get("events", [])[:3],   # top 3 nearest
         "risk_score": {
-            "score":          risk.get("score"),
-            "rating":         risk.get("rating"),
-            "recommendation": risk.get("recommendation"),
+            "score":  risk.get("score"),
+            "rating": risk.get("rating"),
         } if "error" not in risk else {"error": risk.get("error", "unavailable")},
     }
 
@@ -172,77 +143,68 @@ def _build_summary(
     tech: dict,
     opts: dict,
     analysis: dict,
-    signal: str | None,
     intelligence: dict | None = None,
 ) -> str:
-    """Deterministic one-paragraph summary from key fields."""
+    """Deterministic one-paragraph summary — observed facts only (Phase 22F).
+
+    No directional bias, recommendation, or predictive language.
+    """
     sym = symbol.upper()
-    rsi: float = tech.get("rsi") or 50.0
+    rsi: float | None = tech.get("rsi")
     ema20: float | None = tech.get("ema20")
     ema50: float | None = tech.get("ema50")
-    adx: float = tech.get("adx") or 0.0
+    adx: float | None = tech.get("adx")
+    macd: dict = tech.get("macd") or {}
     pcr: float | None = opts.get("pcr")
-    regime: str = analysis.get("regime") or ""
+    pcr_interp: str | None = opts.get("pcr_interpretation")
+    max_pain: float | None = opts.get("max_pain")
+    ms: dict = analysis.get("market_structure") or {}
+    adx_note = (ms.get("indicator_interpretation", {}).get("adx_note") or "").replace("_", " ")
+
+    price_clause = f"{sym} at {spot:,.2f}." if spot is not None else f"{sym}:"
 
     # Price vs moving averages
-    if spot and ema20 and ema50:
-        if spot > ema20 and spot > ema50:
-            ma_clause = "trading above both key moving averages"
-        elif spot < ema20 and spot < ema50:
-            ma_clause = "trading below both key moving averages"
-        elif spot > ema20:
-            ma_clause = "above EMA20 but below EMA50"
+    if spot is not None and ema20 is not None and ema50 is not None:
+        above20, above50 = spot > ema20, spot > ema50
+        if above20 and above50:
+            ma_clause = f"Price above EMA20 ({ema20:,.2f}) and EMA50 ({ema50:,.2f})"
+        elif not above20 and not above50:
+            ma_clause = f"Price below EMA20 ({ema20:,.2f}) and EMA50 ({ema50:,.2f})"
+        elif above20:
+            ma_clause = f"Price above EMA20 ({ema20:,.2f}) but below EMA50 ({ema50:,.2f})"
         else:
-            ma_clause = "below EMA20 but above EMA50"
+            ma_clause = f"Price below EMA20 ({ema20:,.2f}) but above EMA50 ({ema50:,.2f})"
     else:
-        ma_clause = "in consolidation"
+        ma_clause = "Moving averages unavailable"
 
-    # Options positioning
+    rsi_clause = f"RSI {rsi:.1f}" if rsi is not None else "RSI unavailable"
+
+    histogram = macd.get("histogram")
+    if histogram is not None:
+        macd_clause = f"MACD {'positive' if histogram >= 0 else 'negative'}"
+    else:
+        macd_clause = "MACD unavailable"
+
+    if adx is not None:
+        adx_clause = f"ADX {adx:.1f}" + (f" {adx_note}" if adx_note else "")
+    else:
+        adx_clause = "ADX unavailable"
+
     if pcr is not None:
-        if pcr > 1.3:
-            opt_clause = "elevated put writing signals bullish options positioning"
-        elif pcr > 1.0:
-            opt_clause = "mildly bullish options positioning"
-        elif pcr > 0.7:
-            opt_clause = "neutral options positioning"
-        else:
-            opt_clause = "elevated call writing signals bearish options positioning"
+        pcr_clause = f"PCR {pcr:.2f}" + (f" {pcr_interp}" if pcr_interp else "")
     else:
-        opt_clause = "options data unavailable"
+        pcr_clause = "PCR unavailable"
 
-    # Momentum
-    if rsi > 65:
-        mom_clause = "Momentum is strong and approaching overbought"
-    elif rsi > 55:
-        mom_clause = "Momentum is positive"
-    elif rsi > 45:
-        mom_clause = "Momentum is neutral"
-    elif rsi > 35:
-        mom_clause = "Momentum is weakening"
-    else:
-        mom_clause = "Momentum is oversold"
+    max_pain_clause = f"Max pain {max_pain:,.0f}." if max_pain is not None else "Max pain unavailable."
 
-    # Trend strength
-    if adx > 30:
-        trend_clause = "trend strength is strong"
-    elif adx > 20:
-        trend_clause = "trend strength is moderate"
-    else:
-        trend_clause = "trend strength is low"
-
-    # Directional bias
-    bias_map = {
-        "BUY": "Overall bias is bullish",
-        "SELL": "Overall bias is bearish",
-        "NEUTRAL_BULLISH": "Overall bias is mildly bullish",
-        "NEUTRAL_BEARISH": "Overall bias is mildly bearish",
-        "NEUTRAL": "No clear directional bias",
-    }
-    bias_clause = bias_map.get(signal or "", "Bias is undetermined")
-
-    # Event warning (appended when HIGH-impact event is within 3 days)
-    event_warning = ""
+    # Event note (appended when HIGH-impact event is within 3 days) — factual only
+    vix_clause = ""
+    event_note = ""
     if intelligence:
+        vix = intelligence.get("vix") or {}
+        level = vix.get("level")
+        if level is not None:
+            vix_clause = f" VIX {level}."
         upcoming = intelligence.get("upcoming_events", [])
         days = nearest_high_impact_days(upcoming)
         if days is not None and days <= 3:
@@ -250,15 +212,12 @@ def _build_summary(
                 (e for e in upcoming if e.get("impact") == "HIGH"), None
             )
             if first_high:
-                event_warning = (
-                    f" Note: {first_high['description']} in {days} day(s) —"
-                    " consider defined-risk structures."
-                )
+                event_note = f" Note: {first_high['description']} in {days} day(s)."
 
     return (
-        f"{sym} is {ma_clause}, with {opt_clause}. "
-        f"{mom_clause} and {trend_clause}. "
-        f"{bias_clause}.{event_warning}"
+        f"{price_clause} {ma_clause}. "
+        f"{rsi_clause}, {macd_clause}, {adx_clause}. "
+        f"{pcr_clause}. {max_pain_clause}{vix_clause}{event_note}"
     )
 
 
@@ -292,15 +251,10 @@ def build_dashboard(symbol: str) -> dict:
 
     # Analysis
     try:
-        analysis, trade_setup, strategy = _analysis_section(symbol)
+        analysis = _analysis_section(symbol)
     except Exception as exc:
         logger.warning("analysis section failed for %s: %s", symbol, exc)
-        err = {"error": str(exc)}
-        analysis, trade_setup, strategy = err, err, err
-
-    signal: str | None = (
-        trade_setup.get("signal") if "error" not in trade_setup else None
-    )
+        analysis = {"error": str(exc)}
 
     # Intelligence (isolated — failure must not break the rest)
     intelligence: dict | None = None
@@ -309,7 +263,7 @@ def build_dashboard(symbol: str) -> dict:
     except Exception as exc:
         logger.warning("intelligence section failed for %s: %s", symbol, exc)
 
-    summary = _build_summary(symbol, spot, tech, opts, analysis, signal, intelligence)
+    summary = _build_summary(symbol, spot, tech, opts, analysis, intelligence)
 
     return {
         "symbol": symbol.upper(),
@@ -317,8 +271,6 @@ def build_dashboard(symbol: str) -> dict:
         "options": opts,
         "technicals": tech,
         "analysis": analysis,
-        "trade_setup": trade_setup,
-        "strategy": strategy,
         "intelligence": intelligence,
         "summary": summary,
     }

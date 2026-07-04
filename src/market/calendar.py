@@ -31,13 +31,19 @@ _EXPIRY_WEEKDAY: dict[str, int] = {
     "nifty":        3,  # Thursday
     "banknifty":    2,  # Wednesday
     "finnifty":     1,  # Tuesday
-    "midcap_nifty": 3,  # Thursday (monthly)
+    "midcap_nifty": 0,  # Monday
     "sensex":       3,  # Thursday (BSE)
     "bankex":       3,  # Thursday (BSE)
 }
 
 # BSE indices that expire on Thursdays
 _BSE_EXPIRY_INDICES = {"sensex", "bankex"}
+
+# Indices whose weekly contract was withdrawn (SEBI weekly-expiry rationalization,
+# effective Nov 2024) — only NIFTY (NSE) and SENSEX (BSE) retain a weekly series.
+# These indices trade monthly contracts only, so their nearest expiry IS the
+# last occurrence of their weekday in the current/next month.
+_MONTHLY_ONLY_INDICES = {"banknifty", "finnifty", "midcap_nifty", "bankex"}
 
 # NSE/BSE session times (IST, 24h)
 _SESSION_TIMES = {
@@ -92,9 +98,47 @@ def _next_trading_day(from_date: date) -> date:
     return d
 
 
-def _nearest_expiry_algorithmic(index: str, from_date: date) -> Optional[date]:
-    """Compute the nearest weekly/monthly expiry for an index."""
+def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
+    """Return the date of the last occurrence of `weekday` (0=Mon…6=Sun) in year/month."""
+    if month == 12:
+        first_of_next = date(year + 1, 1, 1)
+    else:
+        first_of_next = date(year, month + 1, 1)
+    last_day = first_of_next - timedelta(days=1)
+    offset = (last_day.weekday() - weekday) % 7
+    return last_day - timedelta(days=offset)
+
+
+def _nearest_monthly_expiry(index: str, from_date: date) -> Optional[date]:
+    """Compute the nearest last-weekday-of-month expiry for a monthly-only index."""
     weekday = _EXPIRY_WEEKDAY.get(index.lower())
+    if weekday is None:
+        return None
+
+    candidate = _last_weekday_of_month(from_date.year, from_date.month, weekday)
+    if candidate < from_date:
+        month = from_date.month + 1
+        year = from_date.year
+        if month > 12:
+            month = 1
+            year += 1
+        candidate = _last_weekday_of_month(year, month, weekday)
+
+    while _is_holiday(candidate) or candidate.weekday() >= 5:
+        candidate -= timedelta(days=1)
+
+    return candidate
+
+
+def _nearest_expiry_algorithmic(index: str, from_date: date) -> Optional[date]:
+    """Compute the nearest expiry for an index — weekly for NIFTY/SENSEX
+    (the two indices retaining a weekly series), monthly (last weekday of
+    month) for all other indices."""
+    idx = index.lower()
+    if idx in _MONTHLY_ONLY_INDICES:
+        return _nearest_monthly_expiry(idx, from_date)
+
+    weekday = _EXPIRY_WEEKDAY.get(idx)
     if weekday is None:
         return None
 
@@ -148,7 +192,7 @@ def _expiry_days_this_week(today: date) -> list[str]:
 
 
 def _live_expiries() -> dict[str, str]:
-    """Try to pull nearest expiry dates from NSE options service + INDmoney for BSE."""
+    """Try to pull nearest expiry dates from the NSE and BSE options services."""
     results: dict[str, str] = {}
 
     # NSE indices via options service
@@ -167,54 +211,20 @@ def _live_expiries() -> dict[str, str]:
     except Exception:
         pass
 
-    # BSE indices via INDmoney /option-chain-symbols
-    import os
-    token = os.environ.get("INDSTOCKS_TOKEN", "")
-    if token:
-        try:
-            import httpx
-            from datetime import datetime as _dt
-            today = date.today()
-            for idx, sym in [("sensex", "SENSEX"), ("bankex", "BANKEX")]:
-                try:
-                    with httpx.Client(timeout=8) as client:
-                        r = client.get(
-                            "https://api.indstocks.com/option-chain-symbols",
-                            headers={"Authorization": token, "Content-Type": "application/json"},
-                            params={"symbol": sym},
-                        )
-                    if r.status_code != 200:
-                        continue
-                    body = r.json()
-                    # Response may be a list of expiry date strings or a dict with expiry list
-                    expiry_list: list = []
-                    if isinstance(body, list):
-                        expiry_list = body
-                    elif isinstance(body, dict):
-                        expiry_list = (
-                            body.get("expiry_dates")
-                            or body.get("expiryDates")
-                            or body.get("data", [])
-                        )
-                    # Find nearest upcoming expiry
-                    nearest = None
-                    for raw in expiry_list:
-                        exp_date = None
-                        for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y"):
-                            try:
-                                exp_date = _dt.strptime(str(raw).strip(), fmt).date()
-                                break
-                            except ValueError:
-                                continue
-                        if exp_date and exp_date >= today:
-                            if nearest is None or exp_date < nearest:
-                                nearest = exp_date
-                    if nearest:
-                        results[idx] = nearest.isoformat()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    # BSE indices (SENSEX/BANKEX) via the same BSE options service used by
+    # get_sensex_option_chain / get_bankex_option_chain — no auth token needed.
+    try:
+        from src.options.bse_service import get_bse_options_service
+        bse_svc = get_bse_options_service()
+        for index, bse_sym in [("sensex", "SENSEX"), ("bankex", "BANKEX")]:
+            try:
+                expiries = bse_svc.available_expiries(bse_sym)
+                if expiries:
+                    results[index] = expiries[0]
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     return results
 
@@ -296,22 +306,23 @@ def get_market_calendar() -> dict:
     days_to_expiry: dict[str, int] = {}
     per_index_expiry_source: dict[str, str] = {}
 
+    monthly_expiries: dict[str, str] = {}
     for idx in ("nifty", "banknifty", "finnifty", "midcap_nifty", "sensex", "bankex"):
+        exp_date: Optional[date] = None
+        src = "algorithmic"
         if idx in live:
             exp_str = live[idx]
-            exp_date: Optional[date] = None
-            try:
-                from datetime import datetime as _dt
-                for fmt in ("%d-%b-%Y", "%Y-%m-%d"):
-                    try:
-                        exp_date = _dt.strptime(exp_str, fmt).date()
-                        break
-                    except ValueError:
-                        continue
-            except Exception:
-                exp_date = None
-            src = "live"
-        else:
+            from datetime import datetime as _dt
+            for fmt in ("%d-%b-%Y", "%d %b %Y", "%Y-%m-%d"):
+                try:
+                    exp_date = _dt.strptime(exp_str.strip(), fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if exp_date:
+                src = "live"
+
+        if exp_date is None:
             exp_date = _nearest_expiry_algorithmic(idx, today)
             src = "algorithmic"
 
@@ -319,6 +330,10 @@ def get_market_calendar() -> dict:
             expiries[idx] = exp_date.isoformat()
             days_to_expiry[idx] = (exp_date - today).days
         per_index_expiry_source[idx] = src
+
+        monthly_date = _nearest_monthly_expiry(idx, today)
+        if monthly_date:
+            monthly_expiries[idx] = monthly_date.isoformat()
 
     agg_expiry_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "algorithmic"
     _last_expiry_source = agg_expiry_source
@@ -371,14 +386,14 @@ def get_market_calendar() -> dict:
             set(h["date"] for h in bse_upcoming) - set(h["date"] for h in nse_upcoming)
         ),
         "nse_expiries": {
-            "nifty_weekly":     "Thursday",
-            "banknifty_weekly": "Wednesday",
-            "finnifty_weekly":  "Tuesday",
-            "nifty_monthly":    "last Thursday of month",
+            "nifty_weekly":        "Thursday",
+            "nifty_monthly":       "last Thursday of month",
+            "banknifty_monthly":   "last Wednesday of month",
+            "finnifty_monthly":    "last Tuesday of month",
+            "midcap_nifty_monthly": "last Monday of month",
         },
         "bse_expiries": {
             "sensex_weekly":   "Thursday",
-            "bankex_weekly":   "Thursday",
             "sensex_monthly":  "last Thursday of month",
             "bankex_monthly":  "last Thursday of month",
         },
@@ -410,6 +425,7 @@ def get_market_calendar() -> dict:
             "upcoming_holidays": bse_upcoming,
         },
         "expiries": expiries,
+        "monthly_expiries": monthly_expiries,
         "days_to_expiry": days_to_expiry,
         "upcoming_holidays": nse_upcoming,
         "next_trading_day": _next_trading_day(today).isoformat(),
