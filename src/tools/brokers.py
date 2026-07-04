@@ -161,7 +161,8 @@ def register(mcp: FastMCP) -> None:
         """Returns raw INDstocks API response for field discovery and debugging.
 
         Args:
-            endpoint: "order-book" | "holdings" | "positions" | "funds" | "trade-book"
+            endpoint: "order-book" | "holdings" | "positions" | "funds"
+                      | "trade-book" (DERIVATIVE) | "trade-book-equity" (EQUITY)
                       (default "order-book")
 
         Use this to inspect actual field names returned by the API.
@@ -176,24 +177,29 @@ def register(mcp: FastMCP) -> None:
         elif endpoint == "funds":
             result = await broker.get_raw_funds()
         elif endpoint == "trade-book":
-            result = await broker.get_raw_trade_book()
+            result = await broker.get_raw_trade_book(segment="DERIVATIVE")
+        elif endpoint == "trade-book-equity":
+            result = await broker.get_raw_trade_book(segment="EQUITY")
         else:
             result = {"error": f"Unknown endpoint: {endpoint}"}
         m = _broker_meta()
         return _meta.wrap(result, m)
 
     @mcp.tool()
-    async def get_indmoney_trades(order_id: str = "") -> dict:
-        """Returns past executed trades from INDmoney.
+    async def get_indmoney_trades(order_id: str = "", segment: str = "") -> dict:
+        """Returns past executed trades from INDmoney (today's filled trades).
 
         Args:
-            order_id: optional order ID to fetch trades for a specific order
-                      (e.g. "DRV-28131451"). Omit to return the full trade book.
+            order_id: optional — fetch trades for a specific order ID
+                      (e.g. "DRV-28131451")
+            segment:  "EQUITY" | "DERIVATIVE" | "" (default: both)
 
-        Returns raw trade records as returned by the INDstocks API.
+        Trade-book shows only filled/executed trades, unlike order-book which
+        includes all statuses. Requires segment param per INDstocks API.
         """
         broker = INDmoneyBroker()
         oid = order_id.strip() or None
-        trades = await broker.get_trades(order_id=oid)
+        seg = segment.strip().upper() or None
+        trades = await broker.get_trades(order_id=oid, segment=seg)
         m = _broker_meta()
         return _meta.wrap({"trades": trades, "total": len(trades)}, m)

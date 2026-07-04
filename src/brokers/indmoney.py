@@ -212,11 +212,32 @@ class INDmoneyBroker(BrokerAdapter):
     async def get_raw_positions(self) -> dict:
         return await self._raw_get("/portfolio/positions")
 
-    async def get_raw_trade_book(self) -> dict:
-        return await self._raw_get("/trade-book")
+    async def get_raw_trade_book(self, segment: str = "DERIVATIVE") -> dict:
+        """/trade-book requires segment=EQUITY or segment=DERIVATIVE."""
+        if not self._token:
+            return {"error": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(
+                    f"{INDSTOCKS_BASE}/trade-book",
+                    headers=self._headers(),
+                    params={"segment": segment},
+                )
+                try:
+                    body = r.json()
+                except Exception:
+                    body = r.text
+                return {"status_code": r.status_code, "segment": segment, "body": body}
+        except Exception as exc:
+            return {"error": str(exc)}
 
-    async def get_trades(self, order_id: str | None = None) -> list[dict]:
-        """Return executed trades from /trade-book or /trades/{order_id}."""
+    async def get_trades(self, order_id: str | None = None, segment: str | None = None) -> list[dict]:
+        """Return executed trades.
+
+        - order_id set: GET /trades/{order_id}
+        - segment set: GET /trade-book?segment=<segment>
+        - neither: fetch both EQUITY and DERIVATIVE and merge
+        """
         if not self._token:
             return []
         try:
@@ -226,20 +247,29 @@ class INDmoneyBroker(BrokerAdapter):
                         f"{INDSTOCKS_BASE}/trades/{order_id}",
                         headers=self._headers(),
                     )
-                else:
+                    if r.status_code != 200:
+                        return []
+                    body = r.json()
+                    data = body if isinstance(body, list) else body.get("data", [])
+                    return data if isinstance(data, list) else ([data] if data else [])
+
+                segments = [segment] if segment else ["EQUITY", "DERIVATIVE"]
+                combined: list[dict] = []
+                for seg in segments:
                     r = await client.get(
                         f"{INDSTOCKS_BASE}/trade-book",
                         headers=self._headers(),
+                        params={"segment": seg},
                     )
-                if r.status_code != 200:
-                    return []
-                body = r.json()
-                if not body:
-                    return []
-                data = body if isinstance(body, list) else body.get("data", [])
-                if isinstance(data, list):
-                    return data
-                return [data] if data else []
+                    if r.status_code != 200:
+                        continue
+                    body = r.json()
+                    if not body:
+                        continue
+                    data = body if isinstance(body, list) else body.get("data", [])
+                    if isinstance(data, list):
+                        combined.extend(data)
+                return combined
         except Exception as exc:
             logger.debug("INDmoneyBroker.get_trades error: %s", exc)
             return []
