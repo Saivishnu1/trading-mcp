@@ -328,44 +328,38 @@ class _CapturingMCP:
         return deco
 
 
-class TestAnalyzeTechnicalsTool:
+class TestCalculateAtrTool:
     """
-    Exercises the real analyze_technicals MCP tool (Fix 3, Phase 14.5).
-
-    The earlier TestNaNPropagation tests cover the indicator math directly;
-    this drives the registered tool's NaN guard so that removing the guard at
-    src/tools/technicals.py would fail a test instead of passing silently.
+    Exercises the calculate_atr MCP tool — the only remaining standalone
+    technical tool after Phase 3 consolidated RSI/EMA/MACD/ADX/analyze_technicals
+    into analyze_chart().
     """
 
     def _get_tool(self):
         import src.tools.technicals as tech
         cap = _CapturingMCP()
         tech.register(cap)
-        return tech, cap.tools["analyze_technicals"]
-
-    def test_tool_returns_error_when_any_indicator_nan(self, monkeypatch):
-        tech, analyze = self._get_tool()
-        closes = [100.0 + i * 0.5 for i in range(60)]
-        closes[30] = float("nan")  # one bad row poisons every indicator
-        highs = [c + 2.0 for c in closes]
-        lows = [c - 2.0 for c in closes]
-        monkeypatch.setattr(tech, "_load_closes", lambda s, l: (closes, highs, lows))
-
-        result = analyze("IDEA")
-        # Tool now returns {"data": {...}, "meta": {...}}
-        data = result.get("data", result)
-        assert "error" in data, "any NaN indicator must produce an error, not a NaN-bearing dict"
-        assert "rsi_14" in data["error"]  # affected indicators are named
+        return tech, cap.tools["calculate_atr"]
 
     def test_tool_returns_values_when_all_clean(self, monkeypatch):
-        tech, analyze = self._get_tool()
-        closes = [100.0 + i * 0.5 for i in range(120)]
+        import src.tools.technicals as tech
+        _, atr_tool = self._get_tool()
+        closes = [100.0 + i * 0.5 for i in range(60)]
         highs = [c + 2.0 for c in closes]
         lows = [c - 2.0 for c in closes]
         monkeypatch.setattr(tech, "_load_closes", lambda s, l: (closes, highs, lows))
 
-        result = analyze("INFY")
+        result = atr_tool("INFY")
         data = result.get("data", result)
         assert "error" not in data
-        assert data["rsi_14"] is not None
-        assert data["atr_14"] is not None
+        assert data["value"] is not None
+        assert data["atr_percent"] is not None
+
+    def test_tool_returns_error_on_no_data(self, monkeypatch):
+        import src.tools.technicals as tech
+        _, atr_tool = self._get_tool()
+        monkeypatch.setattr(tech, "_load_closes", lambda s, l: (None, None, None))
+
+        result = atr_tool("INVALID")
+        data = result.get("data", result)
+        assert "error" in data

@@ -331,7 +331,7 @@ class TestNormalizeSymbolExtended:
 class TestNormKwInTechnicalsResponse:
     """Check that normalization info appears in wrapped tool responses."""
 
-    def test_rsi_with_nse_prefix_records_correction(self):
+    def test_atr_with_nse_prefix_records_correction(self):
         from unittest.mock import patch
         from src.tools import technicals
 
@@ -344,7 +344,7 @@ class TestNormKwInTechnicalsResponse:
             mcp = _FastMCP("test")
             technicals.register(mcp)
             tools = {t.name: t for t in mcp._tool_manager.list_tools()}
-            fn = tools["calculate_rsi"].fn
+            fn = tools["calculate_atr"].fn
             result = fn("NSE:INFY", period=5, lookback_days=60)
 
         meta = result.get("meta", {})
@@ -385,15 +385,6 @@ class TestErrorContracts:
         mcp = _FastMCP("test")
         technicals.register(mcp)
         tools = {t.name: t for t in mcp._tool_manager.list_tools()}
-        fn = tools["calculate_rsi"].fn
+        fn = tools["calculate_atr"].fn
         result = fn("", period=14)
-        assert result.get("status") == "SYMBOL_ERROR"
-
-    def test_empty_symbol_returns_symbol_error_ema(self):
-        from src.tools import technicals
-        mcp = _FastMCP("test")
-        technicals.register(mcp)
-        tools = {t.name: t for t in mcp._tool_manager.list_tools()}
-        fn = tools["calculate_ema"].fn
-        result = fn("", period=20)
         assert result.get("status") == "SYMBOL_ERROR"

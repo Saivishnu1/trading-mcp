@@ -50,12 +50,7 @@ _DATA_LAG: dict[str, str] = {
     "get_oi_analysis": "5-15 min",
     "identify_support_resistance_from_oi": "5-15 min",
     "calculate_max_pain": "5-15 min",
-    "calculate_rsi": "end_of_day",
-    "calculate_ema": "end_of_day",
-    "calculate_macd": "end_of_day",
-    "calculate_adx": "end_of_day",
     "calculate_atr": "end_of_day",
-    "analyze_technicals": "end_of_day",
     "detect_market_regime": "end_of_day",
     "get_regime_alignment": "end_of_day",
     "get_earnings_calendar": "end_of_day",
@@ -68,11 +63,6 @@ _DATA_LAG: dict[str, str] = {
 
 # Deprecated tools: still callable but emit a deprecation notice
 _KNOWN_DEPRECATED: list[str] = [
-    "calculate_rsi",
-    "calculate_ema",
-    "calculate_macd",
-    "calculate_adx",
-    "analyze_technicals",
     "get_oi_analysis",
     "identify_support_resistance_from_oi",
 ]
@@ -82,10 +72,6 @@ _KNOWN_BROKEN: list[str] = []
 
 # Tools only available during market hours (time-gated)
 _TIME_GATED: list[str] = [
-    "calculate_rsi",
-    "calculate_ema",
-    "calculate_macd",
-    "analyze_technicals",
     "get_intraday_snapshot",
 ]
 

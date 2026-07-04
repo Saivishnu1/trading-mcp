@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: Pre-Phase 3 cleanup complete — broker intelligence + portfolio intelligence integrated
+Current Phase: Phase 3 — Chart Awareness Engine (analyze_chart)
 
-Current Tool Count: 66
+Current Tool Count: 62
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.

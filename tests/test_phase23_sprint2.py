@@ -44,66 +44,32 @@ def _market_mcp():
 # ---------------------------------------------------------------------------
 
 class TestToolTimeGatedContract:
-    """When is_market_hours() returns False, time-gated tools return TOOL_TIME_GATED."""
+    """TOOL_TIME_GATED error contract — calculate_rsi/ema/macd/analyze_technicals
+    were removed in Phase 3 (consolidated into analyze_chart). Tests updated to
+    reflect current time-gated tool list."""
 
-    def _call_outside_hours(self, tool_name, fn, *args, **kwargs):
-        with patch("src.meta.is_market_hours", return_value=False):
-            return fn(*args, **kwargs)
+    def test_time_gated_list_is_valid(self):
+        """_TIME_GATED only contains tools that still exist."""
+        from src.tools.meta_tools import _TIME_GATED
+        from src.tools import market as _market
+        mcp = _FastMCP("test")
+        _market.register(mcp)
+        registered = {t.name for t in mcp._tool_manager.list_tools()}
+        for name in _TIME_GATED:
+            assert name in registered, f"{name} in _TIME_GATED but not registered"
 
-    def test_calculate_rsi_time_gated_structure(self):
-        tools = _tech_mcp()
-        result = self._call_outside_hours("calculate_rsi", tools["calculate_rsi"].fn, "INFY", period=14)
-        assert result.get("status") == "TOOL_TIME_GATED"
-        assert "available_from" in result
-        assert "available_until" in result
-        assert result.get("tool") == "calculate_rsi"
+    def test_make_time_gated_error_structure(self):
+        from src import meta as _meta
+        err = _meta.make_time_gated_error("get_intraday_snapshot")
+        assert err.get("status") == "TOOL_TIME_GATED"
+        assert "available_from" in err
+        assert "available_until" in err
+        assert err.get("tool") == "get_intraday_snapshot"
 
-    def test_calculate_ema_time_gated_structure(self):
-        tools = _tech_mcp()
-        result = self._call_outside_hours("calculate_ema", tools["calculate_ema"].fn, "INFY", period=20)
-        assert result.get("status") == "TOOL_TIME_GATED"
-        assert result.get("tool") == "calculate_ema"
-
-    def test_calculate_macd_time_gated_structure(self):
-        tools = _tech_mcp()
-        result = self._call_outside_hours("calculate_macd", tools["calculate_macd"].fn, "INFY")
-        assert result.get("status") == "TOOL_TIME_GATED"
-        assert result.get("tool") == "calculate_macd"
-
-    def test_analyze_technicals_time_gated_structure(self):
-        tools = _tech_mcp()
-        result = self._call_outside_hours("analyze_technicals", tools["analyze_technicals"].fn, "INFY")
-        assert result.get("status") == "TOOL_TIME_GATED"
-        assert result.get("tool") == "analyze_technicals"
-
-    def test_all_four_identical_keys(self):
-        """All four tools return the same set of TOOL_TIME_GATED keys."""
-        tools = _tech_mcp()
-        fns = [
-            (tools["calculate_rsi"].fn, ("INFY",), {"period": 14}),
-            (tools["calculate_ema"].fn, ("INFY",), {"period": 20}),
-            (tools["calculate_macd"].fn, ("INFY",), {}),
-            (tools["analyze_technicals"].fn, ("INFY",), {}),
-        ]
-        key_sets = []
-        with patch("src.meta.is_market_hours", return_value=False):
-            for fn, args, kwargs in fns:
-                result = fn(*args, **kwargs)
-                key_sets.append(frozenset(result.keys()))
-        assert len(set(key_sets)) == 1, f"key sets differ: {key_sets}"
-
-    def test_symbol_error_takes_precedence_over_time_gate(self):
-        """Empty symbol → SYMBOL_ERROR, not TOOL_TIME_GATED."""
-        tools = _tech_mcp()
-        with patch("src.meta.is_market_hours", return_value=False):
-            result = tools["calculate_rsi"].fn("", period=14)
-        assert result.get("status") == "SYMBOL_ERROR"
-
-    def test_time_gated_tools_in_meta_tools_list(self):
-        """meta_tools._TIME_GATED includes all four technicals tools."""
+    def test_removed_tools_not_in_time_gated(self):
         from src.tools.meta_tools import _TIME_GATED
         for name in ("calculate_rsi", "calculate_ema", "calculate_macd", "analyze_technicals"):
-            assert name in _TIME_GATED, f"{name} missing from _TIME_GATED"
+            assert name not in _TIME_GATED, f"{name} should not be in _TIME_GATED after Phase 3 removal"
 
 
 # ---------------------------------------------------------------------------
