@@ -33,6 +33,26 @@ _EXPIRY_WEEKDAY: dict[str, int] = {
     "finnifty":     1,  # Tuesday
     "midcap_nifty": 3,  # Thursday (monthly)
     "sensex":       4,  # Friday
+    "bankex":       4,  # Friday (BSE)
+}
+
+# BSE indices that expire on Fridays
+_BSE_EXPIRY_INDICES = {"sensex", "bankex"}
+
+# NSE/BSE session times (IST, 24h)
+_SESSION_TIMES = {
+    "nse": {
+        "pre_open_start": "09:00",
+        "pre_open_end": "09:15",
+        "open": "09:15",
+        "close": "15:30",
+    },
+    "bse": {
+        "pre_open_start": "09:00",
+        "pre_open_end": "09:15",
+        "open": "09:15",
+        "close": "15:30",
+    },
 }
 
 # Updated on each get_market_calendar() call — read by get_calendar_health()
@@ -184,6 +204,24 @@ def get_calendar_health() -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _fetch_bse_holidays_sync(year: int) -> list[str]:
+    """Synchronous wrapper to fetch BSE holidays for the calendar response."""
+    try:
+        import asyncio
+        from src.calendar import CalendarFetcher
+        fetcher = CalendarFetcher()
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Inside async context — schedule but return empty to avoid deadlock
+                return []
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+        return asyncio.run(fetcher.fetch_bse_holidays(year))
+    except Exception:
+        return []
+
+
 def get_market_calendar() -> dict:
     """Return the canonical market calendar for today."""
     global _last_expiry_source
@@ -196,13 +234,18 @@ def get_market_calendar() -> dict:
     is_weekend = today.weekday() >= 5
     is_trading = not is_holiday_today and not is_weekend
 
+    # Fetch BSE holidays for current year (cached after first call)
+    bse_holidays = _fetch_bse_holidays_sync(today.year)
+    bse_holiday_today = today.isoformat() in bse_holidays
+    is_bse_trading = not bse_holiday_today and not is_weekend
+
     # Expiries — live first, algorithmic fallback per missing index
     live = _live_expiries()
     expiries: dict[str, str] = {}
     days_to_expiry: dict[str, int] = {}
     per_index_expiry_source: dict[str, str] = {}
 
-    for idx in ("nifty", "banknifty", "finnifty", "midcap_nifty", "sensex"):
+    for idx in ("nifty", "banknifty", "finnifty", "midcap_nifty", "sensex", "bankex"):
         if idx in live:
             exp_str = live[idx]
             exp_date: Optional[date] = None
@@ -229,7 +272,70 @@ def get_market_calendar() -> dict:
     agg_expiry_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "algorithmic"
     _last_expiry_source = agg_expiry_source
 
+    # Build upcoming holidays for both exchanges
+    nse_upcoming = _upcoming_holidays(today)
+    bse_upcoming = []
+    if bse_holidays:
+        end = today + timedelta(days=30)
+        for h in bse_holidays:
+            try:
+                h_date = date.fromisoformat(h)
+                if today < h_date <= end:
+                    bse_upcoming.append({"date": h, "name": "BSE Holiday"})
+            except ValueError:
+                pass
+
+    # Session active status (naive — doesn't check market hours, just trading day)
+    from datetime import datetime as _dt_cls
+    now = _dt_cls.now()
+    hour_min = now.hour * 60 + now.minute
+    market_open_min = 9 * 60 + 15
+    market_close_min = 15 * 60 + 30
+    session_active = (
+        is_trading
+        and market_open_min <= hour_min <= market_close_min
+    )
+    bse_session_active = (
+        is_bse_trading
+        and market_open_min <= hour_min <= market_close_min
+    )
+
+    calendar_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "cached"
+    if not bse_holidays:
+        calendar_source = "fallback"
+
     return {
+        # --- Top-level flat fields (Fix 5 spec) ---
+        "today_date": today.isoformat(),
+        "nse_session": "09:15-15:30 IST",
+        "bse_session": "09:15-15:30 IST",
+        "nse_session_active": session_active,
+        "bse_session_active": bse_session_active,
+        "nse_holidays": [h["date"] for h in nse_upcoming],
+        "bse_holidays": [h["date"] for h in bse_upcoming],
+        "nse_only_holidays": sorted(
+            set(h["date"] for h in nse_upcoming) - set(h["date"] for h in bse_upcoming)
+        ),
+        "bse_only_holidays": sorted(
+            set(h["date"] for h in bse_upcoming) - set(h["date"] for h in nse_upcoming)
+        ),
+        "nse_expiries": {
+            "nifty_weekly":     "Thursday",
+            "banknifty_weekly": "Wednesday",
+            "finnifty_weekly":  "Tuesday",
+            "nifty_monthly":    "last Thursday of month",
+        },
+        "bse_expiries": {
+            "sensex_weekly":   "Friday",
+            "bankex_weekly":   "Friday",
+            "sensex_monthly":  "last Friday of month",
+            "bankex_monthly":  "last Friday of month",
+        },
+        "next_nse_expiry": expiries.get("nifty"),
+        "next_bse_sensex_expiry": expiries.get("sensex"),
+        "next_bse_bankex_expiry": expiries.get("bankex"),
+        "calendar_source": calendar_source,
+        # --- Detailed nested blocks (backward compat) ---
         "today": {
             "date": today.isoformat(),
             "day": today.strftime("%A"),
@@ -237,9 +343,24 @@ def get_market_calendar() -> dict:
             "is_holiday": is_holiday_today,
             "holiday_name": holiday_name,
         },
+        "nse": {
+            "is_trading_day": is_trading,
+            "is_holiday": is_holiday_today,
+            "holiday_name": holiday_name,
+            "session_times": _SESSION_TIMES["nse"],
+            "session_active": session_active,
+            "upcoming_holidays": nse_upcoming,
+        },
+        "bse": {
+            "is_trading_day": is_bse_trading,
+            "is_holiday": bse_holiday_today,
+            "session_times": _SESSION_TIMES["bse"],
+            "session_active": bse_session_active,
+            "upcoming_holidays": bse_upcoming,
+        },
         "expiries": expiries,
         "days_to_expiry": days_to_expiry,
-        "upcoming_holidays": _upcoming_holidays(today),
+        "upcoming_holidays": nse_upcoming,
         "next_trading_day": _next_trading_day(today).isoformat(),
         "week_summary": {
             "trading_days_remaining": _trading_days_remaining_this_week(today),

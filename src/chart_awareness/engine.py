@@ -24,10 +24,20 @@ class ChartEngine:
         include_levels: bool = True,
     ) -> dict:
         today = date.today()
-        from_date = (today - timedelta(days=days)).isoformat()
+        # EMA200 needs ≥200 bars to be meaningful. On daily charts always fetch
+        # at least 300 calendar days so we have enough candles regardless of days param.
+        fetch_days = max(days, 300) if interval == "day" else days
+        from_date = (today - timedelta(days=fetch_days)).isoformat()
         to_date = (today + timedelta(days=1)).isoformat()
 
         candles, data_source = await fetch_candles(symbol, interval, from_date, to_date)
+
+        # Trim candles to requested window for everything except indicator computation.
+        # We keep the full window for indicator computation, then slice for other outputs.
+        analysis_cutoff = (today - timedelta(days=days)).isoformat()
+        all_candles = candles
+        if fetch_days > days:
+            candles = [c for c in candles if str(c.get("datetime", "")) >= analysis_cutoff] or candles
 
         if not candles:
             return {
@@ -46,7 +56,8 @@ class ChartEngine:
         trend = detect_trend(candles)
         structure = detect_structure(candles) if include_structure else {}
         levels = detect_levels(candles) if include_levels else {}
-        computed_indicators = _ind.compute(candles) if include_indicators else {}
+        # Use full window (all_candles) so EMA200 has enough data points
+        computed_indicators = _ind.compute(all_candles) if include_indicators else {}
 
         observations = _build_observations(candles, trend, computed_indicators, levels)
 

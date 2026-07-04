@@ -1,10 +1,15 @@
 """
 Tiered OHLCV data fetcher for the chart awareness engine.
 
-Fetch order:
-  1. Zerodha historical API (authenticated, best quality)
-  2. INDmoney /market/historical (authenticated)
-  3. Yahoo Finance via yfinance (guest, always available)
+Source hierarchy per symbol type:
+  BSE indices (SENSEX/BANKEX/BSE500/…):
+    1. INDmoney with BSE scrip code
+    2. Yahoo Finance using BSE Yahoo ticker
+
+  NSE indices (NIFTY/BANKNIFTY/…) and NSE stocks:
+    1. Zerodha historical API (authenticated)
+    2. INDmoney with NSE scrip code (authenticated, chunked for >365-day ranges)
+    3. Yahoo Finance (always available)
 
 Returns a list of normalized candle dicts:
   {"datetime": str, "open": float, "high": float,
@@ -13,11 +18,23 @@ Returns a list of normalized candle dicts:
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
-# Interval mapping: canonical → each source's format
+# ---------------------------------------------------------------------------
+# Symbol sets
+# ---------------------------------------------------------------------------
+
+_BSE_SYMBOLS = {
+    "SENSEX", "BANKEX", "BSE500", "BSEMIDCAP", "BSESMALLCAP",
+    "BSE:SENSEX", "BSE:BANKEX", "BSE:BSE500", "BSE:BSEMIDCAP", "BSE:BSESMALLCAP",
+}
+
+# ---------------------------------------------------------------------------
+# Interval maps: canonical → each source's format
+# ---------------------------------------------------------------------------
+
 _ZERODHA_INTERVAL = {
     "1minute": "minute",
     "3minute": "3minute",
@@ -44,6 +61,20 @@ _INDMONEY_INTERVAL = {
     "month": "1month",
 }
 
+# Max date range INDmoney allows per interval (in days)
+_INDMONEY_MAX_DAYS: dict[str, int] = {
+    "1minute":  7,
+    "3minute":  7,
+    "5minute":  7,
+    "10minute": 7,
+    "15minute": 7,
+    "30minute": 14,
+    "60minute": 14,
+    "day":      365,
+    "week":     365,
+    "month":    365,
+}
+
 _YFINANCE_INTERVAL = {
     "1minute": "1m",
     "3minute": "3m",
@@ -57,21 +88,35 @@ _YFINANCE_INTERVAL = {
     "month": "1mo",
 }
 
+# ---------------------------------------------------------------------------
+# Symbol converters
+# ---------------------------------------------------------------------------
+
+# Yahoo Finance ticker map for BSE + NSE indices
+_YF_MAP = {
+    "NIFTY":       "^NSEI",
+    "NIFTY50":     "^NSEI",
+    "NIFTY 50":    "^NSEI",
+    "BANKNIFTY":   "^NSEBANK",
+    "NIFTY BANK":  "^NSEBANK",
+    "SENSEX":      "^BSESN",
+    "BSE:SENSEX":  "^BSESN",
+    "BANKEX":      "^SPBSEBKEX",
+    "BSE:BANKEX":  "^SPBSEBKEX",
+    "BSE500":      "^BSE500",
+    "BSE:BSE500":  "^BSE500",
+    "BSEMIDCAP":   "^BSEMD",
+    "BSE:BSEMIDCAP": "^BSEMD",
+    "BSESMALLCAP": "^BSESML",
+    "BSE:BSESMALLCAP": "^BSESML",
+}
+
 
 def _to_yf_symbol(symbol: str) -> str:
     """Convert canonical symbol to yfinance ticker."""
     s = symbol.upper().strip()
-    mapping = {
-        "NIFTY": "^NSEI",
-        "NIFTY50": "^NSEI",
-        "NIFTY 50": "^NSEI",
-        "BANKNIFTY": "^NSEBANK",
-        "NIFTY BANK": "^NSEBANK",
-        "SENSEX": "^BSESN",
-        "BSE:SENSEX": "^BSESN",
-    }
-    if s in mapping:
-        return mapping[s]
+    if s in _YF_MAP:
+        return _YF_MAP[s]
     if s.startswith("NSE:"):
         return s[4:] + ".NS"
     if s.startswith("BSE:"):
@@ -85,12 +130,16 @@ def _to_zerodha_symbol(symbol: str) -> str:
     """Convert canonical symbol to Zerodha NSE:SYMBOL format."""
     s = symbol.upper().strip()
     aliases = {
-        "NIFTY": "NSE:NIFTY 50",
-        "NIFTY50": "NSE:NIFTY 50",
-        "NIFTY 50": "NSE:NIFTY 50",
-        "BANKNIFTY": "NSE:NIFTY BANK",
-        "NIFTY BANK": "NSE:NIFTY BANK",
-        "SENSEX": "BSE:SENSEX",
+        "NIFTY":       "NSE:NIFTY 50",
+        "NIFTY50":     "NSE:NIFTY 50",
+        "NIFTY 50":    "NSE:NIFTY 50",
+        "BANKNIFTY":   "NSE:NIFTY BANK",
+        "NIFTY BANK":  "NSE:NIFTY BANK",
+        "SENSEX":      "BSE:SENSEX",
+        "BANKEX":      "BSE:BANKEX",
+        "BSE500":      "BSE:BSE500",
+        "BSEMIDCAP":   "BSE:BSE MIDCAP",
+        "BSESMALLCAP": "BSE:BSE SMALLCAP",
     }
     if s in aliases:
         return aliases[s]
@@ -98,6 +147,14 @@ def _to_zerodha_symbol(symbol: str) -> str:
         return s
     return f"NSE:{s}"
 
+
+def _is_bse_symbol(symbol: str) -> bool:
+    return symbol.upper().strip() in _BSE_SYMBOLS
+
+
+# ---------------------------------------------------------------------------
+# Individual source fetchers
+# ---------------------------------------------------------------------------
 
 async def _fetch_zerodha(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
     """Fetch via Zerodha JugaadClient historical API."""
@@ -111,44 +168,124 @@ async def _fetch_zerodha(symbol: str, interval: str, from_date: str, to_date: st
         candles = broker.historical_data(zd_sym, from_date, to_date, zd_interval)
         if not candles:
             return []
-        result = []
-        for c in candles:
-            result.append({
+        return [
+            {
                 "datetime": str(c.get("date", "")),
                 "open": float(c.get("open", 0) or 0),
                 "high": float(c.get("high", 0) or 0),
                 "low": float(c.get("low", 0) or 0),
                 "close": float(c.get("close", 0) or 0),
                 "volume": int(c.get("volume", 0) or 0),
-            })
-        return result
+            }
+            for c in candles
+        ]
     except Exception as exc:
         logger.debug("Zerodha historical fetch failed for %s: %s", symbol, exc)
         return []
 
 
-async def _fetch_indmoney(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch via INDstocks /market/historical API."""
+async def _fetch_indmoney_single_chunk(
+    scrip_code: str,
+    ind_interval: str,
+    start_ms: int,
+    end_ms: int,
+) -> list[dict]:
+    """Single bounded INDmoney historical request (no chunking)."""
     try:
         from src.brokers.indmoney import INDmoneyBroker
         broker = INDmoneyBroker()
         if not broker._token:
             return []
-        ind_interval = _INDMONEY_INTERVAL.get(interval, "1day")
-        candles = await broker.get_historical_data(symbol, ind_interval, from_date, to_date)
-        if not candles:
+        async with __import__("httpx").AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"https://api.indstocks.com/market/historical/{ind_interval}",
+                headers={"Authorization": broker._token, "Content-Type": "application/json"},
+                params={
+                    "scrip-codes": scrip_code,
+                    "start_time": start_ms,
+                    "end_time": end_ms,
+                },
+            )
+        if r.status_code != 200:
             return []
+        raw = r.json()
+        if not raw:
+            return []
+        candles = raw if isinstance(raw, list) else raw.get("data", [])
         result = []
         for c in candles:
-            result.append({
-                "datetime": str(c.get("timestamp", "")),
-                "open": float(c.get("open", 0) or 0),
-                "high": float(c.get("high", 0) or 0),
-                "low": float(c.get("low", 0) or 0),
-                "close": float(c.get("close", 0) or 0),
-                "volume": int(c.get("volume", 0) or 0),
-            })
+            if isinstance(c, list) and len(c) >= 6:
+                ts_ms = c[0]
+                dt_str = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                result.append({
+                    "datetime": dt_str,
+                    "open": float(c[1] or 0),
+                    "high": float(c[2] or 0),
+                    "low": float(c[3] or 0),
+                    "close": float(c[4] or 0),
+                    "volume": int(c[5] or 0),
+                })
         return result
+    except Exception as exc:
+        logger.debug("INDmoney chunk fetch failed for %s: %s", scrip_code, exc)
+        return []
+
+
+async def _fetch_indmoney(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
+    """Fetch via INDstocks, auto-resolving scrip code and chunking for long ranges."""
+    try:
+        from src.brokers.indmoney import INDmoneyBroker
+        broker = INDmoneyBroker()
+        if not broker._token:
+            return []
+
+        from .instrument_resolver import get_resolver
+        resolver = get_resolver()
+        s = symbol.upper().strip().replace("NSE:", "").replace("BSE:", "")
+        exch = "BSE" if _is_bse_symbol(symbol) else "NSE"
+        scrip_code = await resolver.resolve(s, exch)
+        if not scrip_code:
+            return []
+
+        ind_interval = _INDMONEY_INTERVAL.get(interval, "1day")
+        max_days = _INDMONEY_MAX_DAYS.get(interval, 365)
+
+        def _to_ms(d: date) -> int:
+            return int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+
+        start_date = datetime.strptime(from_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(to_date, "%Y-%m-%d").date()
+
+        total_days = (end_date - start_date).days
+        all_candles: list[dict] = []
+
+        if total_days <= max_days:
+            # Single request
+            all_candles = await _fetch_indmoney_single_chunk(
+                scrip_code, ind_interval,
+                _to_ms(start_date), _to_ms(end_date),
+            )
+        else:
+            # Chunk into max_days windows
+            chunk_start = start_date
+            seen_datetimes: set[str] = set()
+            while chunk_start < end_date:
+                chunk_end = min(chunk_start + timedelta(days=max_days), end_date)
+                chunk = await _fetch_indmoney_single_chunk(
+                    scrip_code, ind_interval,
+                    _to_ms(chunk_start), _to_ms(chunk_end),
+                )
+                for c in chunk:
+                    dt = c["datetime"]
+                    if dt not in seen_datetimes:
+                        seen_datetimes.add(dt)
+                        all_candles.append(c)
+                chunk_start = chunk_end
+
+            all_candles.sort(key=lambda c: c["datetime"])
+
+        return all_candles
+
     except Exception as exc:
         logger.debug("INDmoney historical fetch failed for %s: %s", symbol, exc)
         return []
@@ -157,6 +294,7 @@ async def _fetch_indmoney(symbol: str, interval: str, from_date: str, to_date: s
 def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
     """Fetch via yfinance (synchronous)."""
     try:
+        import math
         import yfinance as yf  # type: ignore[import]
         yf_sym = _to_yf_symbol(symbol)
         yf_interval = _YFINANCE_INTERVAL.get(interval, "1d")
@@ -183,8 +321,6 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
             lo = float(row.get("low", 0) or 0)
             c = float(row.get("close", 0) or 0)
             v = int(row.get("volume", 0) or 0)
-            # Skip NaN rows
-            import math
             if any(math.isnan(x) for x in [o, h, lo, c]):
                 continue
             if c <= 0:
@@ -203,6 +339,10 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
         return []
 
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 async def fetch_candles(
     symbol: str,
     interval: str,
@@ -210,19 +350,29 @@ async def fetch_candles(
     to_date: str,
 ) -> tuple[list[dict], str]:
     """Fetch OHLCV candles using tiered sources. Returns (candles, source_name)."""
-    # Tier 1: Zerodha
-    candles = await _fetch_zerodha(symbol, interval, from_date, to_date)
-    if candles:
-        return candles, "zerodha"
+    is_bse = _is_bse_symbol(symbol)
 
-    # Tier 2: INDmoney
-    candles = await _fetch_indmoney(symbol, interval, from_date, to_date)
-    if candles:
-        return candles, "indmoney"
+    if is_bse:
+        # BSE-first: INDmoney → Yahoo
+        candles = await _fetch_indmoney(symbol, interval, from_date, to_date)
+        if candles:
+            return candles, "indmoney"
 
-    # Tier 3: Yahoo Finance
-    candles = _fetch_yahoo(symbol, interval, from_date, to_date)
-    if candles:
-        return candles, "yahoo"
+        candles = _fetch_yahoo(symbol, interval, from_date, to_date)
+        if candles:
+            return candles, "yahoo"
+    else:
+        # NSE/equity: Zerodha → INDmoney → Yahoo
+        candles = await _fetch_zerodha(symbol, interval, from_date, to_date)
+        if candles:
+            return candles, "zerodha"
+
+        candles = await _fetch_indmoney(symbol, interval, from_date, to_date)
+        if candles:
+            return candles, "indmoney"
+
+        candles = _fetch_yahoo(symbol, interval, from_date, to_date)
+        if candles:
+            return candles, "yahoo"
 
     return [], "none"
