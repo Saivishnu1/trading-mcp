@@ -253,7 +253,7 @@ class INDmoneyBroker(BrokerAdapter):
                     data = body if isinstance(body, list) else body.get("data", [])
                     return data if isinstance(data, list) else ([data] if data else [])
 
-                segments = [segment] if segment else ["EQUITY", "DERIVATIVE"]
+                segments = [segment] if segment else ["NSE_EQ", "BSE_EQ", "DERIVATIVE"]
                 combined: list[dict] = []
                 for seg in segments:
                     r = await client.get(
