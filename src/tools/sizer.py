@@ -2,7 +2,6 @@ from mcp.server.fastmcp import FastMCP
 
 from src.sizer.engine import (
     size_options_trade as _size_options_trade,
-    size_from_recommendation as _size_from_recommendation,
 )
 
 
@@ -41,27 +40,3 @@ def register(mcp: FastMCP) -> None:
             risk_percent=risk_percent,
         )
 
-    @mcp.tool()
-    def size_from_recommendation(
-        symbol: str,
-        capital: float = 100_000,
-        risk_percent: float = 1.0,
-    ) -> dict:
-        """Get a fully sized trade package from a portfolio-aware recommendation.
-
-        Calls recommend_trade() to obtain signal, entry, stoploss, target, and
-        position_size (already adjusted for event risk and duplicate exposure),
-        then computes absolute sizing: quantity, capital_required, risk_amount,
-        capital_at_risk_pct, max_loss, and portfolio heat context.
-
-        When recommendation is AVOID, all sizing fields are null and
-        log_trade_params is null — preventing accidental trade logging.
-
-        Returns log_trade_params with risk_amount, capital_at_risk, and
-        portfolio_heat_at_entry populated for direct use with log_trade().
-        """
-        return _size_from_recommendation(
-            symbol=symbol,
-            capital=capital,
-            risk_percent=risk_percent,
-        )

@@ -2,7 +2,6 @@ from mcp.server.fastmcp import FastMCP
 
 from src.portfolio_intelligence.service import (
     get_portfolio_risk_report as _get_portfolio_risk_report,
-    get_portfolio_regime_analysis as _get_portfolio_regime_analysis,
     get_portfolio_exposure_breakdown as _get_portfolio_exposure_breakdown,
 )
 
@@ -27,25 +26,6 @@ def register(mcp: FastMCP) -> None:
         Requires an active session (call zerodha_login first).
         """
         return _get_portfolio_risk_report()
-
-    @mcp.tool()
-    def get_portfolio_regime_analysis() -> dict:
-        """Get a regime distribution breakdown across your portfolio.
-
-        For each holding, detects the current market regime and trade signal.
-        Aggregates into:
-
-          regime_counts              — count per regime type
-          dominant_regime            — most common regime in portfolio
-          portfolio_directional_bias — BULLISH / BEARISH / MIXED
-          per_position               — symbol, regime, signal, action
-          summary                    — one-line plain-English summary
-
-        Useful for answering: "Is my portfolio aligned with current market regimes?"
-
-        Requires an active session (call zerodha_login first).
-        """
-        return _get_portfolio_regime_analysis()
 
     @mcp.tool()
     def get_portfolio_exposure_breakdown() -> dict:

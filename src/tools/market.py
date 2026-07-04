@@ -68,27 +68,6 @@ def register(mcp: FastMCP) -> None:
         return _meta.wrap(data, m)
 
     @mcp.tool()
-    def get_ohlc(instruments: list[str]) -> dict:
-        """Return today's OHLC and last traded price for instruments.
-
-        Args:
-            instruments: List of 'EXCHANGE:SYMBOL' strings.
-                         Example: ['NSE:TCS', 'NSE:WIPRO']
-        """
-        market = get_market()
-        data = {inst: market.get_ohlc(inst) for inst in instruments}
-        m = _meta.build_meta(
-            type_=_meta.TYPE_FACT,
-            validation_status=_meta.VALIDATION_VERIFIED,
-            data_quality=_meta.DQ_VALID,
-            source="NSELive",
-            account_type="MARKET_DATA_ONLY",
-            warning=None if _meta.is_market_hours() else
-                "Outside NSE session. OHLC is today's session; may be incomplete.",
-        )
-        return _meta.wrap(data, m)
-
-    @mcp.tool()
     def get_ltp(instruments: list[str]) -> dict:
         """Return just the last traded price for instruments — fastest quote call.
 

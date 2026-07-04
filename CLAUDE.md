@@ -4,9 +4,9 @@
 
 Zerodha Personal MCP
 
-Current Phase: 22H — OAuth 2.0 + PKCE, multi-user isolation, security model
+Current Phase: Pre-Phase 3 cleanup complete — broker intelligence + portfolio intelligence integrated
 
-Current Tool Count: 64
+Current Tool Count: 66
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
