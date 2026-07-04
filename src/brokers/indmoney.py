@@ -185,60 +185,35 @@ class INDmoneyBroker(BrokerAdapter):
             logger.debug("INDmoneyBroker.get_positions error: %s", exc)
             return []
 
-    async def get_raw_order_book(self) -> dict:
-        """Return raw /order-book response for field discovery."""
+    async def _raw_get(self, path: str) -> dict:
+        """GET path and return {status_code, body} — body is JSON or raw text on parse failure."""
         if not self._token:
             return {"error": "not_configured"}
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(f"{INDSTOCKS_BASE}/order-book", headers=self._headers())
-                return {"status_code": r.status_code, "body": r.json()}
+                r = await client.get(f"{INDSTOCKS_BASE}{path}", headers=self._headers())
+                try:
+                    body = r.json()
+                except Exception:
+                    body = r.text
+                return {"status_code": r.status_code, "body": body}
         except Exception as exc:
             return {"error": str(exc)}
+
+    async def get_raw_order_book(self) -> dict:
+        return await self._raw_get("/order-book")
 
     async def get_raw_holdings(self) -> dict:
-        """Return raw /portfolio/holdings response for field discovery."""
-        if not self._token:
-            return {"error": "not_configured"}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(f"{INDSTOCKS_BASE}/portfolio/holdings", headers=self._headers())
-                return {"status_code": r.status_code, "body": r.json()}
-        except Exception as exc:
-            return {"error": str(exc)}
+        return await self._raw_get("/portfolio/holdings")
 
     async def get_raw_funds(self) -> dict:
-        """Return raw /funds response for field discovery."""
-        if not self._token:
-            return {"error": "not_configured"}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(f"{INDSTOCKS_BASE}/funds", headers=self._headers())
-                return {"status_code": r.status_code, "body": r.json()}
-        except Exception as exc:
-            return {"error": str(exc)}
+        return await self._raw_get("/funds")
 
     async def get_raw_positions(self) -> dict:
-        """Return raw /portfolio/positions response for field discovery."""
-        if not self._token:
-            return {"error": "not_configured"}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(f"{INDSTOCKS_BASE}/portfolio/positions", headers=self._headers())
-                return {"status_code": r.status_code, "body": r.json()}
-        except Exception as exc:
-            return {"error": str(exc)}
+        return await self._raw_get("/portfolio/positions")
 
     async def get_raw_trade_book(self) -> dict:
-        """Return raw /trade-book response for field discovery."""
-        if not self._token:
-            return {"error": "not_configured"}
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                r = await client.get(f"{INDSTOCKS_BASE}/trade-book", headers=self._headers())
-                return {"status_code": r.status_code, "body": r.json()}
-        except Exception as exc:
-            return {"error": str(exc)}
+        return await self._raw_get("/trade-book")
 
     async def get_trades(self, order_id: str | None = None) -> list[dict]:
         """Return executed trades from /trade-book or /trades/{order_id}."""
