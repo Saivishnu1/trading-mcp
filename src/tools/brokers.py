@@ -192,7 +192,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             order_id: optional — fetch trades for a specific order ID
                       (e.g. "DRV-28131451")
-            segment:  "NSE_EQ" | "BSE_EQ" | "DERIVATIVE" | "" (default: all three)
+            segment:  "EQUITY" | "DERIVATIVE" | "" (default: both)
 
         Trade-book shows only filled/executed trades, unlike order-book which
         includes all statuses. Requires segment param per INDstocks API.

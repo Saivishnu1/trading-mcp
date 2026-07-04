@@ -253,7 +253,7 @@ class INDmoneyBroker(BrokerAdapter):
                     data = body if isinstance(body, list) else body.get("data", [])
                     return data if isinstance(data, list) else ([data] if data else [])
 
-                segments = [segment] if segment else ["NSE_EQ", "BSE_EQ", "DERIVATIVE"]
+                segments = [segment] if segment else ["EQUITY", "DERIVATIVE"]
                 combined: list[dict] = []
                 for seg in segments:
                     r = await client.get(
@@ -266,9 +266,21 @@ class INDmoneyBroker(BrokerAdapter):
                     body = r.json()
                     if not body:
                         continue
-                    data = body if isinstance(body, list) else body.get("data", [])
-                    if isinstance(data, list):
-                        combined.extend(data)
+                    raw_items = body if isinstance(body, list) else body.get("data", [])
+                    if not isinstance(raw_items, list):
+                        continue
+                    for t in raw_items:
+                        if not isinstance(t, dict):
+                            continue
+                        combined.append({
+                            "order_id": str(t.get("fill_id") or t.get("id") or ""),
+                            "symbol": t.get("scrip_code") or t.get("trading_symbol") or t.get("name") or "",
+                            "quantity": t.get("quantity") or 0,
+                            "price": t.get("price") or 0,
+                            "created_at": t.get("trade_date") or t.get("created_at") or "",
+                            "segment": seg,
+                            "_raw": t,
+                        })
                 return combined
         except Exception as exc:
             logger.debug("INDmoneyBroker.get_trades error: %s", exc)
