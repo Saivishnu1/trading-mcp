@@ -72,11 +72,11 @@ class InstrumentResolver:
         "BANKNIFTY":   "NSE_BANKNIFTY",
         "NIFTY BANK":  "NSE_BANKNIFTY",
         "FINNIFTY":    "NSE_FINNIFTY",
-        "SENSEX":      "BSE_SENSEX",
+        "SENSEX":      "BSE_40000006",
         "BANKEX":      "BSE_40000033",
-        "BSE500":      "BSE_500INDEX",
-        "BSEMIDCAP":   "BSE_MIDCAP",
-        "BSESMALLCAP": "BSE_SMLCAP",
+        "BSE500":      "BSE_40000127",
+        "BSEMIDCAP":   "BSE_40000041",
+        "BSESMALLCAP": "BSE_40000035",
     }
 
     def __init__(self) -> None:
