@@ -307,15 +307,8 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
     """Download one ticker from yfinance and return normalized candles. Empty list on failure."""
     import math
     import yfinance as yf  # type: ignore[import]
-    try:
-        df = yf.download(
-            yf_sym,
-            start=from_date,
-            end=to_date,
-            interval=yf_interval,
-            progress=False,
-            auto_adjust=True,
-        )
+
+    def _normalize(df) -> list[dict]:
         if df is None or df.empty:
             return []
         if hasattr(df.columns, "levels"):
@@ -339,6 +332,35 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
                 "open": o, "high": h, "low": lo, "close": c, "volume": v,
             })
         return result
+
+    # .BO tickers: yf.download() ignores date range and returns only recent data.
+    # Use Ticker.history() with explicit start/end instead.
+    if yf_sym.endswith(".BO"):
+        try:
+            ticker_obj = yf.Ticker(yf_sym)
+            df = ticker_obj.history(
+                start=from_date,
+                end=to_date,
+                interval=yf_interval,
+                auto_adjust=True,
+            )
+            result = _normalize(df)
+            if result:
+                return result
+        except Exception:
+            pass
+        return []
+
+    try:
+        df = yf.download(
+            yf_sym,
+            start=from_date,
+            end=to_date,
+            interval=yf_interval,
+            progress=False,
+            auto_adjust=True,
+        )
+        return _normalize(df)
     except Exception:
         return []
 
@@ -359,10 +381,12 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
 
         for ticker in tickers:
             result = _yf_download_single(ticker, yf_interval, from_date, to_date)
-            if result:
+            if len(result) >= 5:
                 if ticker != primary:
                     logger.debug("Yahoo fallback ticker %s succeeded for %s", ticker, symbol)
                 return result
+            if result:
+                logger.debug("Yahoo ticker %s returned only %d candle(s), treating as failure", ticker, len(result))
 
         return []
     except Exception as exc:
