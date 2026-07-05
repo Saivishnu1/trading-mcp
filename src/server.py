@@ -74,6 +74,33 @@ except Exception as exc:
     logger.warning("Auto-login from env error: %s", exc)
 
 
+def _refresh_calendar_background() -> None:
+    """Refresh NSE holiday calendar from live API in a background thread on startup."""
+    import threading
+
+    def _run() -> None:
+        try:
+            from src.providers.calendar.refresh import refresh_calendar
+            result = refresh_calendar()
+            if result.get("updated"):
+                logger.info(
+                    "Calendar auto-refreshed: %d change(s) — %s",
+                    len(result.get("changes", [])),
+                    result.get("message", ""),
+                )
+            else:
+                logger.debug("Calendar auto-refresh: %s", result.get("message", "no changes"))
+        except Exception as exc:
+            logger.warning("Calendar auto-refresh failed (static JSON in use): %s", exc)
+
+    threading.Thread(target=_run, daemon=True, name="calendar-refresh").start()
+
+
+try:
+    _refresh_calendar_background()
+except Exception as exc:
+    logger.warning("Calendar background refresh error: %s", exc)
+
 
 _public_host = os.environ.get("PUBLIC_HOST", "")
 _allowed_hosts = ["localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000"]
