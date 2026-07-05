@@ -316,6 +316,25 @@ def get_calendar_health() -> dict:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _fetch_bse_holiday_names(year: int) -> dict[str, str]:
+    """Return BSE holidays as {iso_date: name} from static bse_YYYY.json."""
+    import json as _json
+    from pathlib import Path
+    resources = Path(__file__).parents[2] / "resources" / "calendar"
+    for fname in (f"bse_{year}.json", f"{year}.json"):
+        path = resources / fname
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                raw = _json.load(fh)
+            entries = raw if isinstance(raw, list) else raw.get("holidays", [])
+            return {e["date"]: e.get("name", "BSE Holiday") for e in entries if e.get("date")}
+        except Exception:
+            pass
+    return {}
+
+
 def _fetch_bse_holidays_sync(year: int) -> list[str]:
     """Return BSE holidays for the year — synchronous, no event loop needed.
 
@@ -428,12 +447,13 @@ def get_market_calendar() -> dict:
     nse_upcoming = _upcoming_holidays(today, days_ahead=90)
     bse_upcoming = []
     if bse_holidays:
+        bse_names = _fetch_bse_holiday_names(today.year)
         end = today + timedelta(days=90)
         for h in bse_holidays:
             try:
                 h_date = date.fromisoformat(h)
                 if today < h_date <= end:
-                    bse_upcoming.append({"date": h, "name": "BSE Holiday"})
+                    bse_upcoming.append({"date": h, "name": bse_names.get(h, "BSE Holiday")})
             except ValueError:
                 pass
 
