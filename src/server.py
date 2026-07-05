@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker, current_user
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, meta_tools, brokers, chart
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, meta_tools, brokers, chart, candles
 import src.session_store as session_store
 import src.api_key_store as api_key_store
 
@@ -250,6 +250,7 @@ sizer.register(mcp)
 meta_tools.register(mcp)
 brokers.register(mcp)
 chart.register(mcp)
+candles.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
