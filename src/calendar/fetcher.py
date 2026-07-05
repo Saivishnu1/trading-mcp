@@ -17,6 +17,7 @@ import os
 import re
 import time
 from datetime import date
+from pathlib import Path
 
 import httpx
 
@@ -46,6 +47,8 @@ _BSE_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,*/*",
     "Referer": "https://www.bseindia.com/",
 }
+
+_RESOURCES_DIR = Path(__file__).parents[2] / "resources" / "calendar"
 
 _MONTH_MAP = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -88,6 +91,21 @@ def _save_json_cache(path: str, holidays: list[str]) -> None:
             json.dump({"holidays": holidays, "cached_at": time.time()}, f)
     except Exception as exc:
         logger.debug("Failed to write calendar cache %s: %s", path, exc)
+
+
+def _load_static_bse_holidays(year: int) -> list[str]:
+    """Load the on-disk BSE holiday fallback (resources/calendar/bse_YYYY.json)."""
+    path = _RESOURCES_DIR / f"bse_{year}.json"
+    if not path.exists():
+        return []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        entries = raw if isinstance(raw, list) else raw.get("holidays", [])
+        return sorted({e["date"] for e in entries if e.get("date")})
+    except Exception as exc:
+        logger.debug("Failed to load static BSE calendar %s: %s", path, exc)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +214,11 @@ class CalendarFetcher:
                     _save_json_cache(cache_path, dates)
                     return dates
                 logger.warning("NSE holiday API returned 0 dates for %d", year)
+            else:
+                logger.warning(
+                    "NSE holiday API returned status %d for %d: %s",
+                    r.status_code, year, r.text[:200],
+                )
         except Exception as exc:
             logger.warning("NSE holiday live fetch failed: %s", exc)
 
@@ -242,11 +265,22 @@ class CalendarFetcher:
                 if dates:
                     _save_json_cache(cache_path, dates)
                     return dates
-                logger.warning("BSE holiday page returned 0 dates for %d — falling back to NSE", year)
+                logger.warning("BSE holiday page returned 0 dates for %d", year)
+            else:
+                logger.warning(
+                    "BSE holiday page returned status %d for %d", r.status_code, year,
+                )
         except Exception as exc:
-            logger.warning("BSE holiday fetch failed: %s — falling back to NSE holidays", exc)
+            logger.warning("BSE holiday live fetch failed: %s", exc)
 
-        # Fallback: NSE holidays (95%+ overlap)
+        # Fallback 1: static on-disk BSE calendar (resources/calendar/bse_YYYY.json)
+        static = _load_static_bse_holidays(year)
+        if static:
+            _save_json_cache(cache_path, static)
+            return static
+
+        # Fallback 2: NSE holidays (95%+ overlap)
+        logger.warning("No static BSE calendar for %d — falling back to NSE holidays", year)
         nse = await self.fetch_nse_holidays(year)
         return nse
 

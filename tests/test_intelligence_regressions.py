@@ -38,15 +38,21 @@ class TestIR1DashboardIntelligenceFailure:
                                           "expiry": "26-Jun-2026"}, 22100.0))
         monkeypatch.setattr(svc, "_technicals_section",
                             lambda sym: ({"rsi": 55.0, "ema20": 22000.0, "ema50": 21800.0,
-                                          "adx": 25.0, "macd": 0.1, "macd_signal": 0.05,
-                                          "macd_histogram": 0.05, "atr": 150.0}, 22100.0))
+                                          "adx": 25.0,
+                                          "macd": {"macd": 0.1, "signal": 0.05, "histogram": 0.05},
+                                          "atr": 150.0}, 22100.0))
         monkeypatch.setattr(svc, "_analysis_section",
-                            lambda sym: (
-                                {"regime": "BULL_TREND", "signal": "BUY"},
-                                {"signal": "BUY", "entry": 22100.0, "stoploss": 21900.0,
-                                 "target": 22400.0, "confidence": 70},
-                                {"recommended": "Bull Call Spread", "reason": "ok"},
-                            ))
+                            lambda sym: {"market_structure": {
+                                "price": 22100.0, "ema20": 22000.0, "ema50": 21800.0,
+                                "adx": 25.0, "rsi": 55.0,
+                                "price_above_ema20": True, "ema20_above_ema50": True,
+                                "adx_above_25": False, "rsi_above_60": False,
+                                "descriptor": ["price_above_ema20", "ema20_above_ema50"],
+                                "indicator_interpretation": {
+                                    "type": "INTERPRETATION", "validation_status": "UNVALIDATED",
+                                    "adx_note": "trend_weak", "rsi_note": "momentum_neutral",
+                                },
+                            }})
 
         result = svc.build_dashboard("NIFTY")
 
@@ -75,11 +81,17 @@ class TestIR1DashboardIntelligenceFailure:
                                           "adx": 15.0, "macd": 0.0, "macd_signal": 0.0,
                                           "macd_histogram": 0.0, "atr": 100.0}, None))
         monkeypatch.setattr(svc, "_analysis_section",
-                            lambda sym: (
-                                {"regime": "NEUTRAL"},
-                                {"signal": "NEUTRAL"},
-                                {"recommended": "Iron Condor", "reason": "range"},
-                            ))
+                            lambda sym: {"market_structure": {
+                                "price": None, "ema20": None, "ema50": None,
+                                "adx": 15.0, "rsi": 50.0,
+                                "price_above_ema20": False, "ema20_above_ema50": False,
+                                "adx_above_25": False, "rsi_above_60": False,
+                                "descriptor": [],
+                                "indicator_interpretation": {
+                                    "type": "INTERPRETATION", "validation_status": "UNVALIDATED",
+                                    "adx_note": "trend_absent", "rsi_note": "momentum_neutral",
+                                },
+                            }})
 
         result = svc.build_dashboard("NIFTY")
         assert isinstance(result["summary"], str)
@@ -166,10 +178,10 @@ class TestIR3SummaryBackwardCompat:
 
         tech = {"rsi": 55.0, "ema20": 22000.0, "ema50": 21800.0, "adx": 25.0}
         opts = {"pcr": 1.1}
-        analysis = {"regime": "BULL_TREND"}
+        analysis = {"market_structure": {"indicator_interpretation": {}}}
 
         # Call without intelligence — should not raise
-        result = _build_summary("NIFTY", 22100.0, tech, opts, analysis, "BUY")
+        result = _build_summary("NIFTY", 22100.0, tech, opts, analysis)
         assert isinstance(result, str)
         assert "NIFTY" in result
 
@@ -178,10 +190,10 @@ class TestIR3SummaryBackwardCompat:
 
         tech = {"rsi": 55.0, "ema20": 22000.0, "ema50": 21800.0, "adx": 25.0}
         opts = {"pcr": 1.1}
-        analysis = {"regime": "BULL_TREND"}
+        analysis = {"market_structure": {"indicator_interpretation": {}}}
 
-        r1 = _build_summary("NIFTY", 22100.0, tech, opts, analysis, "BUY")
-        r2 = _build_summary("NIFTY", 22100.0, tech, opts, analysis, "BUY", intelligence=None)
+        r1 = _build_summary("NIFTY", 22100.0, tech, opts, analysis)
+        r2 = _build_summary("NIFTY", 22100.0, tech, opts, analysis, intelligence=None)
         assert r1 == r2
 
     def test_summary_contains_event_warning_when_present(self):
@@ -189,7 +201,7 @@ class TestIR3SummaryBackwardCompat:
 
         tech = {"rsi": 55.0, "ema20": 22000.0, "ema50": 21800.0, "adx": 25.0}
         opts = {"pcr": 1.1}
-        analysis = {"regime": "BULL_TREND"}
+        analysis = {"market_structure": {"indicator_interpretation": {}}}
         intelligence = {
             "upcoming_events": [{
                 "days_until": 1,
@@ -200,16 +212,16 @@ class TestIR3SummaryBackwardCompat:
             }]
         }
 
-        result = _build_summary("NIFTY", 22100.0, tech, opts, analysis, "BUY",
+        result = _build_summary("NIFTY", 22100.0, tech, opts, analysis,
                                 intelligence=intelligence)
-        assert "RBI MPC Decision" in result or "defined-risk" in result
+        assert "RBI MPC Decision" in result
 
     def test_no_warning_when_event_beyond_3_days(self):
         from src.dashboard.service import _build_summary
 
         tech = {"rsi": 55.0, "ema20": 22000.0, "ema50": 21800.0, "adx": 25.0}
         opts = {"pcr": 1.1}
-        analysis = {"regime": "BULL_TREND"}
+        analysis = {"market_structure": {"indicator_interpretation": {}}}
         intelligence = {
             "upcoming_events": [{
                 "days_until": 5,
@@ -220,7 +232,7 @@ class TestIR3SummaryBackwardCompat:
             }]
         }
 
-        result = _build_summary("NIFTY", 22100.0, tech, opts, analysis, "BUY",
+        result = _build_summary("NIFTY", 22100.0, tech, opts, analysis,
                                 intelligence=intelligence)
         # No event warning expected since 5 > 3
         assert "RBI MPC Decision" not in result

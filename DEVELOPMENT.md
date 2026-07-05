@@ -2347,3 +2347,42 @@ HTML form — they never appear in MCP traffic, agent context, or tool logs.
 - OAuth PKCE chosen over simpler bearer-only to support claude.ai's automatic OAuth flow — no API key copy/paste needed for that client.
 - Guest token uses `"__guest__"` as the user_id (not `None`) so it is a valid stored token; the equality check `uid == "__guest__"` gates it out of personal tools without needing a separate token type.
 - 401 guard is on the transport endpoints, not on individual tool calls — tools never return 401. This keeps the MCP tool contract clean: tools return data or `{"error": "..."}` / `{"status": "not_authenticated"}`, never HTTP 401.
+
+## Pre-Phase 4 Fixes — Calendar, Expiries, Dashboard Cleanup
+
+**Tools added:** 1 (`get_sensex_dashboard`; total 64) **Tests:** 1584 (23 new/updated, 1 pre-existing sandbox-network failure unrelated to this work)
+
+### What was built
+
+**Monthly expiry calculation fixed (`src/market/calendar.py`)**
+- SEBI's weekly-expiry rationalization (Nov 2024) left only NIFTY (NSE) and SENSEX (BSE) with a weekly series; BANKNIFTY, FINNIFTY, MIDCPNIFTY, and BANKEX are monthly-only now. `_nearest_expiry_algorithmic` previously treated all six as "nearest weekday", which produced weekly-style dates for indices that no longer have a weekly contract.
+- Added `_last_weekday_of_month()` and `_nearest_monthly_expiry()`; `_MONTHLY_ONLY_INDICES = {banknifty, finnifty, midcap_nifty, bankex}` now route through the monthly calculation, rolling to next month once the current month's date has passed, then adjusting backward over holidays/weekends.
+- Fixed `midcap_nifty`'s expiry weekday from Thursday to Monday in `_EXPIRY_WEEKDAY`.
+- `get_market_calendar()` now also returns a `monthly_expiries` dict (last-weekday-of-month for all six indices, independent of weekly/monthly-only status) so NIFTY/SENSEX's monthly contract is visible alongside their weekly one.
+- `nse_expiries`/`bse_expiries` descriptive blocks corrected to stop claiming a weekly series for indices that no longer have one.
+
+**Sensex/Bankex live expiry — reused BSEOptionsService instead of INDmoney**
+- The old `_live_expiries()` called a speculative `api.indstocks.com/option-chain-symbols` endpoint gated behind `INDSTOCKS_TOKEN` that doesn't exist in `INDmoneyBroker` (`get_option_chain` there is stubbed `"not_available"`) — so it never returned data.
+- Replaced with `src.options.bse_service.get_bse_options_service().available_expiries()` — the same no-auth BSE API already powering `get_sensex_option_chain`/`get_bankex_option_chain`. `expiry_source_per_index.sensex/bankex` now genuinely reports `"live"` when the BSE API responds.
+- Fixed a latent bug where a live expiry string that failed to parse left the index silently missing from `expiries` while still labeled `"live"` in `expiry_source_per_index`; it now falls back to `"algorithmic"` on parse failure. Added `"%d %b %Y"` (BSE's date format) to the parse attempts.
+
+**BSE holiday static fallback (`src/calendar/fetcher.py`)**
+- Added `resources/calendar/bse_{2025,2026,2027,2028}.json` static fallback files (mirroring the existing NSE calendars, per the documented "95%+ overlap" approximation) so `fetch_bse_holidays()` no longer depends entirely on a live scrape + NSE-derived proxy when both fail.
+- Added `else` branches logging the HTTP status/body when NSE/BSE holiday endpoints respond with a non-200 status (previously only exceptions were logged; a clean non-200 response fell through silently).
+- Confirmed `nse_holidays`/`bse_holidays` being `[]` for a given day is expected behavior when no holiday falls in the 30-day rolling window, not a data-loading bug — `resources/calendar/2026.json` already carries a full year of holidays.
+
+**Dashboard cleanup — `signal`/`confidence`/`trade_setup`/`strategy` removed (`src/dashboard/service.py`)**
+- `build_dashboard()`'s `_analysis_section` bypassed the Phase 22F tool-layer sanitization and exposed the raw `regime`/`confidence`/`signal` fields (deleted everywhere else in Phase 22F) plus full `trade_setup`/`strategy` blocks. Rewritten to reuse `src.tools.analysis._build_market_structure` — the same conversion the `detect_market_regime` tool uses — so the dashboard and that tool never disagree on what counts as a fact.
+- `trade_setup` and `strategy` keys removed from the dashboard response entirely; `generate_trade_setup`/`recommend_strategy` are no longer called from the dashboard path. Use `create_trade_plan`/`build_option_strategy` for directional trade construction.
+- `intelligence.risk_score.recommendation` dropped from the dashboard's slim risk-score view (the full `get_market_risk_score` tool is unaffected — its own `recommendation` field stays).
+- `_build_summary` rewritten to be observation-only: price vs EMA20/EMA50, RSI value, MACD sign, ADX value + threshold note, PCR + interpretation, max pain, VIX level, and a factual high-impact-event note — no directional bias language, no "consider X" recommendation language.
+
+**New tool — `get_sensex_dashboard`**
+- `_options_section` now picks `BSEOptionsService` for `{SENSEX, BANKEX}` and the NSE `OptionsService` otherwise, so `build_dashboard("SENSEX")` works unmodified elsewhere (technicals/analysis were already symbol-generic via `src/market/symbols.py`).
+- Registered in `src/tools/dashboard.py`, mirroring `get_nifty_dashboard`/`get_banknifty_dashboard`.
+
+### Key decisions
+
+- Monthly-vs-weekly routing lives in `_MONTHLY_ONLY_INDICES`, not a per-call flag, so every caller of `_nearest_expiry_algorithmic` (including tests) gets the correct behavior without remembering to opt in.
+- BSE static holiday files mirror the NSE calendars rather than inventing unverified BSE-specific dates — consistent with the existing documented fallback design ("NSE holidays, 95%+ overlap"), just made durable against network failure instead of computed live every time.
+- Dashboard cleanup expands Phase 22F's tool-layer-only boundary to include the dashboard aggregator: Phase 22F explicitly preserved internal consumers like the dashboard so downstream code wouldn't break, but the dashboard is itself a directly-callable MCP tool surface (not an internal-only consumer), so it now gets the same treatment as `detect_market_regime`.
