@@ -470,3 +470,83 @@ class TestChartPatternDetector:
         patterns = self.det.detect_all(df)
         for p in patterns:
             assert p["direction"] in ("bullish", "bearish", "neutral")
+
+
+# ---------------------------------------------------------------------------
+# ChartPatternDetector — neckline dedup + max_patterns cap
+# ---------------------------------------------------------------------------
+
+def _fake_pattern(pattern, neckline, end_date, pattern_type="reversal"):
+    return {
+        "pattern": pattern, "type": pattern_type, "direction": "bearish",
+        "status": "complete", "support": neckline, "resistance": neckline + 10,
+        "neckline": neckline, "start_date": "2026-01-01", "end_date": end_date,
+        "bars_formed": 5, "observations": [],
+    }
+
+
+class TestDetectorDedupeAndCap:
+
+    def setup_method(self):
+        self.det = ChartPatternDetector()
+
+    def test_dedupe_keeps_most_recent_double_top_per_neckline(self, monkeypatch):
+        dupes = [
+            _fake_pattern("Double Top", 23070.0, "2026-05-01"),
+            _fake_pattern("Double Top", 23070.0, "2026-06-15"),
+            _fake_pattern("Double Top", 23070.0, "2026-04-10"),
+        ]
+        monkeypatch.setattr(ReversalPatterns, "detect_double_top", staticmethod(lambda df: dupes))
+        monkeypatch.setattr(ReversalPatterns, "detect_double_bottom", staticmethod(lambda df: []))
+        monkeypatch.setattr(ReversalPatterns, "detect_head_and_shoulders", staticmethod(lambda df: []))
+        monkeypatch.setattr(ReversalPatterns, "detect_inverse_head_and_shoulders", staticmethod(lambda df: []))
+        monkeypatch.setattr(ContinuationPatterns, "detect_flag", staticmethod(lambda df: []))
+        monkeypatch.setattr(ContinuationPatterns, "detect_pennant", staticmethod(lambda df: []))
+        monkeypatch.setattr(ContinuationPatterns, "detect_rectangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_ascending_triangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_descending_triangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_symmetrical_triangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_wedge", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_cup_and_handle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_rounding_bottom", staticmethod(lambda df: []))
+
+        rows = [_row(d, 100, 101, 99, 100) for d in _dates(20)]
+        df = pd.DataFrame(rows)
+        result = self.det.detect_all(df)
+
+        double_tops = [p for p in result if p["pattern"] == "Double Top"]
+        assert len(double_tops) == 1
+        assert double_tops[0]["end_date"] == "2026-06-15"
+
+    def test_max_patterns_caps_total(self, monkeypatch):
+        many = [
+            _fake_pattern("Symmetrical Triangle", 100.0 + i, f"2026-01-{i + 1:02d}")
+            for i in range(15)
+        ]
+        monkeypatch.setattr(BreakoutPatterns, "detect_symmetrical_triangle", staticmethod(lambda df: many))
+        monkeypatch.setattr(ReversalPatterns, "detect_double_top", staticmethod(lambda df: []))
+        monkeypatch.setattr(ReversalPatterns, "detect_double_bottom", staticmethod(lambda df: []))
+        monkeypatch.setattr(ReversalPatterns, "detect_head_and_shoulders", staticmethod(lambda df: []))
+        monkeypatch.setattr(ReversalPatterns, "detect_inverse_head_and_shoulders", staticmethod(lambda df: []))
+        monkeypatch.setattr(ContinuationPatterns, "detect_flag", staticmethod(lambda df: []))
+        monkeypatch.setattr(ContinuationPatterns, "detect_pennant", staticmethod(lambda df: []))
+        monkeypatch.setattr(ContinuationPatterns, "detect_rectangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_ascending_triangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_descending_triangle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_wedge", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_cup_and_handle", staticmethod(lambda df: []))
+        monkeypatch.setattr(BreakoutPatterns, "detect_rounding_bottom", staticmethod(lambda df: []))
+
+        rows = [_row(d, 100, 101, 99, 100) for d in _dates(20)]
+        df = pd.DataFrame(rows)
+
+        result = self.det.detect_all(df)
+        assert len(result) == 10  # default cap
+
+        result_5 = self.det.detect_all(df, max_patterns=5)
+        assert len(result_5) == 5
+        # still most-recent-first after capping
+        assert result_5[0]["end_date"] == "2026-01-15"
+
+        result_uncapped = self.det.detect_all(df, max_patterns=0)
+        assert len(result_uncapped) == 15
