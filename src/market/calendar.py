@@ -21,7 +21,26 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
+import json as _json_mod
+import os as _os_mod
+import time as _time_mod
+
 from src.providers.calendar.chain import get_calendar_provider, reset_calendar_provider
+
+
+def _load_zerodha_expiries_cache() -> dict:
+    """Read the Zerodha expiry cache written by CalendarFetcher — sync, no network."""
+    tmp = _os_mod.environ.get("TMPDIR", _os_mod.environ.get("TEMP", "/tmp"))
+    path = _os_mod.path.join(tmp, "zerodha_nse_expiries.json")
+    try:
+        if not _os_mod.path.exists(path):
+            return {}
+        if _time_mod.time() - _os_mod.path.getmtime(path) > 86400:
+            return {}
+        with open(path) as f:
+            return _json_mod.load(f)
+    except Exception:
+        return {}
 
 # ---------------------------------------------------------------------------
 # Expiry day-of-week per index (0=Mon … 6=Sun)
@@ -192,15 +211,49 @@ def _expiry_days_this_week(today: date) -> list[str]:
 
 
 def _live_expiries() -> dict[str, str]:
-    """Try to pull nearest expiry dates from the NSE and BSE options services."""
-    results: dict[str, str] = {}
+    """Try to pull nearest expiry dates from live sources.
 
-    # NSE indices via options service
+    Priority for NSE:
+      1. Zerodha instruments CSV (most accurate, has all series)
+      2. NSE option chain service (nearest expiry from live chain)
+    Priority for BSE:
+      1. BSE options service available_expiries
+    """
+    results: dict[str, str] = {}
+    today = date.today()
+
+    # Priority 1: Zerodha instruments CSV — most accurate for monthly-only indices
+    try:
+        import asyncio
+        from src.calendar import CalendarFetcher
+        fetcher = CalendarFetcher()
+        try:
+            loop = asyncio.get_event_loop()
+            if not loop.is_running():
+                zd_expiries = asyncio.run(fetcher.fetch_nse_expiries_from_zerodha())
+            else:
+                # Already in async context — use cached data only (no deadlock)
+                zd_expiries = _load_zerodha_expiries_cache()
+        except RuntimeError:
+            zd_expiries = asyncio.run(fetcher.fetch_nse_expiries_from_zerodha())
+
+        for idx, dates in (zd_expiries or {}).items():
+            if dates:
+                # Pick nearest date that is >= today
+                upcoming = [d for d in dates if d >= today.isoformat()]
+                if upcoming:
+                    results[idx] = upcoming[0]
+    except Exception:
+        pass
+
+    # Priority 2: NSE option chain — fills any gaps
     try:
         from src.options.service import get_options_service
         svc = get_options_service()
         for index, nse_sym in [("nifty", "NIFTY"), ("banknifty", "BANKNIFTY"),
                                 ("finnifty", "FINNIFTY"), ("midcap_nifty", "MIDCPNIFTY")]:
+            if index in results:
+                continue  # already have it from Zerodha
             try:
                 meta = svc.get_option_chain(nse_sym)
                 expiry_dates = meta.get("records", {}).get("expiryDates", [])

@@ -80,7 +80,8 @@ class TestNearestMonthlyExpiry:
     def test_rolls_to_next_month_once_this_months_date_has_passed(self):
         after_expiry = date(2026, 7, 31)  # the day after this month's last Thursday
         result = _nearest_monthly_expiry("nifty", after_expiry)
-        assert result == date(2026, 8, 27)  # last Thursday of August 2026
+        # Aug 27 is Ganesh Chaturthi holiday → expiry rolls back to Aug 26 (Wednesday)
+        assert result == date(2026, 8, 26)
 
 
 class TestNearestExpiryAlgorithmic:
