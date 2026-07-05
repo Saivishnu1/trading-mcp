@@ -105,6 +105,7 @@ async def test_market_awareness_full_success():
         assert res["global"]["gold_change_pct"] == 1.81
         assert res["calendar"]["next_expiry"] == "2026-07-07"
         assert res["data_sources"]["chart"] == "yfinance"
+        assert res["data_sources"]["options"] == "NSE"
         assert len(res["missing_data"]) == 0
         
         # Verify Narration Factual Observations
@@ -174,3 +175,4 @@ async def test_market_awareness_partial_failure():
         assert "options" in res["missing_data"]
         # Options values should fall back to default
         assert res["options"]["pcr"] == 0.0
+        assert res["data_sources"]["options"] == "none"

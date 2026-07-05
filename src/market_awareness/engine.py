@@ -128,6 +128,10 @@ class MarketAwarenessEngine:
         opt_iv = options.get("iv") or {}
         opt_levels = options.get("oi_levels") or {}
 
+        options_source = "none"
+        if include_options and options and "error" not in options:
+            options_source = "BSE" if symbol_upper in ("SENSEX", "BANKEX") else "NSE"
+
         # Construct final unified data dictionary
         final_data = {
             "symbol": symbol_upper,
@@ -199,7 +203,7 @@ class MarketAwarenessEngine:
             },
             "data_sources": {
                 "chart": chart.get("data_source", "none"),
-                "options": options.get("source", "none") if include_options else "none",
+                "options": options_source,
                 "global": vix.get("source", "yfinance") if include_global else "none",
             },
             "missing_data": missing_data,
