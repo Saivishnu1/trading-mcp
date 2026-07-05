@@ -3,16 +3,20 @@ OptionsAwarenessEngine — orchestrates OI, IV, and level analysis.
 """
 from __future__ import annotations
 
+import logging
+
 from src.options.analytics import _underlying
 from .oi_analyzer import OIAnalyzer
 from .iv_analyzer import IVAnalyzer
 from .levels import OILevelDetector
+from .cache import read_cache, write_cache, cache_metadata
 
 _BSE_SYMBOLS = {"SENSEX", "BANKEX"}
+logger = logging.getLogger(__name__)
 
 
-def _get_chain(symbol: str, expiry: str | None) -> tuple[dict, str | None]:
-    """Fetch raw chain dict and resolved expiry from the appropriate service."""
+def _fetch_live(symbol: str, expiry: str | None) -> tuple[dict, str | None]:
+    """Fetch raw chain from NSE/BSE service (no cache)."""
     sym = symbol.upper().strip()
     if sym in _BSE_SYMBOLS:
         from src.options.bse_service import get_bse_options_service
@@ -21,11 +25,38 @@ def _get_chain(symbol: str, expiry: str | None) -> tuple[dict, str | None]:
         from src.options.service import get_options_service
         svc = get_options_service()
 
-    metadata   = svc.get_option_chain(sym)
-    available  = metadata.get("records", {}).get("expiryDates", [])
-    resolved   = expiry if expiry in available else (available[0] if available else None)
-    chain      = svc.get_option_chain(sym, resolved)
+    metadata  = svc.get_option_chain(sym)
+    available = metadata.get("records", {}).get("expiryDates", [])
+    resolved  = expiry if expiry in available else (available[0] if available else None)
+    chain     = svc.get_option_chain(sym, resolved)
     return chain, resolved
+
+
+def _get_chain_with_cache(
+    symbol: str,
+    expiry: str | None,
+) -> tuple[dict, str | None, dict | None]:
+    """Return (chain, resolved_expiry, cache_meta).
+
+    Strategy:
+    - Try live fetch first.
+    - On success → write to cache, return live data (cache_meta=None).
+    - On failure → fall back to cached snapshot if available.
+    - cache_meta is non-None only when serving from cache.
+    """
+    try:
+        chain, resolved = _fetch_live(symbol, expiry)
+        write_cache(symbol, expiry, chain, resolved)
+        return chain, resolved, None
+    except Exception as exc:
+        logger.debug("Live fetch failed for %s: %s — checking cache", symbol, exc)
+
+    entry = read_cache(symbol, expiry)
+    if entry:
+        logger.debug("Serving cached chain for %s (cached_at=%s)", symbol, entry.get("cached_at"))
+        return entry["chain"], entry.get("resolved"), cache_metadata(entry)
+
+    raise RuntimeError(f"No live data and no cached snapshot available for {symbol}")
 
 
 def _build_observations(
@@ -77,11 +108,16 @@ def _build_observations(
 class OptionsAwarenessEngine:
 
     def analyze(self, symbol: str, expiry: str | None = None) -> dict:
-        """Run full option structure analysis for a symbol/expiry."""
+        """Run full option structure analysis for a symbol/expiry.
+
+        Serves live data during market hours; falls back to the last cached
+        EOD snapshot post-market. Result includes cache_status / cached_at /
+        note fields when serving from cache.
+        """
         sym = symbol.upper().strip()
 
         try:
-            chain, resolved = _get_chain(sym, expiry)
+            chain, resolved, cache_meta = _get_chain_with_cache(sym, expiry)
         except Exception as exc:
             return {
                 "symbol": sym,
@@ -108,8 +144,10 @@ class OptionsAwarenessEngine:
         levels   = OILevelDetector.get_key_levels(chain, resolved, oi_sr, walls)
 
         observations = _build_observations(spot, walls, levels, iv_data)
+        if cache_meta:
+            observations.insert(0, cache_meta["note"])
 
-        return {
+        result: dict = {
             "symbol":                 sym,
             "expiry":                 resolved,
             "spot":                   spot,
@@ -140,3 +178,10 @@ class OptionsAwarenessEngine:
             "oi_structure": buildup,
             "observations": observations,
         }
+
+        if cache_meta:
+            result["cache_status"] = cache_meta["cache_status"]
+            result["cached_at"]    = cache_meta["cached_at"]
+            result["note"]         = cache_meta["note"]
+
+        return result

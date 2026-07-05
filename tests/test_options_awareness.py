@@ -359,3 +359,132 @@ class TestMissingGreeks:
         iv_data = IVAnalyzer.get_iv_surface(chain, EXPIRY)
         assert walls["call_wall"] is not None
         assert iv_data["atm_iv"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Cache layer
+# ---------------------------------------------------------------------------
+
+class TestOptionCache:
+
+    def setup_method(self):
+        from src.options_awareness.cache import _cache_path
+        self._path_fn = _cache_path
+
+    def _cleanup(self, symbol, expiry):
+        path = self._path_fn(symbol, expiry)
+        if path.exists():
+            path.unlink()
+
+    def test_write_then_read_returns_entry(self):
+        from src.options_awareness.cache import write_cache, read_cache
+        chain = _make_chain()
+        symbol, expiry = "NIFTY_TEST", "27-Jun-2024"
+        try:
+            write_cache(symbol, expiry, chain, expiry)
+            entry = read_cache(symbol, expiry)
+            assert entry is not None
+            assert entry["chain"] == chain
+            assert entry["resolved"] == expiry
+            assert "cached_at" in entry
+            assert "cached_at_ist" in entry
+        finally:
+            self._cleanup(symbol, expiry)
+
+    def test_missing_cache_returns_none(self):
+        from src.options_awareness.cache import read_cache
+        result = read_cache("NIFTY_NONEXISTENT_XYZ", "01-Jan-2099")
+        assert result is None
+
+    def test_expired_cache_returns_none(self):
+        from src.options_awareness.cache import write_cache, read_cache, _cache_path
+        import json
+        from datetime import datetime, timezone, timedelta
+
+        chain = _make_chain()
+        symbol, expiry = "NIFTY_EXPIRED", "27-Jun-2024"
+        try:
+            write_cache(symbol, expiry, chain, expiry)
+            path = _cache_path(symbol, expiry)
+            # Backdate the cached_at to 2 days ago
+            entry = json.loads(path.read_text(encoding="utf-8"))
+            old_time = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+            entry["cached_at"] = old_time
+            path.write_text(json.dumps(entry), encoding="utf-8")
+            result = read_cache(symbol, expiry)
+            assert result is None
+        finally:
+            self._cleanup(symbol, expiry)
+
+    def test_cache_metadata_shape(self):
+        from src.options_awareness.cache import write_cache, read_cache, cache_metadata
+        chain = _make_chain()
+        symbol, expiry = "NIFTY_META", "27-Jun-2024"
+        try:
+            write_cache(symbol, expiry, chain, expiry)
+            entry = read_cache(symbol, expiry)
+            assert entry is not None
+            meta = cache_metadata(entry)
+            assert meta["cache_status"] == "EOD_SNAPSHOT"
+            assert "cached_at" in meta
+            assert "Post-market" in meta["note"]
+        finally:
+            self._cleanup(symbol, expiry)
+
+    def test_engine_uses_cache_on_live_failure(self):
+        from unittest.mock import patch
+        from src.options_awareness.cache import write_cache, _cache_path
+        from src.options_awareness.engine import OptionsAwarenessEngine
+
+        chain = _make_chain()
+        symbol, expiry = "NIFTY", None
+        try:
+            # Pre-populate cache
+            write_cache(symbol, expiry, chain, "27-Jun-2024")
+
+            # Make live fetch fail
+            with patch("src.options_awareness.engine._fetch_live", side_effect=RuntimeError("NSE down")):
+                engine = OptionsAwarenessEngine()
+                result = engine.analyze(symbol, expiry)
+
+            # Should get data from cache, not an error
+            assert "error" not in result
+            assert result["cache_status"] == "EOD_SNAPSHOT"
+            assert result["cached_at"] is not None
+            assert result["spot"] == chain["records"]["underlyingValue"]
+            assert "Post-market" in result["observations"][0]
+        finally:
+            self._cleanup(symbol, expiry)
+
+    def test_engine_no_cache_no_live_returns_error(self):
+        from unittest.mock import patch
+        from src.options_awareness.engine import OptionsAwarenessEngine
+        from src.options_awareness.cache import _cache_path
+
+        symbol, expiry = "NIFTY_NO_CACHE_XYZ", None
+        # Ensure no stale cache
+        p = _cache_path(symbol, expiry)
+        if p.exists():
+            p.unlink()
+
+        with patch("src.options_awareness.engine._fetch_live", side_effect=RuntimeError("NSE down")):
+            engine = OptionsAwarenessEngine()
+            result = engine.analyze(symbol, expiry)
+
+        assert "error" in result
+        assert result["spot"] is None
+
+    def test_live_result_has_no_cache_status(self):
+        from unittest.mock import patch
+        from src.options_awareness.engine import OptionsAwarenessEngine
+
+        chain = _make_chain()
+        symbol, expiry = "NIFTY_LIVE", None
+
+        with patch("src.options_awareness.engine._fetch_live", return_value=(chain, "27-Jun-2024")):
+            engine = OptionsAwarenessEngine()
+            result = engine.analyze(symbol, expiry)
+
+        assert "error" not in result
+        assert "cache_status" not in result
+        assert result["spot"] == chain["records"]["underlyingValue"]
