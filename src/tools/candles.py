@@ -65,7 +65,14 @@ def register(mcp: FastMCP) -> None:
                 },
                 "observations": [],
             }
-            return _meta.wrap(result, symbol=symbol, source=data_source)
+            m = _meta.build_meta(
+                type_=_meta.TYPE_INDICATOR,
+                validation_status=_meta.VALIDATION_COMPUTED,
+                data_quality=_meta.DQ_INVALID,
+                source="none",
+                account_type="MARKET_DATA_ONLY",
+            )
+            return _meta.wrap(result, m)
 
         # Build DataFrame from candles
         df = pd.DataFrame(candles)
@@ -168,7 +175,18 @@ def register(mcp: FastMCP) -> None:
             },
             "observations": observations,
         }
-        return _meta.wrap(result, symbol=symbol, source=data_source)
+        m = _meta.build_meta(
+            type_=_meta.TYPE_INDICATOR,
+            validation_status=_meta.VALIDATION_COMPUTED,
+            data_quality=_meta.DQ_VALID,
+            source=data_source,
+            account_type="MARKET_DATA_ONLY",
+            warning=(
+                None if _meta.is_market_hours()
+                else "Outside NSE session. Patterns reflect last available candle."
+            ),
+        )
+        return _meta.wrap(result, m)
 
 
 def _build_observations(
