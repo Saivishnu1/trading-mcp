@@ -424,11 +424,11 @@ def get_market_calendar() -> dict:
     agg_expiry_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "algorithmic"
     _last_expiry_source = agg_expiry_source
 
-    # Build upcoming holidays for both exchanges
-    nse_upcoming = _upcoming_holidays(today)
+    # Build upcoming holidays for both exchanges (90-day window matches top-level nse_holidays)
+    nse_upcoming = _upcoming_holidays(today, days_ahead=90)
     bse_upcoming = []
     if bse_holidays:
-        end = today + timedelta(days=30)
+        end = today + timedelta(days=90)
         for h in bse_holidays:
             try:
                 h_date = date.fromisoformat(h)
