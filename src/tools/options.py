@@ -236,56 +236,6 @@ def register(mcp: FastMCP) -> None:
         return analytics.calculate_pcr(chain, resolved)
 
     @mcp.tool()
-    def get_oi_analysis(
-        symbol: str = "NIFTY",
-        expiry: Optional[str] = None,
-        top_n: int = 10,
-    ) -> dict:
-        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
-
-        Return the top-OI call and put strikes for an index.
-
-        Shows where large option positions are concentrated, useful for
-        identifying key market levels and detecting unwinding/buildup.
-
-        Args:
-            symbol: 'NIFTY' or 'BANKNIFTY' (default 'NIFTY').
-            expiry: Expiry date string. Defaults to nearest expiry.
-            top_n: Number of top strikes to return per side (default 10).
-        """
-        if not symbol.strip():
-            return _meta.make_symbol_error(symbol, "get_oi_analysis")
-        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
-        chain, resolved = _fetch(nse_sym, expiry)
-        return analytics.get_oi_analysis(chain, resolved, top_n)
-
-    @mcp.tool()
-    def identify_support_resistance_from_oi(
-        symbol: str = "NIFTY",
-        expiry: Optional[str] = None,
-        top_n: int = 5,
-    ) -> dict:
-        """DEPRECATED: This tool will be consolidated into analyze_chart() or analyze_option_structure() in a future phase.
-
-        Identify support and resistance levels from option OI concentration.
-
-        Resistance: strikes with the highest call OI — writers defend these levels.
-        Support:    strikes with the highest put  OI — writers defend these levels.
-
-        Returns nearest support below spot and nearest resistance above spot.
-
-        Args:
-            symbol: 'NIFTY' or 'BANKNIFTY' (default 'NIFTY').
-            expiry: Expiry date string. Defaults to nearest expiry.
-            top_n: Number of levels to surface per side (default 5).
-        """
-        if not symbol.strip():
-            return _meta.make_symbol_error(symbol, "identify_support_resistance_from_oi")
-        nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
-        chain, resolved = _fetch(nse_sym, expiry)
-        return analytics.identify_support_resistance_from_oi(chain, resolved, top_n)
-
-    @mcp.tool()
     def calculate_max_pain(
         symbol: str = "NIFTY",
         expiry: Optional[str] = None,

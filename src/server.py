@@ -7,7 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from src.broker import get_broker, current_user
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, meta_tools, brokers, chart, candles, chart_patterns
+from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, meta_tools, brokers, chart, candles, chart_patterns, options_awareness
 import src.session_store as session_store
 import src.api_key_store as api_key_store
 
@@ -148,9 +148,8 @@ mcp = FastMCP(
         "  get_bankex_option_chain([expiry])          — BANKEX chain\n"
         "  get_equity_option_chain('RELIANCE')        — any NSE F&O equity chain\n"
         "  calculate_pcr('NIFTY')                     — put-call ratio + sentiment\n"
-        "  get_oi_analysis('NIFTY')                   — top OI strikes\n"
-        "  identify_support_resistance_from_oi('NIFTY') — S/R from OI\n"
-        "  calculate_max_pain('NIFTY')                — max pain strike\n\n"
+        "  calculate_max_pain('NIFTY')                — max pain strike\n"
+        "  analyze_option_structure('NIFTY')          — unified OI walls, PCR, IV skew, max pain\n\n"
         "TECHNICALS tools (daily candles via Yahoo Finance, no auth needed):\n"
         "  calculate_rsi('NIFTY', period=14)          — Relative Strength Index\n"
         "  calculate_ema('NIFTY', period=20)          — Exponential Moving Average\n"
@@ -252,6 +251,7 @@ brokers.register(mcp)
 chart.register(mcp)
 candles.register(mcp)
 chart_patterns.register(mcp)
+options_awareness.register(mcp)
 
 _sse_app = mcp.sse_app()
 _http_app = mcp.streamable_http_app()
