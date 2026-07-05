@@ -345,12 +345,11 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
                 interval=yf_interval,
                 auto_adjust=True,
             )
-            logger.warning("YF .BO ticker %s [%s→%s]: df.empty=%s len=%d", yf_sym, from_date, to_date, df.empty if df is not None else "None", len(df) if df is not None else 0)
             result = _normalize(df)
             if result:
                 return result
         except Exception as exc:
-            logger.warning("YF .BO Ticker.history() failed for %s: %s", yf_sym, exc)
+            logger.debug("YF .BO Ticker.history() failed for %s: %s", yf_sym, exc)
         return []
 
     try:
@@ -363,80 +362,10 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
             auto_adjust=True,
         )
         return _normalize(df)
-    except Exception as exc:
-        logger.warning("YF download failed for %s: %s", yf_sym, exc)
+    except Exception:
         return []
 
 
-async def _fetch_bse_index(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch BSE index historical data via NSE India indices API. Daily only.
-    NSE publishes BANKEX/SENSEX data since BSE indices underlie NSE-listed options.
-    """
-    if interval != "day":
-        return []
-    _NSE_INDEX_MAP = {
-        "BANKEX":        "BANKEX",
-        "BSE:BANKEX":    "BANKEX",
-        "SENSEX":        "SENSEX",
-        "BSE:SENSEX":    "SENSEX",
-        "BSEMIDCAP":     "BSE MID CAP",
-        "BSE:BSEMIDCAP": "BSE MID CAP",
-        "BSESMALLCAP":   "BSE SMALL CAP",
-        "BSE:BSESMALLCAP": "BSE SMALL CAP",
-    }
-    s_upper = symbol.upper().strip()
-    nse_name = _NSE_INDEX_MAP.get(s_upper)
-    if not nse_name:
-        return []
-    try:
-        import httpx
-        # NSE requires a prior GET to set cookies
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": "https://www.nseindia.com/",
-        }
-        params = {
-            "indexType": nse_name,
-            "from": from_date,  # dd-mm-yyyy expected by NSE — convert below
-            "to": to_date,
-        }
-        # NSE date format: dd-mm-yyyy
-        from_nse = datetime.strptime(from_date, "%Y-%m-%d").strftime("%d-%m-%Y")
-        to_nse = datetime.strptime(to_date, "%Y-%m-%d").strftime("%d-%m-%Y")
-        params = {"indexType": nse_name, "from": from_nse, "to": to_nse}
-
-        async with httpx.AsyncClient(timeout=20, headers=headers, follow_redirects=True) as client:
-            # Seed cookies
-            await client.get("https://www.nseindia.com/")
-            r = await client.get(
-                "https://www.nseindia.com/api/historical/indicesHistory",
-                params=params,
-            )
-        if r.status_code != 200:
-            logger.warning("NSE indices API returned %d for %s", r.status_code, symbol)
-            return []
-        data = r.json()
-        rows = (data.get("data") or {}).get("indexCloseOnlineRecords") or []
-        if not rows:
-            logger.warning("NSE indices API: empty records for %s", symbol)
-            return []
-        result = []
-        for row in rows:
-            dt = row.get("EOD_TIMESTAMP") or ""
-            o = float(row.get("EOD_OPEN_INDEX_VAL") or 0)
-            h = float(row.get("EOD_HIGH_INDEX_VAL") or 0)
-            lo = float(row.get("EOD_LOW_INDEX_VAL") or 0)
-            c = float(row.get("EOD_CLOSING_INDEX_VAL") or 0)
-            if not dt or c <= 0:
-                continue
-            result.append({"datetime": dt[:10], "open": o, "high": h, "low": lo, "close": c, "volume": 0})
-        result.sort(key=lambda x: x["datetime"])
-        logger.warning("NSE indices API returned %d candles for %s", len(result), symbol)
-        return result
-    except Exception as exc:
-        logger.warning("NSE indices API failed for %s: %s", symbol, exc)
-        return []
 
 
 def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
@@ -464,7 +393,7 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
 
         return []
     except Exception as exc:
-        logger.warning("Yahoo Finance fetch failed for %s: %s", symbol, exc)
+        logger.debug("Yahoo Finance fetch failed for %s: %s", symbol, exc)
         return []
 
 
@@ -482,15 +411,8 @@ async def fetch_candles(
     is_bse = _is_bse_symbol(symbol)
 
     if is_bse:
-        # BSE-first: INDmoney → BSE India API → Yahoo
-        candles = await _fetch_indmoney(symbol, interval, from_date, to_date)
-        if candles:
-            return candles, "indmoney"
-
-        candles = await _fetch_bse_index(symbol, interval, from_date, to_date)
-        if candles:
-            return candles, "bse"
-
+        # Yahoo Finance is the only public source accessible from cloud IPs for BSE indices.
+        # SENSEX works via ^BSESN. BANKEX (BSE-BANK.BO) has no historical data on Yahoo.
         candles = _fetch_yahoo(symbol, interval, from_date, to_date)
         if candles:
             return candles, "yahoo"
