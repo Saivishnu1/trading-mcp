@@ -9,6 +9,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "uvicorn[standard]>=0.30.0",
     "starlette>=0.37.0",
+    "mplfinance>=0.12.10b0",
+    "matplotlib>=3.8.0",
+    "Pillow>=10.0.0",
 
     # broker backends
     "httpx>=0.27.0",          # primary: direct Zerodha web API
