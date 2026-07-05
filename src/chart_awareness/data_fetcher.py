@@ -369,66 +369,73 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
 
 
 async def _fetch_bse_index(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch BSE index historical data via Stooq (free, no auth). Daily only."""
+    """Fetch BSE index historical data via NSE India indices API. Daily only.
+    NSE publishes BANKEX/SENSEX data since BSE indices underlie NSE-listed options.
+    """
     if interval != "day":
         return []
-    # Stooq tickers for BSE indices
-    _STOOQ_MAP = {
-        "BANKEX":      "^bsxk",
-        "BSE:BANKEX":  "^bsxk",
-        "SENSEX":      "^bsx",
-        "BSE:SENSEX":  "^bsx",
-        "BSE500":      "^bse500",
-        "BSE:BSE500":  "^bse500",
-        "BSEMIDCAP":   "^bsemd",
-        "BSE:BSEMIDCAP": "^bsemd",
-        "BSESMALLCAP": "^bsesml",
-        "BSE:BSESMALLCAP": "^bsesml",
+    _NSE_INDEX_MAP = {
+        "BANKEX":        "BANKEX",
+        "BSE:BANKEX":    "BANKEX",
+        "SENSEX":        "SENSEX",
+        "BSE:SENSEX":    "SENSEX",
+        "BSEMIDCAP":     "BSE MID CAP",
+        "BSE:BSEMIDCAP": "BSE MID CAP",
+        "BSESMALLCAP":   "BSE SMALL CAP",
+        "BSE:BSESMALLCAP": "BSE SMALL CAP",
     }
     s_upper = symbol.upper().strip()
-    stooq_sym = _STOOQ_MAP.get(s_upper)
-    if not stooq_sym:
+    nse_name = _NSE_INDEX_MAP.get(s_upper)
+    if not nse_name:
         return []
     try:
         import httpx
-        # Stooq date format: YYYYMMDD
-        from_stooq = from_date.replace("-", "")
-        to_stooq = to_date.replace("-", "")
-        url = f"https://stooq.com/q/d/l/?s={stooq_sym}&d1={from_stooq}&d2={to_stooq}&i=d"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        async with httpx.AsyncClient(timeout=15, headers=headers, follow_redirects=True) as client:
-            r = await client.get(url)
-        if r.status_code != 200 or not r.text.strip():
-            logger.warning("Stooq returned %d for %s", r.status_code, symbol)
+        # NSE requires a prior GET to set cookies
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://www.nseindia.com/",
+        }
+        params = {
+            "indexType": nse_name,
+            "from": from_date,  # dd-mm-yyyy expected by NSE — convert below
+            "to": to_date,
+        }
+        # NSE date format: dd-mm-yyyy
+        from_nse = datetime.strptime(from_date, "%Y-%m-%d").strftime("%d-%m-%Y")
+        to_nse = datetime.strptime(to_date, "%Y-%m-%d").strftime("%d-%m-%Y")
+        params = {"indexType": nse_name, "from": from_nse, "to": to_nse}
+
+        async with httpx.AsyncClient(timeout=20, headers=headers, follow_redirects=True) as client:
+            # Seed cookies
+            await client.get("https://www.nseindia.com/")
+            r = await client.get(
+                "https://www.nseindia.com/api/historical/indicesHistory",
+                params=params,
+            )
+        if r.status_code != 200:
+            logger.warning("NSE indices API returned %d for %s", r.status_code, symbol)
             return []
-        # CSV: Date,Open,High,Low,Close,Volume
-        lines = r.text.strip().splitlines()
-        if len(lines) < 2:
-            logger.warning("Stooq: no data rows for %s", symbol)
+        data = r.json()
+        rows = (data.get("data") or {}).get("indexCloseOnlineRecords") or []
+        if not rows:
+            logger.warning("NSE indices API: empty records for %s", symbol)
             return []
         result = []
-        for line in lines[1:]:
-            parts = line.split(",")
-            if len(parts) < 5:
+        for row in rows:
+            dt = row.get("EOD_TIMESTAMP") or ""
+            o = float(row.get("EOD_OPEN_INDEX_VAL") or 0)
+            h = float(row.get("EOD_HIGH_INDEX_VAL") or 0)
+            lo = float(row.get("EOD_LOW_INDEX_VAL") or 0)
+            c = float(row.get("EOD_CLOSING_INDEX_VAL") or 0)
+            if not dt or c <= 0:
                 continue
-            dt, o, h, lo, c = parts[0], parts[1], parts[2], parts[3], parts[4]
-            v = int(parts[5]) if len(parts) > 5 and parts[5].strip() else 0
-            try:
-                close = float(c)
-                if close <= 0:
-                    continue
-                result.append({
-                    "datetime": dt,
-                    "open": float(o), "high": float(h),
-                    "low": float(lo), "close": close, "volume": v,
-                })
-            except ValueError:
-                continue
+            result.append({"datetime": dt[:10], "open": o, "high": h, "low": lo, "close": c, "volume": 0})
         result.sort(key=lambda x: x["datetime"])
-        logger.warning("Stooq returned %d candles for %s", len(result), symbol)
+        logger.warning("NSE indices API returned %d candles for %s", len(result), symbol)
         return result
     except Exception as exc:
-        logger.warning("Stooq fetch failed for %s: %s", symbol, exc)
+        logger.warning("NSE indices API failed for %s: %s", symbol, exc)
         return []
 
 
