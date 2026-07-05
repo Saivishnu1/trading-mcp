@@ -13,3 +13,4 @@ dist/
 htmlcov/
 journal.db*
 .vs
+.serena/
