@@ -344,11 +344,12 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
                 interval=yf_interval,
                 auto_adjust=True,
             )
+            logger.warning("YF .BO ticker %s [%s→%s]: df.empty=%s len=%d", yf_sym, from_date, to_date, df.empty if df is not None else "None", len(df) if df is not None else 0)
             result = _normalize(df)
             if result:
                 return result
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("YF .BO Ticker.history() failed for %s: %s", yf_sym, exc)
         return []
 
     try:
@@ -361,7 +362,8 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
             auto_adjust=True,
         )
         return _normalize(df)
-    except Exception:
+    except Exception as exc:
+        logger.warning("YF download failed for %s: %s", yf_sym, exc)
         return []
 
 
@@ -390,7 +392,7 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
 
         return []
     except Exception as exc:
-        logger.debug("Yahoo Finance fetch failed for %s: %s", symbol, exc)
+        logger.warning("Yahoo Finance fetch failed for %s: %s", symbol, exc)
         return []
 
 
