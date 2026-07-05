@@ -445,15 +445,17 @@ def get_market_calendar() -> dict:
 
     # Build upcoming holidays for both exchanges (90-day window matches top-level nse_holidays)
     nse_upcoming = _upcoming_holidays(today, days_ahead=90)
+    # NSE name lookup — live-refreshed from NSE API, covers 95%+ of BSE holidays too
+    nse_name_map = {h["date"]: h["name"] for h in nse_upcoming}
     bse_upcoming = []
     if bse_holidays:
-        bse_names = _fetch_bse_holiday_names(today.year)
         end = today + timedelta(days=90)
         for h in bse_holidays:
             try:
                 h_date = date.fromisoformat(h)
                 if today < h_date <= end:
-                    bse_upcoming.append({"date": h, "name": bse_names.get(h, "BSE Holiday")})
+                    name = nse_name_map.get(h) or _fetch_bse_holiday_names(today.year).get(h, "BSE Holiday")
+                    bse_upcoming.append({"date": h, "name": name})
             except ValueError:
                 pass
 
