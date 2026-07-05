@@ -37,16 +37,9 @@ _NSE_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-_BSE_HOLIDAY_URL = "https://www.bseindia.com/markets/marketinfo/holidaycal.html"
-_BSE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,*/*",
-    "Referer": "https://www.bseindia.com/",
-}
+# BSE holiday page is a JS-rendered Angular SPA — HTML scrape returns no dates.
+# We skip live BSE fetch and rely on the static JSON fallback (bse_YYYY.json).
+_BSE_HOLIDAY_URL = ""  # unused — kept for reference
 
 _RESOURCES_DIR = Path(__file__).parents[2] / "resources" / "calendar"
 
@@ -370,36 +363,22 @@ class CalendarFetcher:
     async def fetch_bse_holidays(self, year: int) -> list[str]:
         """Return BSE trading holidays for `year` as sorted ISO date strings.
 
-        Scrapes BSE holiday page. Falls back to NSE holidays on failure.
+        BSE holiday page is a JS-rendered Angular SPA — live HTML scrape
+        returns no dates. We go straight to the static JSON fallback, then
+        NSE holidays (95%+ overlap) as last resort.
         """
         cache_path = _bse_cache_path(year)
         cached = _load_json_cache(cache_path)
         if cached is not None:
             return cached
 
-        try:
-            with httpx.Client(timeout=10, follow_redirects=True) as client:
-                r = client.get(_BSE_HOLIDAY_URL, headers=_BSE_HEADERS)
-            if r.status_code == 200:
-                dates = _parse_bse_dates(r.text, year)
-                if dates:
-                    _save_json_cache(cache_path, dates)
-                    return dates
-                logger.warning("BSE holiday page returned 0 dates for %d", year)
-            else:
-                logger.warning(
-                    "BSE holiday page returned status %d for %d", r.status_code, year,
-                )
-        except Exception as exc:
-            logger.warning("BSE holiday live fetch failed: %s", exc)
-
-        # Fallback 1: static on-disk BSE calendar (resources/calendar/bse_YYYY.json)
+        # Primary: static on-disk BSE calendar (resources/calendar/bse_YYYY.json)
         static = _load_static_bse_holidays(year)
         if static:
             _save_json_cache(cache_path, static)
             return static
 
-        # Fallback 2: NSE holidays (95%+ overlap)
+        # Fallback: NSE holidays (95%+ overlap)
         logger.warning("No static BSE calendar for %d — falling back to NSE holidays", year)
         nse = await self.fetch_nse_holidays(year)
         return nse
