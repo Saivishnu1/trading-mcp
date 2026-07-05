@@ -73,7 +73,7 @@ class InstrumentResolver:
         "NIFTY BANK":  "NSE_BANKNIFTY",
         "FINNIFTY":    "NSE_FINNIFTY",
         "SENSEX":      "BSE_SENSEX",
-        "BANKEX":      "BSE_BANKEX",
+        "BANKEX":      "BSE_40000033",
         "BSE500":      "BSE_500INDEX",
         "BSEMIDCAP":   "BSE_MIDCAP",
         "BSESMALLCAP": "BSE_SMLCAP",
