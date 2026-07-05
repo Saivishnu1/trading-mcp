@@ -400,13 +400,13 @@ async def _fetch_bse_index(symbol: str, interval: str, from_date: str, to_date: 
             "from": from_date,
             "to": to_date,
         }
-        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=15, headers=headers, follow_redirects=True) as client:
             r = await client.get(
                 "https://api.bseindia.com/BseIndiaAPI/api/GetIndexHistoricalData/w",
                 params=params,
             )
         if r.status_code != 200:
-            logger.warning("BSE index API returned %d for %s", r.status_code, symbol)
+            logger.warning("BSE index API returned %d for %s: %s", r.status_code, symbol, r.text[:200])
             return []
         data = r.json()
         rows = data.get("Table") or data.get("table") or []
