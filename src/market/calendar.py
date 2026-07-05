@@ -266,21 +266,50 @@ def get_calendar_health() -> dict:
 # ---------------------------------------------------------------------------
 
 def _fetch_bse_holidays_sync(year: int) -> list[str]:
-    """Synchronous wrapper to fetch BSE holidays for the calendar response."""
+    """Return BSE holidays for the year — synchronous, no event loop needed.
+
+    Resolution order:
+      1. /tmp cache file (set by async CalendarFetcher on previous async call)
+      2. Static resources/calendar/bse_YYYY.json (always available)
+      3. Static resources/calendar/YYYY.json (NSE, 95%+ overlap)
+    """
+    import json as _json
+    import os as _os
+    import time as _time
+
+    # Check /tmp cache written by async CalendarFetcher
+    tmp = _os.environ.get("TMPDIR", _os.environ.get("TEMP", "/tmp"))
+    cache_path = _os.path.join(tmp, f"bse_holidays_{year}.json")
     try:
-        import asyncio
-        from src.calendar import CalendarFetcher
-        fetcher = CalendarFetcher()
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Inside async context — schedule but return empty to avoid deadlock
-                return []
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-        return asyncio.run(fetcher.fetch_bse_holidays(year))
+        if _os.path.exists(cache_path):
+            mtime = _os.path.getmtime(cache_path)
+            if _time.time() - mtime < 86400:
+                with open(cache_path) as f:
+                    data = _json.load(f)
+                cached = data.get("holidays", [])
+                if cached:
+                    return cached
     except Exception:
-        return []
+        pass
+
+    # Static BSE calendar file
+    from pathlib import Path
+    resources = Path(__file__).parents[2] / "resources" / "calendar"
+    for fname in (f"bse_{year}.json", f"{year}.json"):
+        path = resources / fname
+        if not path.exists():
+            continue
+        try:
+            with open(path, encoding="utf-8") as fh:
+                raw = _json.load(fh)
+            entries = raw if isinstance(raw, list) else raw.get("holidays", [])
+            holidays = sorted(e["date"] for e in entries if e.get("date"))
+            if holidays:
+                return holidays
+        except Exception:
+            pass
+
+    return []
 
 
 def get_market_calendar() -> dict:
@@ -307,12 +336,18 @@ def get_market_calendar() -> dict:
     per_index_expiry_source: dict[str, str] = {}
 
     monthly_expiries: dict[str, str] = {}
+    from datetime import datetime as _dt
     for idx in ("nifty", "banknifty", "finnifty", "midcap_nifty", "sensex", "bankex"):
         exp_date: Optional[date] = None
         src = "algorithmic"
+
+        # Always compute monthly expiry for reference
+        monthly_date = _nearest_monthly_expiry(idx, today)
+        if monthly_date:
+            monthly_expiries[idx] = monthly_date.isoformat()
+
         if idx in live:
             exp_str = live[idx]
-            from datetime import datetime as _dt
             for fmt in ("%d-%b-%Y", "%d %b %Y", "%Y-%m-%d"):
                 try:
                     exp_date = _dt.strptime(exp_str.strip(), fmt).date()
@@ -323,17 +358,17 @@ def get_market_calendar() -> dict:
                 src = "live"
 
         if exp_date is None:
-            exp_date = _nearest_expiry_algorithmic(idx, today)
+            # Monthly-only indices: always use last-weekday-of-month, not weekly
+            if idx in _MONTHLY_ONLY_INDICES:
+                exp_date = monthly_date
+            else:
+                exp_date = _nearest_expiry_algorithmic(idx, today)
             src = "algorithmic"
 
         if exp_date:
             expiries[idx] = exp_date.isoformat()
             days_to_expiry[idx] = (exp_date - today).days
         per_index_expiry_source[idx] = src
-
-        monthly_date = _nearest_monthly_expiry(idx, today)
-        if monthly_date:
-            monthly_expiries[idx] = monthly_date.isoformat()
 
     agg_expiry_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "algorithmic"
     _last_expiry_source = agg_expiry_source
@@ -377,8 +412,12 @@ def get_market_calendar() -> dict:
         "bse_session": "09:15-15:30 IST",
         "nse_session_active": session_active,
         "bse_session_active": bse_session_active,
-        "nse_holidays": [h["date"] for h in nse_upcoming],
-        "bse_holidays": [h["date"] for h in bse_upcoming],
+        "nse_holidays": [h["date"] for h in _upcoming_holidays(today, days_ahead=90)],
+        "bse_holidays": sorted(
+            h for h in bse_holidays
+            if h > today.isoformat()
+            and h <= (today + timedelta(days=90)).isoformat()
+        ),
         "nse_only_holidays": sorted(
             set(h["date"] for h in nse_upcoming) - set(h["date"] for h in bse_upcoming)
         ),

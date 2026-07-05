@@ -48,31 +48,52 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
     """Fetch chain once; run all option analytics on it.
 
     Returns (section_dict, spot_price).
+    Returns empty defaults with a note when the chain is unavailable.
     """
-    svc = get_bse_options_service() if symbol.upper() in _BSE_INDICES else get_options_service()
-    chain = svc.get_option_chain(symbol)
-    records = chain.get("records", {})
-    spot: float | None = records.get("underlyingValue")
-    expiry: str | None = (records.get("expiryDates") or [None])[0]
+    _UNAVAIL = {
+        "expiry": None,
+        "pcr": None,
+        "pcr_interpretation": None,
+        "max_pain": None,
+        "distance_from_spot": None,
+        "supports": [],
+        "resistances": [],
+        "nearest_support": None,
+        "nearest_resistance": None,
+        "note": "Option chain unavailable — market closed or data not yet loaded",
+    }
 
-    pcr = analytics.calculate_pcr(chain, expiry)
-    mp = analytics.calculate_max_pain(chain, expiry)
-    sr = analytics.identify_support_resistance_from_oi(chain, expiry, top_n=5)
+    try:
+        svc = get_bse_options_service() if symbol.upper() in _BSE_INDICES else get_options_service()
+        chain = svc.get_option_chain(symbol) or {}
+        records = chain.get("records") or {}
+        spot: float | None = records.get("underlyingValue")
+        expiry: str | None = (records.get("expiryDates") or [None])[0]
 
-    ns = sr.get("nearest_support") or {}
-    nr = sr.get("nearest_resistance") or {}
+        if not records or not expiry:
+            return {**_UNAVAIL, "note": "Option chain returned no data"}, spot
 
-    return {
-        "expiry": expiry,
-        "pcr": pcr.get("pcr_oi"),
-        "pcr_interpretation": pcr.get("interpretation"),
-        "max_pain": mp.get("max_pain"),
-        "distance_from_spot": mp.get("distance_from_spot"),
-        "supports": [s["strike"] for s in sr.get("support_levels", [])],
-        "resistances": [r["strike"] for r in sr.get("resistance_levels", [])],
-        "nearest_support": ns.get("strike"),
-        "nearest_resistance": nr.get("strike"),
-    }, spot
+        pcr = analytics.calculate_pcr(chain, expiry) or {}
+        mp = analytics.calculate_max_pain(chain, expiry) or {}
+        sr = analytics.identify_support_resistance_from_oi(chain, expiry, top_n=5) or {}
+
+        ns = sr.get("nearest_support") or {}
+        nr = sr.get("nearest_resistance") or {}
+
+        return {
+            "expiry": expiry,
+            "pcr": pcr.get("pcr_oi"),
+            "pcr_interpretation": pcr.get("interpretation"),
+            "max_pain": mp.get("max_pain"),
+            "distance_from_spot": mp.get("distance_from_spot"),
+            "supports": [s["strike"] for s in sr.get("support_levels", [])],
+            "resistances": [r["strike"] for r in sr.get("resistance_levels", [])],
+            "nearest_support": ns.get("strike"),
+            "nearest_resistance": nr.get("strike"),
+        }, spot
+    except Exception as exc:
+        logger.warning("_options_section failed for %s: %s", symbol, exc)
+        return {**_UNAVAIL, "error": str(exc)}, None
 
 
 def _technicals_section(symbol: str) -> tuple[dict, float | None]:

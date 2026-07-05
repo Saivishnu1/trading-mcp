@@ -111,6 +111,16 @@ _YF_MAP = {
     "BSE:BSESMALLCAP": "^BSESML",
 }
 
+# Alternative tickers to try when the primary fails — ordered by likelihood
+_YF_FALLBACKS: dict[str, list[str]] = {
+    "BANKEX":      ["^SPBSEBKEX", "BANKEX.BO"],
+    "BSE:BANKEX":  ["^SPBSEBKEX", "BANKEX.BO"],
+    "BSEMIDCAP":   ["^BSEMD", "^BSEMIDCAP"],
+    "BSE:BSEMIDCAP": ["^BSEMD", "^BSEMIDCAP"],
+    "BSESMALLCAP": ["^BSESML", "^BSESMALLCAP"],
+    "BSE:BSESMALLCAP": ["^BSESML", "^BSESMALLCAP"],
+}
+
 
 def _to_yf_symbol(symbol: str) -> str:
     """Convert canonical symbol to yfinance ticker."""
@@ -291,13 +301,11 @@ async def _fetch_indmoney(symbol: str, interval: str, from_date: str, to_date: s
         return []
 
 
-def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch via yfinance (synchronous)."""
+def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: str) -> list[dict]:
+    """Download one ticker from yfinance and return normalized candles. Empty list on failure."""
+    import math
+    import yfinance as yf  # type: ignore[import]
     try:
-        import math
-        import yfinance as yf  # type: ignore[import]
-        yf_sym = _to_yf_symbol(symbol)
-        yf_interval = _YFINANCE_INTERVAL.get(interval, "1d")
         df = yf.download(
             yf_sym,
             start=from_date,
@@ -308,7 +316,6 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
         )
         if df is None or df.empty:
             return []
-        # Flatten MultiIndex columns if present
         if hasattr(df.columns, "levels"):
             df.columns = [col[0].lower() if isinstance(col, tuple) else col.lower()
                           for col in df.columns]
@@ -327,13 +334,35 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
                 continue
             result.append({
                 "datetime": str(ts),
-                "open": o,
-                "high": h,
-                "low": lo,
-                "close": c,
-                "volume": v,
+                "open": o, "high": h, "low": lo, "close": c, "volume": v,
             })
         return result
+    except Exception:
+        return []
+
+
+def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
+    """Fetch via yfinance. Tries fallback tickers for BSE indices with unreliable Yahoo coverage."""
+    try:
+        s_upper = symbol.upper().strip()
+        yf_interval = _YFINANCE_INTERVAL.get(interval, "1d")
+
+        # Build ticker list: primary first, then fallbacks
+        tickers: list[str] = []
+        primary = _to_yf_symbol(symbol)
+        tickers.append(primary)
+        for extra in _YF_FALLBACKS.get(s_upper, []):
+            if extra not in tickers:
+                tickers.append(extra)
+
+        for ticker in tickers:
+            result = _yf_download_single(ticker, yf_interval, from_date, to_date)
+            if result:
+                if ticker != primary:
+                    logger.debug("Yahoo fallback ticker %s succeeded for %s", ticker, symbol)
+                return result
+
+        return []
     except Exception as exc:
         logger.debug("Yahoo Finance fetch failed for %s: %s", symbol, exc)
         return []
