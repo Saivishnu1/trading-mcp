@@ -31,19 +31,6 @@ _BSE_SYMBOLS = {
     "BSE:SENSEX", "BSE:BANKEX", "BSE:BSE500", "BSE:BSEMIDCAP", "BSE:BSESMALLCAP",
 }
 
-# BSE India direct API index codes
-_BSE_INDEX_CODES: dict[str, str] = {
-    "SENSEX":      "BSE SENSEX",
-    "BSE:SENSEX":  "BSE SENSEX",
-    "BANKEX":      "BSE BANKEX",
-    "BSE:BANKEX":  "BSE BANKEX",
-    "BSE500":      "BSE 500",
-    "BSE:BSE500":  "BSE 500",
-    "BSEMIDCAP":   "BSE MID CAP",
-    "BSE:BSEMIDCAP": "BSE MID CAP",
-    "BSESMALLCAP": "BSE SMALL CAP",
-    "BSE:BSESMALLCAP": "BSE SMALL CAP",
-}
 
 # ---------------------------------------------------------------------------
 # Interval maps: canonical → each source's format
@@ -382,53 +369,66 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
 
 
 async def _fetch_bse_index(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch BSE index historical data from BSE India public API. Daily only."""
+    """Fetch BSE index historical data via Stooq (free, no auth). Daily only."""
     if interval != "day":
         return []
+    # Stooq tickers for BSE indices
+    _STOOQ_MAP = {
+        "BANKEX":      "^bsxk",
+        "BSE:BANKEX":  "^bsxk",
+        "SENSEX":      "^bsx",
+        "BSE:SENSEX":  "^bsx",
+        "BSE500":      "^bse500",
+        "BSE:BSE500":  "^bse500",
+        "BSEMIDCAP":   "^bsemd",
+        "BSE:BSEMIDCAP": "^bsemd",
+        "BSESMALLCAP": "^bsesml",
+        "BSE:BSESMALLCAP": "^bsesml",
+    }
     s_upper = symbol.upper().strip()
-    index_name = _BSE_INDEX_CODES.get(s_upper)
-    if not index_name:
+    stooq_sym = _STOOQ_MAP.get(s_upper)
+    if not stooq_sym:
         return []
     try:
         import httpx
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://www.bseindia.com/",
-        }
-        params = {
-            "index": index_name,
-            "from": from_date,
-            "to": to_date,
-        }
+        # Stooq date format: YYYYMMDD
+        from_stooq = from_date.replace("-", "")
+        to_stooq = to_date.replace("-", "")
+        url = f"https://stooq.com/q/d/l/?s={stooq_sym}&d1={from_stooq}&d2={to_stooq}&i=d"
+        headers = {"User-Agent": "Mozilla/5.0"}
         async with httpx.AsyncClient(timeout=15, headers=headers, follow_redirects=True) as client:
-            r = await client.get(
-                "https://api.bseindia.com/BseIndiaAPI/api/GetIndexHistoricalData/w",
-                params=params,
-            )
-        if r.status_code != 200:
-            logger.warning("BSE index API returned %d for %s: %s", r.status_code, symbol, r.text[:200])
+            r = await client.get(url)
+        if r.status_code != 200 or not r.text.strip():
+            logger.warning("Stooq returned %d for %s", r.status_code, symbol)
             return []
-        data = r.json()
-        rows = data.get("Table") or data.get("table") or []
-        if not rows:
-            logger.warning("BSE index API: empty Table for %s", symbol)
+        # CSV: Date,Open,High,Low,Close,Volume
+        lines = r.text.strip().splitlines()
+        if len(lines) < 2:
+            logger.warning("Stooq: no data rows for %s", symbol)
             return []
         result = []
-        for row in rows:
-            dt = row.get("Date") or row.get("date") or ""
-            o = float(row.get("Open") or row.get("open") or 0)
-            h = float(row.get("High") or row.get("high") or 0)
-            lo = float(row.get("Low") or row.get("low") or 0)
-            c = float(row.get("Close") or row.get("close") or row.get("Close Price") or 0)
-            v = int(row.get("Volume") or row.get("volume") or 0)
-            if not dt or c <= 0:
+        for line in lines[1:]:
+            parts = line.split(",")
+            if len(parts) < 5:
                 continue
-            result.append({"datetime": str(dt), "open": o, "high": h, "low": lo, "close": c, "volume": v})
+            dt, o, h, lo, c = parts[0], parts[1], parts[2], parts[3], parts[4]
+            v = int(parts[5]) if len(parts) > 5 and parts[5].strip() else 0
+            try:
+                close = float(c)
+                if close <= 0:
+                    continue
+                result.append({
+                    "datetime": dt,
+                    "open": float(o), "high": float(h),
+                    "low": float(lo), "close": close, "volume": v,
+                })
+            except ValueError:
+                continue
         result.sort(key=lambda x: x["datetime"])
-        logger.warning("BSE index API returned %d candles for %s", len(result), symbol)
+        logger.warning("Stooq returned %d candles for %s", len(result), symbol)
         return result
     except Exception as exc:
-        logger.warning("BSE index API failed for %s: %s", symbol, exc)
+        logger.warning("Stooq fetch failed for %s: %s", symbol, exc)
         return []
 
 
