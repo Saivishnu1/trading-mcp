@@ -187,7 +187,6 @@ def _parse_bse_dates(html: str, year: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _KITE_INSTRUMENTS_URL = "https://api.kite.trade/instruments"
-_NFO_INDEX_PREFIXES = ("NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY")
 
 # Map NFO trading-symbol prefix → calendar key
 _NFO_INDEX_MAP = {
@@ -195,6 +194,12 @@ _NFO_INDEX_MAP = {
     "BANKNIFTY":  "banknifty",
     "FINNIFTY":   "finnifty",
     "MIDCPNIFTY": "midcap_nifty",
+}
+
+# Map BFO trading-symbol prefix → calendar key (BSE F&O — no auth needed)
+_BFO_INDEX_MAP = {
+    "SENSEX": "sensex",
+    "BANKEX": "bankex",
 }
 
 
@@ -229,76 +234,80 @@ class CalendarFetcher:
     """Fetch and cache NSE + BSE holiday calendars."""
 
     async def fetch_nse_expiries_from_zerodha(self) -> dict:
-        """Parse NFO instruments CSV to get upcoming expiry dates per index.
+        """Alias for fetch_all_expiries_from_zerodha — kept for backward compat."""
+        return await self.fetch_all_expiries_from_zerodha()
+
+    async def fetch_all_expiries_from_zerodha(self) -> dict:
+        """Fetch upcoming expiry dates for all NSE + BSE F&O indices from Zerodha.
+
+        Fetches NFO (NIFTY/BANKNIFTY/FINNIFTY/MIDCPNIFTY) and BFO (SENSEX/BANKEX)
+        instruments CSVs. No enctoken required — the full instruments endpoint is
+        publicly accessible.
 
         Returns dict keyed by calendar index name:
-          {"nifty": ["2026-07-09", "2026-07-16", ...], "banknifty": [...], ...}
-
-        Uses the enctoken from the active broker session. Returns {} if not
-        authenticated or if the fetch fails — caller falls back to algorithmic.
+          {"nifty": ["2026-07-09", ...], "sensex": ["2026-07-09", ...], ...}
         """
         cached = _load_expiries_cache()
         if cached is not None:
             return cached
 
+        import csv as _csv
+        import io as _io
+
+        today = date.today()
+        all_keys = list(_NFO_INDEX_MAP.values()) + list(_BFO_INDEX_MAP.values())
+        expiries: dict[str, set[str]] = {k: set() for k in all_keys}
+
+        exchange_map_pairs = [
+            ("NFO", _NFO_INDEX_MAP),
+            ("BFO", _BFO_INDEX_MAP),
+        ]
+
         try:
-            from src.broker import get_broker
-            broker = get_broker()
-            enctoken = broker.get_enctoken() if broker else None
-            if not enctoken:
-                return {}
-
-            headers = {
-                "Authorization": f"enctoken {enctoken}",
-                "X-Kite-Version": "3",
-            }
-            with httpx.Client(timeout=15) as client:
-                r = client.get(
-                    _KITE_INSTRUMENTS_URL,
-                    headers=headers,
-                    params={"exchange": "NFO"},
-                )
-            if r.status_code != 200:
-                logger.debug("Zerodha instruments fetch returned %d", r.status_code)
-                return {}
-
-            import csv as _csv
-            import io as _io
-            today = date.today()
-            expiries: dict[str, set[str]] = {k: set() for k in _NFO_INDEX_MAP.values()}
-
-            reader = _csv.DictReader(_io.StringIO(r.text))
-            for row in reader:
-                tradingsymbol = (row.get("tradingsymbol") or "").upper()
-                instrument_type = (row.get("instrument_type") or "").upper()
-                expiry_raw = (row.get("expiry") or "").strip()
-
-                if instrument_type not in ("FUT", "CE", "PE"):
-                    continue
-                if not expiry_raw:
-                    continue
-
-                # Match prefix
-                matched_key = None
-                for prefix, key in _NFO_INDEX_MAP.items():
-                    if tradingsymbol.startswith(prefix):
-                        matched_key = key
-                        break
-                if not matched_key:
-                    continue
-
-                # Parse expiry date
-                try:
-                    exp_date = date.fromisoformat(expiry_raw)
-                except ValueError:
+            with httpx.Client(timeout=20) as client:
+                for exchange, index_map in exchange_map_pairs:
                     try:
-                        from datetime import datetime as _dt
-                        exp_date = _dt.strptime(expiry_raw, "%d-%b-%Y").date()
-                    except ValueError:
-                        continue
+                        r = client.get(
+                            _KITE_INSTRUMENTS_URL,
+                            params={"exchange": exchange},
+                        )
+                        if r.status_code != 200:
+                            logger.debug("Zerodha %s instruments returned %d", exchange, r.status_code)
+                            continue
 
-                if exp_date >= today:
-                    expiries[matched_key].add(exp_date.isoformat())
+                        reader = _csv.DictReader(_io.StringIO(r.text))
+                        for row in reader:
+                            tradingsymbol = (row.get("tradingsymbol") or "").upper()
+                            instrument_type = (row.get("instrument_type") or "").upper()
+                            expiry_raw = (row.get("expiry") or "").strip()
+
+                            if instrument_type not in ("FUT", "CE", "PE"):
+                                continue
+                            if not expiry_raw:
+                                continue
+
+                            matched_key = None
+                            for prefix, key in index_map.items():
+                                if tradingsymbol.startswith(prefix):
+                                    matched_key = key
+                                    break
+                            if not matched_key:
+                                continue
+
+                            try:
+                                exp_date = date.fromisoformat(expiry_raw)
+                            except ValueError:
+                                try:
+                                    from datetime import datetime as _dt
+                                    exp_date = _dt.strptime(expiry_raw, "%d-%b-%Y").date()
+                                except ValueError:
+                                    continue
+
+                            if exp_date >= today:
+                                expiries[matched_key].add(exp_date.isoformat())
+
+                    except Exception as exc:
+                        logger.debug("Zerodha %s instruments fetch failed: %s", exchange, exc)
 
             result = {k: sorted(v) for k, v in expiries.items() if v}
             if result:
@@ -306,7 +315,7 @@ class CalendarFetcher:
             return result
 
         except Exception as exc:
-            logger.debug("fetch_nse_expiries_from_zerodha failed: %s", exc)
+            logger.debug("fetch_all_expiries_from_zerodha failed: %s", exc)
             return {}
 
     async def fetch_nse_holidays(self, year: int) -> list[str]:

@@ -122,13 +122,19 @@ class TestGetMarketCalendarMonthlyExpiries:
 
 
 class TestLiveExpiriesUsesBSEOptionsService:
-    """Sensex/Bankex live expiry must come from the same BSEOptionsService used
-    by get_sensex_option_chain/get_bankex_option_chain — not a speculative
-    INDmoney endpoint."""
+    """Sensex/Bankex live expiry falls back to BSEOptionsService when
+    Zerodha instruments CSV is unavailable."""
 
     def test_bse_indices_use_bse_options_service(self, monkeypatch):
-        from unittest.mock import MagicMock
+        from unittest.mock import MagicMock, AsyncMock
         from src.market import calendar as cal_mod
+        from src.calendar import CalendarFetcher
+
+        # Zerodha CSV unavailable (no cache, fetch returns empty)
+        monkeypatch.setattr(cal_mod, "_load_zerodha_expiries_cache", lambda: {})
+        async def _empty_fetch(self):
+            return {}
+        monkeypatch.setattr(CalendarFetcher, "fetch_all_expiries_from_zerodha", _empty_fetch)
 
         fake_svc = MagicMock()
         fake_svc.available_expiries.side_effect = lambda sym: {

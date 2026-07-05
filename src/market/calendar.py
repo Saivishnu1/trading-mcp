@@ -211,18 +211,17 @@ def _expiry_days_this_week(today: date) -> list[str]:
 
 
 def _live_expiries() -> dict[str, str]:
-    """Try to pull nearest expiry dates from live sources.
+    """Pull nearest expiry dates from live sources.
 
-    Priority for NSE:
-      1. Zerodha instruments CSV (most accurate, has all series)
-      2. NSE option chain service (nearest expiry from live chain)
-    Priority for BSE:
-      1. BSE options service available_expiries
+    Priority 1 (NSE + BSE): Zerodha instruments CSV — covers NFO and BFO,
+      no auth required, most accurate source for monthly-only indices.
+    Priority 2 (NSE gaps): NSE option chain service.
+    Priority 3 (BSE gaps): BSE options service available_expiries.
     """
     results: dict[str, str] = {}
     today = date.today()
 
-    # Priority 1: Zerodha instruments CSV — most accurate for monthly-only indices
+    # Priority 1: Zerodha instruments CSV — NFO + BFO, no enctoken needed
     try:
         import asyncio
         from src.calendar import CalendarFetcher
@@ -230,30 +229,28 @@ def _live_expiries() -> dict[str, str]:
         try:
             loop = asyncio.get_event_loop()
             if not loop.is_running():
-                zd_expiries = asyncio.run(fetcher.fetch_nse_expiries_from_zerodha())
+                zd_expiries = asyncio.run(fetcher.fetch_all_expiries_from_zerodha())
             else:
-                # Already in async context — use cached data only (no deadlock)
                 zd_expiries = _load_zerodha_expiries_cache()
         except RuntimeError:
-            zd_expiries = asyncio.run(fetcher.fetch_nse_expiries_from_zerodha())
+            zd_expiries = asyncio.run(fetcher.fetch_all_expiries_from_zerodha())
 
         for idx, dates in (zd_expiries or {}).items():
             if dates:
-                # Pick nearest date that is >= today
                 upcoming = [d for d in dates if d >= today.isoformat()]
                 if upcoming:
                     results[idx] = upcoming[0]
     except Exception:
         pass
 
-    # Priority 2: NSE option chain — fills any gaps
+    # Priority 2: NSE option chain — fills any NSE gaps
     try:
         from src.options.service import get_options_service
         svc = get_options_service()
         for index, nse_sym in [("nifty", "NIFTY"), ("banknifty", "BANKNIFTY"),
                                 ("finnifty", "FINNIFTY"), ("midcap_nifty", "MIDCPNIFTY")]:
             if index in results:
-                continue  # already have it from Zerodha
+                continue
             try:
                 meta = svc.get_option_chain(nse_sym)
                 expiry_dates = meta.get("records", {}).get("expiryDates", [])
@@ -264,12 +261,13 @@ def _live_expiries() -> dict[str, str]:
     except Exception:
         pass
 
-    # BSE indices (SENSEX/BANKEX) via the same BSE options service used by
-    # get_sensex_option_chain / get_bankex_option_chain — no auth token needed.
+    # Priority 3: BSE options service — fills any BSE gaps
     try:
         from src.options.bse_service import get_bse_options_service
         bse_svc = get_bse_options_service()
         for index, bse_sym in [("sensex", "SENSEX"), ("bankex", "BANKEX")]:
+            if index in results:
+                continue
             try:
                 expiries = bse_svc.available_expiries(bse_sym)
                 if expiries:
