@@ -12,6 +12,8 @@ from src.pattern_awareness.detector import ChartPatternDetector
 from src.options_awareness.engine import _get_chain_with_cache
 from src.options.analytics import _underlying
 from src.charts.renderer import ChartRenderer
+from src.charts.config import CHART_SPECS
+from src.charts.utils import get_pixel_dimensions
 
 
 async def get_price_chart_impl(
@@ -71,11 +73,16 @@ async def get_price_chart_impl(
         show_bb=show_bb,
     )
 
+    width, height = get_pixel_dimensions(CHART_SPECS["price"]["figsize"], CHART_SPECS["price"]["dpi"])
+
     result = {
         "symbol": symbol_upper,
         "interval": interval,
         "image": img_b64,
         "format": "png",
+        "width": width,
+        "height": height,
+        "theme": theme,
         "data_source": data_source,
         "candles": len(df_window),
         "generated_at": date.today().isoformat(),
@@ -128,11 +135,16 @@ async def get_indicator_chart_impl(
         theme=theme,
     )
 
+    width, height = get_pixel_dimensions(CHART_SPECS["indicator"]["figsize"], CHART_SPECS["indicator"]["dpi"])
+
     result = {
         "symbol": symbol_upper,
         "interval": interval,
         "image": img_b64,
         "format": "png",
+        "width": width,
+        "height": height,
+        "theme": theme,
         "data_source": data_source,
         "generated_at": date.today().isoformat(),
     }
@@ -165,11 +177,16 @@ async def get_option_chart_impl(
         theme=theme,
     )
 
+    width, height = get_pixel_dimensions(CHART_SPECS["option"]["figsize"], CHART_SPECS["option"]["dpi"])
+
     result = {
         "symbol": symbol_upper,
         "expiry": resolved_expiry,
         "image": img_b64,
         "format": "png",
+        "width": width,
+        "height": height,
+        "theme": theme,
         "generated_at": date.today().isoformat(),
     }
 
