@@ -1,16 +1,16 @@
 """
 Pre-Phase 4 fixes — monthly expiry calculation correctness.
 
-SEBI's weekly-expiry rationalization (effective Nov 2024) left only NIFTY
-(NSE) and SENSEX (BSE) with a weekly series; BANKNIFTY, FINNIFTY,
-MIDCPNIFTY, and BANKEX trade monthly contracts only (last occurrence of
-their expiry weekday in the month).
+NSE moved all index expiries to Tuesday (effective 2026).
+BSE (SENSEX/BANKEX) retained Thursday expiry.
+
+SEBI weekly-expiry rationalization: BANKNIFTY, FINNIFTY, MIDCPNIFTY (NSE)
+and BANKEX (BSE) are monthly-only (last Tuesday / last Thursday of month).
+NIFTY (NSE) and SENSEX (BSE) retain weekly series.
 
 Fixture date: July 2026. Last weekday-of-month occurrences:
-  Monday    27-Jul-2026
-  Tuesday   28-Jul-2026
-  Wednesday 29-Jul-2026
-  Thursday  30-Jul-2026
+  Tuesday   28-Jul-2026  (NSE indices)
+  Thursday  30-Jul-2026  (BSE indices)
 """
 from __future__ import annotations
 
@@ -59,17 +59,17 @@ class TestNearestMonthlyExpiry:
 
     FROM_DATE = date(2026, 7, 4)  # Saturday
 
-    def test_banknifty_last_wednesday(self):
-        assert _nearest_monthly_expiry("banknifty", self.FROM_DATE) == date(2026, 7, 29)
+    def test_banknifty_last_tuesday(self):
+        assert _nearest_monthly_expiry("banknifty", self.FROM_DATE) == date(2026, 7, 28)
 
     def test_finnifty_last_tuesday(self):
         assert _nearest_monthly_expiry("finnifty", self.FROM_DATE) == date(2026, 7, 28)
 
-    def test_midcap_nifty_last_monday(self):
-        assert _nearest_monthly_expiry("midcap_nifty", self.FROM_DATE) == date(2026, 7, 27)
+    def test_midcap_nifty_last_tuesday(self):
+        assert _nearest_monthly_expiry("midcap_nifty", self.FROM_DATE) == date(2026, 7, 28)
 
-    def test_nifty_last_thursday(self):
-        assert _nearest_monthly_expiry("nifty", self.FROM_DATE) == date(2026, 7, 30)
+    def test_nifty_last_tuesday(self):
+        assert _nearest_monthly_expiry("nifty", self.FROM_DATE) == date(2026, 7, 28)
 
     def test_sensex_last_thursday(self):
         assert _nearest_monthly_expiry("sensex", self.FROM_DATE) == date(2026, 7, 30)
@@ -78,10 +78,10 @@ class TestNearestMonthlyExpiry:
         assert _nearest_monthly_expiry("bankex", self.FROM_DATE) == date(2026, 7, 30)
 
     def test_rolls_to_next_month_once_this_months_date_has_passed(self):
-        after_expiry = date(2026, 7, 31)  # the day after this month's last Thursday
+        after_expiry = date(2026, 7, 29)  # day after last Tuesday of July
         result = _nearest_monthly_expiry("nifty", after_expiry)
-        # Aug 27 is not a holiday (Ganesh Chaturthi moved to Sep 14) → last Thursday of Aug
-        assert result == date(2026, 8, 27)
+        # Last Tuesday of Aug 2026 = Aug 25, no holiday collision
+        assert result == date(2026, 8, 25)
 
 
 class TestNearestExpiryAlgorithmic:
@@ -91,22 +91,23 @@ class TestNearestExpiryAlgorithmic:
     FROM_DATE = date(2026, 7, 4)
 
     def test_banknifty_nearest_equals_monthly(self):
-        assert _nearest_expiry_algorithmic("banknifty", self.FROM_DATE) == date(2026, 7, 29)
+        assert _nearest_expiry_algorithmic("banknifty", self.FROM_DATE) == date(2026, 7, 28)
 
     def test_finnifty_nearest_equals_monthly(self):
         assert _nearest_expiry_algorithmic("finnifty", self.FROM_DATE) == date(2026, 7, 28)
 
     def test_midcap_nifty_nearest_equals_monthly(self):
-        assert _nearest_expiry_algorithmic("midcap_nifty", self.FROM_DATE) == date(2026, 7, 27)
+        assert _nearest_expiry_algorithmic("midcap_nifty", self.FROM_DATE) == date(2026, 7, 28)
 
     def test_bankex_nearest_equals_monthly(self):
         assert _nearest_expiry_algorithmic("bankex", self.FROM_DATE) == date(2026, 7, 30)
 
-    def test_nifty_nearest_is_nearest_weekly_thursday(self):
-        # NIFTY retains its weekly series — nearest Thursday from Sat 4-Jul-2026 is 9-Jul-2026
-        assert _nearest_expiry_algorithmic("nifty", self.FROM_DATE) == date(2026, 7, 9)
+    def test_nifty_nearest_is_nearest_weekly_tuesday(self):
+        # NIFTY weekly series — nearest Tuesday from Sat 4-Jul-2026 is 7-Jul-2026
+        assert _nearest_expiry_algorithmic("nifty", self.FROM_DATE) == date(2026, 7, 7)
 
     def test_sensex_nearest_is_nearest_weekly_thursday(self):
+        # SENSEX weekly series on Thursday — nearest from Sat 4-Jul-2026 is 9-Jul-2026
         assert _nearest_expiry_algorithmic("sensex", self.FROM_DATE) == date(2026, 7, 9)
 
 

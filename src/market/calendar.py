@@ -47,12 +47,12 @@ def _load_zerodha_expiries_cache() -> dict:
 # ---------------------------------------------------------------------------
 
 _EXPIRY_WEEKDAY: dict[str, int] = {
-    "nifty":        3,  # Thursday
-    "banknifty":    2,  # Wednesday
-    "finnifty":     1,  # Tuesday
-    "midcap_nifty": 0,  # Monday
-    "sensex":       3,  # Thursday (BSE)
-    "bankex":       3,  # Thursday (BSE)
+    "nifty":        1,  # Tuesday (NSE moved from Thursday, effective 2026)
+    "banknifty":    1,  # Tuesday (last Tuesday of month)
+    "finnifty":     1,  # Tuesday (last Tuesday of month)
+    "midcap_nifty": 1,  # Tuesday (last Tuesday of month)
+    "sensex":       3,  # Thursday (BSE weekly)
+    "bankex":       3,  # Thursday (BSE, last Thursday of month)
 }
 
 # BSE indices that expire on Thursdays
