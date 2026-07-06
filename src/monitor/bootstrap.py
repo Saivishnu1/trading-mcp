@@ -29,15 +29,19 @@ class MonitorBootstrap:
             name = os.environ.get("DEFAULT_USER_NAME", "").strip()
             phone = os.environ.get("DEFAULT_WHATSAPP_PHONE", "").strip()
             key = os.environ.get("DEFAULT_CALLMEBOT_API_KEY", "").strip()
-            if not (name and phone and key):
-                raise RuntimeError(
-                    "No monitor.users row exists and DEFAULT_USER_NAME / "
-                    "DEFAULT_WHATSAPP_PHONE / DEFAULT_CALLMEBOT_API_KEY are not all set."
-                )
             # Optional second channel — Telegram has no onboarding delay,
             # unlike CallMeBot's WhatsApp opt-in handshake.
             telegram_bot_token = os.environ.get("DEFAULT_TELEGRAM_BOT_TOKEN", "").strip() or None
             telegram_chat_id = os.environ.get("DEFAULT_TELEGRAM_CHAT_ID", "").strip() or None
+
+            has_callmebot = bool(phone and key)
+            has_telegram = bool(telegram_bot_token and telegram_chat_id)
+            if not name or not (has_callmebot or has_telegram):
+                raise RuntimeError(
+                    "No monitor.users row exists and DEFAULT_USER_NAME plus at least one "
+                    "alert channel (DEFAULT_WHATSAPP_PHONE + DEFAULT_CALLMEBOT_API_KEY, or "
+                    "DEFAULT_TELEGRAM_BOT_TOKEN + DEFAULT_TELEGRAM_CHAT_ID) are not all set."
+                )
 
             now = datetime.now(timezone.utc).isoformat()
             user = MonitorUser(

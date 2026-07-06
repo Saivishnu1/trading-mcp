@@ -58,7 +58,9 @@ class WhatsAppAlerter:
     async def send(self, phone: str, api_key: str, message: str, user: dict | None = None) -> bool:
         """Send via CallMeBot (phone/api_key) and Telegram (from user dict, if
         configured). Returns True if at least one channel delivered."""
-        callmebot_ok = await self._send_callmebot(phone, api_key, message)
+        callmebot_ok = False
+        if phone and api_key:
+            callmebot_ok = await self._send_callmebot(phone, api_key, message)
 
         telegram_ok = False
         bot_token = (user or {}).get("telegram_bot_token")

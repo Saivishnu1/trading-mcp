@@ -497,6 +497,54 @@ class TestMonitorBootstrap:
         assert user == {}
         mock_session.add.assert_not_called()
 
+    @pytest.mark.anyio
+    async def test_creates_user_with_telegram_only_no_callmebot(self, monkeypatch):
+        """CallMeBot's WhatsApp opt-in can be slow/unavailable — a user who's
+        only configured Telegram should still bootstrap successfully."""
+        monkeypatch.setenv("DEFAULT_USER_NAME", "Vishnu")
+        monkeypatch.delenv("DEFAULT_WHATSAPP_PHONE", raising=False)
+        monkeypatch.delenv("DEFAULT_CALLMEBOT_API_KEY", raising=False)
+        monkeypatch.setenv("DEFAULT_TELEGRAM_BOT_TOKEN", "bot-token")
+        monkeypatch.setenv("DEFAULT_TELEGRAM_CHAT_ID", "12345")
+
+        from src.monitor.bootstrap import MonitorBootstrap
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock()
+        mock_session.flush = AsyncMock()
+        no_user_result = MagicMock()
+        no_user_result.scalars.return_value.first.return_value = None
+        no_settings_result = MagicMock()
+        no_settings_result.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = [no_user_result, no_settings_result]
+
+        with patch("src.monitor.bootstrap.get_session", return_value=_FakeSessionCtx(mock_session)):
+            user = await MonitorBootstrap().ensure_default_user()
+
+        assert user["name"] == "Vishnu"
+        assert user["telegram_bot_token"] == "bot-token"
+        assert user["telegram_chat_id"] == "12345"
+
+    @pytest.mark.anyio
+    async def test_raises_when_no_channel_configured(self, monkeypatch):
+        monkeypatch.setenv("DEFAULT_USER_NAME", "Vishnu")
+        monkeypatch.delenv("DEFAULT_WHATSAPP_PHONE", raising=False)
+        monkeypatch.delenv("DEFAULT_CALLMEBOT_API_KEY", raising=False)
+        monkeypatch.delenv("DEFAULT_TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("DEFAULT_TELEGRAM_CHAT_ID", raising=False)
+
+        from src.monitor.bootstrap import MonitorBootstrap
+
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock()
+        no_user_result = MagicMock()
+        no_user_result.scalars.return_value.first.return_value = None
+        mock_session.execute.return_value = no_user_result
+
+        with patch("src.monitor.bootstrap.get_session", return_value=_FakeSessionCtx(mock_session)):
+            with pytest.raises(RuntimeError, match="at least one alert channel"):
+                await MonitorBootstrap().ensure_default_user()
+
 
 # ---------------------------------------------------------------------------
 # get_monitor_status staleness detection — pure function, no DB required.
