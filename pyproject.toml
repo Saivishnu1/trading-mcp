@@ -23,6 +23,7 @@ dependencies = [
 
     # auth
     "pyotp>=2.9.0",           # TOTP generation from secret
+    "python-telegram-bot>=22.0",  # telegram admin bot
 
     # Phase 9A — live position monitor (market-hours scheduling in IST)
     "pytz>=2024.1",
@@ -40,6 +41,7 @@ dependencies = [
 [project.scripts]
 zerodha-mcp = "src.server:main"
 zerodha-mcp-stdio = "src.server:main_stdio"
+telegram-admin = "src.telegram_admin.main:main"
 
 [build-system]
 requires = ["hatchling"]

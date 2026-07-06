@@ -1,0 +1,41 @@
+[Unit]
+Description=Zerodha MCP — Telegram Admin Bot
+Documentation=file:///home/ubuntu/trading-mcp/infra/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/trading-mcp
+
+# Load secrets from /etc/zerodha-mcp/.env (owned root:ubuntu, mode 640)
+EnvironmentFile=/etc/zerodha-mcp/.env
+
+# Start the application via uv
+ExecStart=/home/ubuntu/.local/bin/uv run telegram-admin
+
+# Restart policy: restart on any failure, with exponential backoff
+Restart=always
+RestartSec=5s
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Graceful shutdown timeout
+TimeoutStopSec=30
+
+# Logging — view with: journalctl -u telegram-admin -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegram-admin
+
+# Security hardening
+# Note: NoNewPrivileges=true is NOT used here because the bot needs to run passwordless sudo systemctl commands.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/trading-mcp /home/ubuntu/.cache/uv /home/ubuntu/.local /etc/zerodha-mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
