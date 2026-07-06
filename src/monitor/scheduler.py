@@ -70,29 +70,62 @@ class MarketMonitor:
             logger.debug("_get_vix error: %s", exc)
             return 0.0
 
+    # NSE (NIFTY) chain via get_options_service(), BSE (SENSEX) via
+    # get_bse_options_service() — both singletons, same shape as the working
+    # get_nifty_option_chain()/get_sensex_option_chain() MCP tools use
+    # internally (src/tools/options.py's _fetch/_fetch_bse). This is the
+    # live exchange-sourced spot ("underlyingValue" in the option chain
+    # response), not yfinance — yfinance's ^BSESN quote lags/diverges from
+    # the real BSE SENSEX print by a meaningful margin.
+    _CHAIN_SOURCE = {
+        "NIFTY": ("src.options.service", "get_options_service"),
+        "SENSEX": ("src.options.bse_service", "get_bse_options_service"),
+    }
+
+    async def _get_option_chain(self, index: str) -> dict:
+        module_name, getter_name = self._CHAIN_SOURCE[index]
+        import importlib
+        module = importlib.import_module(module_name)
+        svc = getattr(module, getter_name)()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, svc.get_option_chain, index)
+
     async def _get_index_quote(self, symbol: str) -> dict:
-        """Return {"last_price", "previous_close"} for an index, or zeros on
-        any failure — market data outages must never crash the monitor loop."""
+        """Return {"last_price", "previous_close"} for NIFTY/SENSEX.
+
+        last_price comes from the option chain's underlyingValue — the same
+        live exchange-sourced spot the confirmed-correct get_nifty_option_chain/
+        get_sensex_option_chain MCP tools already return. previous_close still
+        comes from MarketService (yfinance) since no option chain endpoint
+        exposes a prior close; it's only used for the %change display, not
+        the headline spot price."""
+        last = 0.0
+        try:
+            chain = await self._get_option_chain(symbol)
+            last = float(chain.get("records", {}).get("underlyingValue") or 0)
+        except Exception as exc:
+            logger.debug("_get_index_quote(%s) chain error: %s", symbol, exc)
+
+        prev = 0.0
         try:
             from src.market.service import MarketService
             loop = asyncio.get_running_loop()
             quote = await loop.run_in_executor(None, MarketService().get_quote, symbol)
-            last = float(quote.get("last_price") or 0)
             prev = float(quote.get("previous_close") or 0)
-            return {"last_price": last, "previous_close": prev}
+            if not last:
+                last = float(quote.get("last_price") or 0)
         except Exception as exc:
-            logger.debug("_get_index_quote(%s) error: %s", symbol, exc)
-            return {"last_price": 0.0, "previous_close": 0.0}
+            logger.debug("_get_index_quote(%s) quote error: %s", symbol, exc)
+
+        return {"last_price": last, "previous_close": prev}
 
     async def _get_key_levels(self) -> dict:
         """Support/resistance from NIFTY option chain OI. Returns
         {"support", "resistance"} — empty strings if the chain can't be fetched
         (public NSE endpoint, no auth, but can soft-block or time out)."""
         try:
-            from src.options.service import OptionsService
             from src.options.analytics import identify_support_resistance_from_oi
-            loop = asyncio.get_running_loop()
-            chain = await loop.run_in_executor(None, OptionsService().get_option_chain, "NIFTY")
+            chain = await self._get_option_chain("NIFTY")
             levels = identify_support_resistance_from_oi(chain)
             nearest_support = levels.get("nearest_support") or {}
             nearest_resistance = levels.get("nearest_resistance") or {}

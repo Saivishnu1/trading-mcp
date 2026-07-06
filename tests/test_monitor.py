@@ -455,15 +455,40 @@ class TestSchedulerDataFetchers:
         assert result == 0.0
 
     @pytest.mark.anyio
-    async def test_get_index_quote_reads_last_price_and_previous_close(self):
-        quote = {"last_price": 24380.0, "previous_close": 24300.0}
-        with patch("src.market.service.MarketService.get_quote", return_value=quote):
+    async def test_get_index_quote_nifty_uses_nse_chain_underlying_value(self):
+        chain = {"records": {"underlyingValue": 24380.5}}
+        quote = {"last_price": 24350.0, "previous_close": 24300.0}
+        with patch("src.options.service.OptionsService.get_option_chain", return_value=chain), \
+             patch("src.market.service.MarketService.get_quote", return_value=quote):
             result = await self.monitor._get_index_quote("NIFTY")
-        assert result == {"last_price": 24380.0, "previous_close": 24300.0}
+        # last_price comes from the option chain, not the yfinance quote
+        assert result == {"last_price": 24380.5, "previous_close": 24300.0}
 
     @pytest.mark.anyio
-    async def test_get_index_quote_returns_zeros_on_error(self):
-        with patch("src.market.service.MarketService.get_quote", side_effect=Exception("down")):
+    async def test_get_index_quote_sensex_uses_bse_chain_underlying_value(self):
+        """Regression test: previously used MarketService.get_quote("SENSEX")
+        (yfinance ^BSESN), which returned a stale/incorrect spot (e.g. 80000
+        vs the confirmed-correct 78241 from the BSE option chain)."""
+        chain = {"records": {"underlyingValue": 78241.0}}
+        quote = {"last_price": 80000.0, "previous_close": 79500.0}
+        with patch("src.options.bse_service.BSEOptionsService.get_option_chain", return_value=chain), \
+             patch("src.market.service.MarketService.get_quote", return_value=quote):
+            result = await self.monitor._get_index_quote("SENSEX")
+        assert result["last_price"] == 78241.0
+        assert result["previous_close"] == 79500.0
+
+    @pytest.mark.anyio
+    async def test_get_index_quote_falls_back_to_yfinance_quote_if_chain_fails(self):
+        quote = {"last_price": 24350.0, "previous_close": 24300.0}
+        with patch("src.options.service.OptionsService.get_option_chain", side_effect=RuntimeError("blocked")), \
+             patch("src.market.service.MarketService.get_quote", return_value=quote):
+            result = await self.monitor._get_index_quote("NIFTY")
+        assert result == {"last_price": 24350.0, "previous_close": 24300.0}
+
+    @pytest.mark.anyio
+    async def test_get_index_quote_returns_zeros_on_total_failure(self):
+        with patch("src.options.service.OptionsService.get_option_chain", side_effect=Exception("down")), \
+             patch("src.market.service.MarketService.get_quote", side_effect=Exception("down")):
             result = await self.monitor._get_index_quote("NIFTY")
         assert result == {"last_price": 0.0, "previous_close": 0.0}
 
