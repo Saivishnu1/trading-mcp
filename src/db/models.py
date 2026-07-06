@@ -10,6 +10,8 @@ Schema assignment:
   auth      → sessions, api_keys
   audit     → (reserved for future append-only audit rows)
   migration → (Turso import staging — always empty in normal operation)
+  monitor   → users, positions, peaks, alerts, settings, session_state,
+              instrument_cache (Phase 9A live position monitor)
 """
 from __future__ import annotations
 
@@ -173,6 +175,123 @@ try:
         created_at: Mapped[str]   = mapped_column(Text, nullable=False)
         last_used: Mapped[str | None] = mapped_column(Text)
         is_active: Mapped[int]    = mapped_column(Integer, nullable=False, server_default=text("1"))
+
+    # -------------------------------------------------------------------------
+    # monitor.* — Phase 9A live position monitor
+    # -------------------------------------------------------------------------
+
+    class MonitorUser(Base):
+        __tablename__ = "users"
+        __table_args__ = {"schema": "monitor"}
+
+        id: Mapped[str]             = mapped_column(Text, primary_key=True)
+        name: Mapped[str]           = mapped_column(Text, nullable=False)
+        whatsapp_phone: Mapped[str] = mapped_column(Text, nullable=False)
+        callmebot_key: Mapped[str]  = mapped_column(Text, nullable=False)
+        broker_type: Mapped[str]    = mapped_column(Text, nullable=False, server_default="zerodha+indmoney")
+        is_default: Mapped[bool]    = mapped_column(Boolean, server_default=text("false"))
+        is_active: Mapped[bool]     = mapped_column(Boolean, server_default=text("true"))
+        created_at: Mapped[str]     = mapped_column(Text, nullable=False)
+        updated_at: Mapped[str]     = mapped_column(Text, nullable=False)
+
+    class MonitorPosition(Base):
+        __tablename__ = "positions"
+        __table_args__ = (
+            CheckConstraint("option_type IN ('CE','PE')", name="valid_option_type"),
+            CheckConstraint("status IN ('active','closed')", name="valid_status"),
+            Index(
+                "uq_monitor_positions_key",
+                "user_id", "broker", "symbol", "expiry", "strike", "option_type",
+                unique=True,
+            ),
+            {"schema": "monitor"},
+        )
+
+        id: Mapped[str]            = mapped_column(Text, primary_key=True)
+        user_id: Mapped[str]       = mapped_column(Text, nullable=False)
+        broker: Mapped[str]        = mapped_column(Text, nullable=False)
+        symbol: Mapped[str]        = mapped_column(Text, nullable=False)
+        expiry: Mapped[str]        = mapped_column(Text, nullable=False)
+        strike: Mapped[float]      = mapped_column(Float, nullable=False)
+        option_type: Mapped[str]   = mapped_column(Text, nullable=False)
+        exchange: Mapped[str]      = mapped_column(Text, nullable=False)
+        entry_premium: Mapped[float] = mapped_column(Float, nullable=False)
+        qty: Mapped[int]           = mapped_column(Integer, nullable=False)
+        status: Mapped[str]        = mapped_column(Text, nullable=False, server_default="active")
+        created_at: Mapped[str]    = mapped_column(Text, nullable=False)
+        updated_at: Mapped[str]    = mapped_column(Text, nullable=False)
+
+    class MonitorPeak(Base):
+        __tablename__ = "peaks"
+        __table_args__ = {"schema": "monitor"}
+
+        id: Mapped[str]              = mapped_column(Text, primary_key=True)
+        user_id: Mapped[str]         = mapped_column(Text, nullable=False)
+        position_id: Mapped[str]     = mapped_column(Text, nullable=False, index=True)
+        peak_premium: Mapped[float]  = mapped_column(Float, nullable=False)
+        peak_at: Mapped[str]         = mapped_column(Text, nullable=False)
+        trailing_sl: Mapped[float]     = mapped_column(Float, nullable=False)
+        trailing_sl_pct: Mapped[float] = mapped_column(Float, nullable=False)
+        updated_at: Mapped[str]      = mapped_column(Text, nullable=False)
+
+    class MonitorAlert(Base):
+        __tablename__ = "alerts"
+        __table_args__ = {"schema": "monitor"}
+
+        id: Mapped[str]           = mapped_column(Text, primary_key=True)
+        user_id: Mapped[str]      = mapped_column(Text, nullable=False, index=True)
+        alert_type: Mapped[str]   = mapped_column(Text, nullable=False)
+        symbol: Mapped[str | None] = mapped_column(Text)
+        message: Mapped[str]      = mapped_column(Text, nullable=False)
+        delivered: Mapped[bool]   = mapped_column(Boolean, server_default=text("false"))
+        delivered_at: Mapped[str | None] = mapped_column(Text)
+        created_at: Mapped[str]   = mapped_column(Text, nullable=False)
+
+    class MonitorSettings(Base):
+        __tablename__ = "settings"
+        __table_args__ = {"schema": "monitor"}
+
+        user_id: Mapped[str]             = mapped_column(Text, primary_key=True)
+        pcr_shift_threshold: Mapped[float] = mapped_column(Float, server_default=text("0.3"))
+        vix_spike_threshold: Mapped[float] = mapped_column(Float, server_default=text("14.0"))
+        profit_alert_pct: Mapped[float]    = mapped_column(Float, server_default=text("0.50"))
+        cooldown_trailing: Mapped[int]   = mapped_column(Integer, server_default=text("300"))
+        cooldown_pcr: Mapped[int]        = mapped_column(Integer, server_default=text("900"))
+        cooldown_vix: Mapped[int]        = mapped_column(Integer, server_default=text("900"))
+        cooldown_profit: Mapped[int]     = mapped_column(Integer, server_default=text("86400"))
+        updated_at: Mapped[str]          = mapped_column(Text, nullable=False)
+
+    class MonitorSessionState(Base):
+        __tablename__ = "session_state"
+        __table_args__ = {"schema": "monitor"}
+
+        user_id: Mapped[str]         = mapped_column(Text, primary_key=True)
+        open_pcr: Mapped[float | None]      = mapped_column(Float)
+        open_vix: Mapped[float | None]      = mapped_column(Float)
+        open_call_wall: Mapped[float | None] = mapped_column(Float)
+        open_put_wall: Mapped[float | None]  = mapped_column(Float)
+        session_date: Mapped[str]    = mapped_column(Text, nullable=False)
+        # Liveness fields — let get_monitor_status() answer "is it alive?"
+        # without SSHing into the Oracle VM.
+        last_heartbeat: Mapped[str | None]      = mapped_column(Text)
+        last_market_check: Mapped[str | None]   = mapped_column(Text)
+        last_position_check: Mapped[str | None] = mapped_column(Text)
+        last_alert_sent: Mapped[str | None]     = mapped_column(Text)
+        updated_at: Mapped[str]      = mapped_column(Text, nullable=False)
+
+    class MonitorInstrumentCache(Base):
+        __tablename__ = "instrument_cache"
+        __table_args__ = {"schema": "monitor"}
+
+        broker: Mapped[str]        = mapped_column(Text, primary_key=True)
+        instrument_id: Mapped[str] = mapped_column(Text, primary_key=True)
+        symbol: Mapped[str]        = mapped_column(Text, nullable=False)
+        expiry: Mapped[str]        = mapped_column(Text, nullable=False)
+        strike: Mapped[float]      = mapped_column(Float, nullable=False)
+        expires_at: Mapped[str]    = mapped_column(Text, nullable=False)
+        option_type: Mapped[str]   = mapped_column(Text, nullable=False)
+        exchange: Mapped[str]      = mapped_column(Text, nullable=False)
+        updated_at: Mapped[str]    = mapped_column(Text, nullable=False)
 
 except ImportError:
     pass  # SQLAlchemy not installed — Windows dev environment

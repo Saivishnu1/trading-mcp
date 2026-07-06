@@ -24,6 +24,9 @@ dependencies = [
     # auth
     "pyotp>=2.9.0",           # TOTP generation from secret
 
+    # Phase 9A — live position monitor (market-hours scheduling in IST)
+    "pytz>=2024.1",
+
     # journal persistence (Railway x86_64 only; Oracle ARM uses PostgreSQL)
     "libsql-experimental>=0.0.6; platform_machine == 'x86_64'",
 

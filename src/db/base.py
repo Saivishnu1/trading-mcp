@@ -9,6 +9,7 @@ Schemas on this PostgreSQL instance:
   audit     — immutable audit trail (append-only)
   auth      — OAuth tokens, PKCE state, client registrations
   migration — staging area for Railway data import
+  monitor   — live position monitor (Phase 9A): users, positions, alerts
 """
 from __future__ import annotations
 

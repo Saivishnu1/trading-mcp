@@ -1,0 +1,43 @@
+[Unit]
+Description=Zerodha Trading Monitor — Phase 9A live position monitor (WhatsApp alerts)
+Documentation=file:///home/ubuntu/trading-mcp/infra/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/trading-mcp
+
+# Load secrets from /etc/zerodha-mcp/.env (owned root:ubuntu, mode 640)
+# This file is NEVER committed to git.
+EnvironmentFile=/etc/zerodha-mcp/.env
+
+# Standalone process — separate from the FastAPI/MCP server (zerodha-mcp.service).
+ExecStart=/home/ubuntu/.local/bin/uv run python -m src.monitor.service
+
+# Restart policy: restart on any failure, with exponential backoff
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Graceful shutdown timeout
+TimeoutStopSec=30
+
+# Logging — view with: journalctl -u zerodha-monitor -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zerodha-monitor
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/trading-mcp /home/ubuntu/.cache/uv /home/ubuntu/.local /var/lib/zerodha-mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

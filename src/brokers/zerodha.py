@@ -113,6 +113,17 @@ class ZerodhaBroker(BrokerAdapter):
             logger.debug("ZerodhaBroker.get_positions error: %s", exc)
             return []
 
+    async def get_raw_positions(self) -> dict:
+        """Return the unmodified Zerodha positions() response — used by the
+        Phase 9A monitor to resolve tradingsymbol/instrument_token for options,
+        which the normalized Position dataclass does not carry."""
+        try:
+            raw = self._get_broker().positions()
+            return raw if isinstance(raw, dict) else {"net": [], "day": []}
+        except Exception as exc:
+            logger.debug("ZerodhaBroker.get_raw_positions error: %s", exc)
+            return {"net": [], "day": []}
+
     async def get_orders(self) -> list[Order]:
         try:
             raw = self._get_broker().orders()
