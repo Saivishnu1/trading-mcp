@@ -52,10 +52,18 @@ def read_env(file_path: Path) -> dict[str, str]:
 @contextlib.contextmanager
 def dotenv_lock(file_path: Path):
     """Acquires an exclusive lock on a separate lock file to prevent race conditions."""
-    lock_path = file_path.with_name(file_path.name + ".lock")
-    # Create directory if it doesn't exist
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    
+    if os.name == 'nt':
+        lock_path = Path(tempfile.gettempdir()) / "zerodha-mcp-env.lock"
+    else:
+        lock_path = Path("/var/tmp/zerodha-mcp-env.lock")
+        
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Fallback to system temp directory if /var/tmp is unavailable or not writable
+        lock_path = Path(tempfile.gettempdir()) / "zerodha-mcp-env.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        
     # Open the lock file in append mode (standard practice for locks)
     f = open(lock_path, "a", encoding="utf-8")
     fd = f.fileno()
