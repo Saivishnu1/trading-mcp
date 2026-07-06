@@ -43,7 +43,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # All managed schemas — Alembic will include/exclude tables by schema.
-MANAGED_SCHEMAS = ["zerodha", "journal", "auth", "audit", "migration"]
+MANAGED_SCHEMAS = ["zerodha", "journal", "auth", "audit", "migration", "monitor"]
 
 # PostgreSQL advisory lock ID — arbitrary, just needs to be unique per app.
 # Any two processes that call pg_advisory_lock with the same ID will block
