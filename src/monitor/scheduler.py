@@ -190,7 +190,7 @@ class MarketMonitor:
             return f"Next NIFTY expiry: {next_expiry}"
         return ""
 
-    async def send_morning_brief(self, user: dict) -> None:
+    async def send_morning_brief(self, user: dict) -> bool:
         positions = await self.repo.get_active_positions(user["id"])
         vix, nifty_q, sensex_q, key_levels, calendar, sentiment = await asyncio.gather(
             self._get_vix(),
@@ -211,9 +211,9 @@ class MarketMonitor:
             "support": key_levels["support"],
             "resistance": key_levels["resistance"],
         }
-        await self.alerter.send_morning_brief(user, data)
+        return await self.alerter.send_morning_brief(user, data)
 
-    async def send_eod_summary(self, user: dict) -> None:
+    async def send_eod_summary(self, user: dict) -> bool:
         positions = await self.repo.get_active_positions(user["id"])
         nifty_q, sensex_q, calendar, realized_pnl = await asyncio.gather(
             self._get_index_quote("NIFTY"),
@@ -237,7 +237,7 @@ class MarketMonitor:
             "open_count": len(positions),
             "tomorrow_note": self._tomorrow_note(calendar),
         }
-        await self.alerter.send_eod_summary(user, data)
+        return await self.alerter.send_eod_summary(user, data)
 
     async def check_market_conditions(self, user: dict) -> None:
         settings = await self.repo.get_user_settings(user["id"])

@@ -190,6 +190,10 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             message_type: one of "position" | "market" | "morning" | "eod".
+                "morning"/"eod" fetch real Nifty/Sensex/VIX/key-levels data
+                through MarketMonitor (the same code path the scheduler uses),
+                not a hardcoded payload — so this actually exercises the data
+                wiring, not just delivery.
 
         No authentication required.
         """
@@ -211,17 +215,11 @@ def register(mcp: FastMCP) -> None:
                 "spot": 24380.0, "pcr": 1.1, "time": "12:00",
             })
         elif message_type == "morning":
-            delivered = await alerter.send_morning_brief(user, {
-                "date": "2026-07-06", "expiry": "2026-07-09", "nifty": 24380,
-                "sensex": 80000, "vix": 13.5, "global_sentiment": "neutral",
-                "positions": [], "support": 24200, "resistance": 24500,
-            })
+            from src.monitor.scheduler import MarketMonitor
+            delivered = await MarketMonitor().send_morning_brief(user)
         elif message_type == "eod":
-            delivered = await alerter.send_eod_summary(user, {
-                "date": "2026-07-06", "nifty_close": 24380, "nifty_change": 0.2,
-                "sensex_close": 80000, "sensex_change": 0.1, "realized_pnl": 0,
-                "open_count": 0, "tomorrow_note": "",
-            })
+            from src.monitor.scheduler import MarketMonitor
+            delivered = await MarketMonitor().send_eod_summary(user)
         else:
             return _meta.make_symbol_error(message_type, "test_whatsapp_alert")
 
