@@ -9,7 +9,7 @@ from pathlib import Path
 from telegram import Update
 from telegram.ext import ContextTypes
 from src.telegram_admin.auth import admin_only
-from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH, reload_config
+from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH, SERVICE_NAME, reload_config
 import src.telegram_admin.env_manager as env_manager
 import src.telegram_admin.service_manager as service_manager
 from src.telegram_admin.keyboards import get_cmd_restart_keyboard, get_backup_env_keyboard
@@ -113,6 +113,24 @@ async def show_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except Exception as exc:
         logger.error("Error in show_command: %s", exc, exc_info=True)
         await update.message.reply_text(f"❌ Error displaying variables: {exc}")
+
+@admin_only
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Replies with structured status information of the service."""
+    try:
+        status = service_manager.get_service_status()
+        msg = (
+            f"📊 **Service Status: {SERVICE_NAME}**\n\n"
+            f"• **Active**: {status['active']}\n"
+            f"• **PID**: `{status['pid']}`\n"
+            f"• **Uptime**: {status['uptime']}\n"
+            f"• **Memory**: `{status['memory']}`\n"
+            f"• **Latest Log**: `{status['last_log']}`"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as exc:
+        logger.error("Error in status_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error fetching status: {exc}")
 
 @admin_only
 async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
