@@ -3,7 +3,9 @@ checks each one against trailing-SL / profit-milestone conditions."""
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import datetime
+
+import pytz
 
 from src.brokers.factory import get_broker_adapter
 from src.monitor.alerts import WhatsAppAlerter
@@ -13,6 +15,13 @@ from src.monitor.symbol_resolver import PositionSymbolResolver
 from src.monitor.trailing_sl import TrailingSLCalculator
 
 logger = logging.getLogger(__name__)
+
+# The Oracle VM runs in UTC — date.today() would use the UTC date, which is
+# a day behind the real IST calendar date during IST 00:00-05:29 (IST is
+# UTC+5:30). DTE (days to expiry) must use the IST date, not the OS date,
+# or a same-day-expiry position gets bucketed one DTE too high right when
+# the tightest 0-DTE trailing-SL should apply.
+_IST = pytz.timezone("Asia/Kolkata")
 
 
 def _raw_option_items(broker_name: str, raw: dict) -> list[dict]:
@@ -120,7 +129,7 @@ class PositionTracker:
 
             spot = pos.get("spot", 0.0)
             expiry_date = datetime.strptime(pos["expiry"], "%Y-%m-%d").date()
-            dte = max((expiry_date - date.today()).days, 0)
+            dte = max((expiry_date - datetime.now(_IST).date()).days, 0)
             moneyness = self.trailing_sl.get_moneyness(spot, pos["strike"], pos["option_type"]) if spot else "ATM"
 
             peak = await self.repo.get_peak(pos["id"])

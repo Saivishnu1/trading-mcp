@@ -11,6 +11,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytz
 
 from src.monitor.alerts import WhatsAppAlerter
 from src.monitor.conditions import MarketConditions
@@ -571,17 +572,91 @@ class TestSchedulerDataFetchers:
         assert "holiday" not in note.lower()
 
     def test_tomorrow_note_flags_holiday(self):
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        tomorrow = (self.monitor._today_ist() + timedelta(days=1)).isoformat()
         cal = {"next_nse_expiry": "2026-07-09", "nse_holidays": [tomorrow]}
         note = self.monitor._tomorrow_note(cal)
         assert "holiday" in note.lower()
         assert "2026-07-09" in note
 
+    def test_today_ist_uses_ist_not_utc_date(self):
+        """Regression: the Oracle VM runs in UTC. IST is UTC+5:30, so at
+        23:45 UTC on 2026-07-06 it's already 05:15 IST on 2026-07-07 —
+        date.today() (OS/UTC date) would wrongly report 2026-07-06."""
+        utc_late_evening = pytz.utc.localize(datetime(2026, 7, 6, 23, 45))
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.side_effect = lambda tz=None: (
+                utc_late_evening.astimezone(tz) if tz else utc_late_evening
+            )
+            result = self.monitor._today_ist()
+        assert result == date(2026, 7, 7)
+
+    def test_today_ist_before_ist_midnight_matches_utc_date(self):
+        """Sanity check the other side of the boundary: at 12:00 UTC (17:30
+        IST, same calendar day), both dates should agree."""
+        utc_noon = pytz.utc.localize(datetime(2026, 7, 6, 12, 0))
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.side_effect = lambda tz=None: (
+                utc_noon.astimezone(tz) if tz else utc_noon
+            )
+            result = self.monitor._today_ist()
+        assert result == date(2026, 7, 6)
+
 
 # ---------------------------------------------------------------------------
-# Brief/summary dedup — persisted via monitor.session_state so a restart
-# doesn't re-send the once-daily morning brief / EOD summary.
+# PositionTracker DTE calculation — must use the IST date, not the OS date
+# (the Oracle VM runs in UTC), or a same-day-expiry position gets bucketed
+# one DTE too high right when the tightest 0-DTE trailing-SL should apply.
 # ---------------------------------------------------------------------------
+
+class TestPositionTrackerDTETimezone:
+    def _make_tracker(self):
+        from src.monitor.position_tracker import PositionTracker
+        repo = AsyncMock()
+        repo.get_active_positions.return_value = [{
+            "id": "pos-1",
+            "broker": "zerodha",
+            "symbol": "NIFTY",
+            "expiry": "2026-07-07",
+            "strike": 24400,
+            "option_type": "CE",
+            "entry_premium": 100.0,
+            "qty": 50,
+            "spot": 0.0,
+        }]
+        repo.get_user_settings.return_value = {
+            "profit_alert_pct": 0.5,
+            "cooldown_trailing": 300,
+            "cooldown_profit": 86400,
+        }
+        repo.get_peak.return_value = None
+        tracker = PositionTracker(repo=repo)
+        tracker._get_current_premium = AsyncMock(return_value=110.0)
+        return tracker
+
+    @pytest.mark.anyio
+    async def test_dte_zero_on_expiry_day_in_ist_even_if_utc_is_prior_day(self):
+        """At 23:45 UTC on 2026-07-06, it's already 2026-07-07 05:15 IST —
+        the exact expiry date in the mocked position. DTE must be 0 (using
+        the IST date), not 1 (which date.today()/UTC would have produced)."""
+        tracker = self._make_tracker()
+        utc_late_evening = pytz.utc.localize(datetime(2026, 7, 6, 23, 45))
+
+        captured_dte = {}
+
+        def _fake_trailing_sl_price(peak_premium, dte, moneyness, vix):
+            captured_dte["dte"] = dte
+            return peak_premium * 0.9
+
+        tracker.trailing_sl.get_trailing_sl_price = _fake_trailing_sl_price
+
+        with patch("src.monitor.position_tracker.datetime") as mock_dt:
+            mock_dt.now.side_effect = lambda tz=None: (
+                utc_late_evening.astimezone(tz) if tz else utc_late_evening
+            )
+            mock_dt.strptime = datetime.strptime
+            await tracker.check_positions({"id": "u1"}, vix=13.0)
+
+        assert captured_dte["dte"] == 0
 
 class TestBriefDedup:
     def setup_method(self):
@@ -802,6 +877,24 @@ class TestSaveHeartbeatValidation:
         from src.monitor.repository import MonitorRepository
         with pytest.raises(ValueError, match="Unknown heartbeat field"):
             await MonitorRepository().save_heartbeat("user-1", "not_a_real_field")
+
+
+# ---------------------------------------------------------------------------
+# repository._today_ist — module-level free function, no sqlalchemy needed.
+# session_date is an IST trading-session concept; must not fall back to the
+# UTC date on the Oracle VM.
+# ---------------------------------------------------------------------------
+
+class TestRepositoryTodayIst:
+    def test_uses_ist_not_utc_date(self):
+        from src.monitor.repository import _today_ist
+        utc_late_evening = pytz.utc.localize(datetime(2026, 7, 6, 23, 45))
+        with patch("src.monitor.repository.datetime") as mock_dt:
+            mock_dt.now.side_effect = lambda tz=None: (
+                utc_late_evening.astimezone(tz) if tz else utc_late_evening
+            )
+            result = _today_ist()
+        assert result == "2026-07-07"
 
 
 # ---------------------------------------------------------------------------

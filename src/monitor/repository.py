@@ -17,11 +17,23 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pytz
+
 from src.db.config import get_session
+
+_IST = pytz.timezone("Asia/Kolkata")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _today_ist() -> str:
+    """IST calendar date (YYYY-MM-DD). The Oracle VM runs in UTC, so
+    _now()[:10] would be a day behind the real IST date during IST
+    00:00-05:29 — session_date is an IST trading-session concept and must
+    not silently fall back to the UTC date."""
+    return datetime.now(_IST).date().isoformat()
 
 
 def _row_to_dict(row: Any) -> dict:
@@ -218,7 +230,7 @@ class MonitorRepository:
                     open_vix=state.get("open_vix"),
                     open_call_wall=state.get("open_call_wall"),
                     open_put_wall=state.get("open_put_wall"),
-                    session_date=state.get("session_date", now[:10]),
+                    session_date=state.get("session_date", _today_ist()),
                     last_morning_brief=state.get("last_morning_brief"),
                     last_eod_summary=state.get("last_eod_summary"),
                     updated_at=now,
@@ -250,7 +262,7 @@ class MonitorRepository:
             if row is None:
                 session.add(MonitorSessionState(
                     user_id=user_id,
-                    session_date=now[:10],
+                    session_date=_today_ist(),
                     updated_at=now,
                     **{field: now},
                 ))

@@ -176,13 +176,20 @@ class MarketMonitor:
             logger.debug("_get_realized_pnl_today error: %s", exc)
             return 0.0
 
+    def _today_ist(self) -> date:
+        """IST calendar date. date.today() uses the OS/process local date,
+        which is the UTC date on the Oracle VM. IST is UTC+5:30, so during
+        IST 00:00-05:29 the UTC date is still "yesterday" — date.today()
+        would be one day behind the real IST calendar date in that window."""
+        return datetime.now(self.IST).date()
+
     def _tomorrow_note(self, calendar: dict) -> str:
         """Derive a plain observation from the calendar — next expiry and
         whether tomorrow is a trading holiday. No predictive language."""
         if not calendar:
             return ""
         next_expiry = calendar.get("next_nse_expiry", "")
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        tomorrow = (self._today_ist() + timedelta(days=1)).isoformat()
         holidays = calendar.get("nse_holidays", [])
         if tomorrow in holidays:
             return f"Tomorrow is an NSE holiday. Next NIFTY expiry: {next_expiry}"
@@ -201,7 +208,7 @@ class MarketMonitor:
             self._get_global_sentiment(),
         )
         data = {
-            "date": date.today().isoformat(),
+            "date": self._today_ist().isoformat(),
             "expiry": calendar.get("next_nse_expiry", ""),
             "nifty": nifty_q["last_price"],
             "sensex": sensex_q["last_price"],
@@ -228,7 +235,7 @@ class MarketMonitor:
             return round((q["last_price"] - q["previous_close"]) / q["previous_close"] * 100, 2)
 
         data = {
-            "date": date.today().isoformat(),
+            "date": self._today_ist().isoformat(),
             "nifty_close": nifty_q["last_price"],
             "nifty_change": _pct_change(nifty_q),
             "sensex_close": sensex_q["last_price"],
