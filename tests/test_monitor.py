@@ -8,7 +8,7 @@ see src/db/base.py). No real broker, HTTP, or WhatsApp calls are made.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -387,10 +387,14 @@ class TestMonitorBootstrap:
 
         from src.monitor.bootstrap import MonitorBootstrap
 
+        # session.execute() is the only awaited call — its return value
+        # (the Result object) is used synchronously (.scalars(), .first(),
+        # .scalar_one_or_none()), so those must be MagicMock, not AsyncMock,
+        # or calling them returns an unawaited coroutine instead of a value.
         mock_session = AsyncMock()
-        no_user_result = AsyncMock()
+        no_user_result = MagicMock()
         no_user_result.scalars.return_value.first.return_value = None
-        no_settings_result = AsyncMock()
+        no_settings_result = MagicMock()
         no_settings_result.scalar_one_or_none.return_value = None
         mock_session.execute.side_effect = [no_user_result, no_settings_result]
 
@@ -410,7 +414,7 @@ class TestMonitorBootstrap:
         existing.__table__ = type("T", (), {"columns": []})()
 
         mock_session = AsyncMock()
-        result = AsyncMock()
+        result = MagicMock()
         result.scalars.return_value.first.return_value = existing
         mock_session.execute.return_value = result
 
