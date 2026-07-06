@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 import pytz
 
@@ -62,41 +62,147 @@ class MarketMonitor:
 
     async def _get_vix(self) -> float:
         try:
-            from src.market.service import MarketService
-            svc = MarketService()
-            data = svc.get_india_vix()
-            return float(data.get("value", 0)) if isinstance(data, dict) else 0.0
+            from src.intelligence.vix import get_india_vix
+            loop = asyncio.get_running_loop()
+            data = await loop.run_in_executor(None, get_india_vix)
+            return float(data.get("level", 0)) if isinstance(data, dict) else 0.0
         except Exception as exc:
             logger.debug("_get_vix error: %s", exc)
             return 0.0
 
+    async def _get_index_quote(self, symbol: str) -> dict:
+        """Return {"last_price", "previous_close"} for an index, or zeros on
+        any failure — market data outages must never crash the monitor loop."""
+        try:
+            from src.market.service import MarketService
+            loop = asyncio.get_running_loop()
+            quote = await loop.run_in_executor(None, MarketService().get_quote, symbol)
+            last = float(quote.get("last_price") or 0)
+            prev = float(quote.get("previous_close") or 0)
+            return {"last_price": last, "previous_close": prev}
+        except Exception as exc:
+            logger.debug("_get_index_quote(%s) error: %s", symbol, exc)
+            return {"last_price": 0.0, "previous_close": 0.0}
+
+    async def _get_key_levels(self) -> dict:
+        """Support/resistance from NIFTY option chain OI. Returns
+        {"support", "resistance"} — empty strings if the chain can't be fetched
+        (public NSE endpoint, no auth, but can soft-block or time out)."""
+        try:
+            from src.options.service import OptionsService
+            from src.options.analytics import identify_support_resistance_from_oi
+            loop = asyncio.get_running_loop()
+            chain = await loop.run_in_executor(None, OptionsService().get_option_chain, "NIFTY")
+            levels = identify_support_resistance_from_oi(chain)
+            nearest_support = levels.get("nearest_support") or {}
+            nearest_resistance = levels.get("nearest_resistance") or {}
+            return {
+                "support": nearest_support.get("strike", ""),
+                "resistance": nearest_resistance.get("strike", ""),
+            }
+        except Exception as exc:
+            logger.debug("_get_key_levels error: %s", exc)
+            return {"support": "", "resistance": ""}
+
+    async def _get_calendar(self) -> dict:
+        try:
+            from src.market.calendar import get_market_calendar
+            loop = asyncio.get_running_loop()
+            cal = await loop.run_in_executor(None, get_market_calendar)
+            return cal or {}
+        except Exception as exc:
+            logger.debug("_get_calendar error: %s", exc)
+            return {}
+
+    async def _get_global_sentiment(self) -> str:
+        try:
+            from src.intelligence.global_pulse import get_global_pulse
+            loop = asyncio.get_running_loop()
+            pulse = await loop.run_in_executor(None, get_global_pulse)
+            return pulse.get("overall_sentiment", "") if isinstance(pulse, dict) else ""
+        except Exception as exc:
+            logger.debug("_get_global_sentiment error: %s", exc)
+            return ""
+
+    async def _get_realized_pnl_today(self) -> float:
+        """Realized P&L from INDmoney's own funds snapshot (realized_pnl
+        field) — no per-trade realized-P&L helper exists in this codebase
+        (see INDmoneyBroker.get_funds), so this reads the broker's own
+        aggregate rather than recomputing it from the trade book. The
+        Fund dataclass doesn't expose this field, so get_raw_funds() is
+        used and unwrapped the same way get_funds() does internally."""
+        try:
+            from src.brokers.indmoney import INDmoneyBroker
+            raw = await INDmoneyBroker().get_raw_funds()
+            body = raw.get("body") if isinstance(raw, dict) else None
+            if not isinstance(body, dict):
+                return 0.0
+            data = body.get("data", body)
+            return float(data.get("realized_pnl") or 0)
+        except Exception as exc:
+            logger.debug("_get_realized_pnl_today error: %s", exc)
+            return 0.0
+
+    def _tomorrow_note(self, calendar: dict) -> str:
+        """Derive a plain observation from the calendar — next expiry and
+        whether tomorrow is a trading holiday. No predictive language."""
+        if not calendar:
+            return ""
+        next_expiry = calendar.get("next_nse_expiry", "")
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        holidays = calendar.get("nse_holidays", [])
+        if tomorrow in holidays:
+            return f"Tomorrow is an NSE holiday. Next NIFTY expiry: {next_expiry}"
+        if next_expiry:
+            return f"Next NIFTY expiry: {next_expiry}"
+        return ""
+
     async def send_morning_brief(self, user: dict) -> None:
         positions = await self.repo.get_active_positions(user["id"])
-        vix = await self._get_vix()
+        vix, nifty_q, sensex_q, key_levels, calendar, sentiment = await asyncio.gather(
+            self._get_vix(),
+            self._get_index_quote("NIFTY"),
+            self._get_index_quote("SENSEX"),
+            self._get_key_levels(),
+            self._get_calendar(),
+            self._get_global_sentiment(),
+        )
         data = {
             "date": date.today().isoformat(),
-            "expiry": "",
-            "nifty": 0,
-            "sensex": 0,
+            "expiry": calendar.get("next_nse_expiry", ""),
+            "nifty": nifty_q["last_price"],
+            "sensex": sensex_q["last_price"],
             "vix": vix,
-            "global_sentiment": "",
+            "global_sentiment": sentiment,
             "positions": positions,
-            "support": "",
-            "resistance": "",
+            "support": key_levels["support"],
+            "resistance": key_levels["resistance"],
         }
         await self.alerter.send_morning_brief(user, data)
 
     async def send_eod_summary(self, user: dict) -> None:
         positions = await self.repo.get_active_positions(user["id"])
+        nifty_q, sensex_q, calendar, realized_pnl = await asyncio.gather(
+            self._get_index_quote("NIFTY"),
+            self._get_index_quote("SENSEX"),
+            self._get_calendar(),
+            self._get_realized_pnl_today(),
+        )
+
+        def _pct_change(q: dict) -> float:
+            if not q["previous_close"]:
+                return 0.0
+            return round((q["last_price"] - q["previous_close"]) / q["previous_close"] * 100, 2)
+
         data = {
             "date": date.today().isoformat(),
-            "nifty_close": 0,
-            "nifty_change": 0.0,
-            "sensex_close": 0,
-            "sensex_change": 0.0,
-            "realized_pnl": 0,
+            "nifty_close": nifty_q["last_price"],
+            "nifty_change": _pct_change(nifty_q),
+            "sensex_close": sensex_q["last_price"],
+            "sensex_change": _pct_change(sensex_q),
+            "realized_pnl": realized_pnl,
             "open_count": len(positions),
-            "tomorrow_note": "",
+            "tomorrow_note": self._tomorrow_note(calendar),
         }
         await self.alerter.send_eod_summary(user, data)
 
@@ -113,24 +219,30 @@ class MarketMonitor:
     async def run(self) -> None:
         await self.bootstrap.ensure_default_user()
 
-        last_morning_brief: date | None = None
-        last_eod_summary: date | None = None
         last_position_sync: datetime | None = None
 
         while True:
             now = datetime.now(self.IST)
+            today_str = now.date().isoformat()
             users = await self.repo.get_active_users()
 
             for user in users:
                 await self.repo.save_heartbeat(user["id"], "last_heartbeat")
+                session_state = await self.repo.get_session_state(user["id"]) or {}
 
-                if now.time() >= self.MORNING_BRIEF_TIME and last_morning_brief != now.date():
+                if (
+                    now.time() >= self.MORNING_BRIEF_TIME
+                    and session_state.get("last_morning_brief") != today_str
+                ):
                     await self.send_morning_brief(user)
-                    last_morning_brief = now.date()
+                    await self.repo.save_session_state(user["id"], {"last_morning_brief": today_str})
 
-                if now.time() >= self.EOD_SUMMARY_TIME and last_eod_summary != now.date():
+                if (
+                    now.time() >= self.EOD_SUMMARY_TIME
+                    and session_state.get("last_eod_summary") != today_str
+                ):
                     await self.send_eod_summary(user)
-                    last_eod_summary = now.date()
+                    await self.repo.save_session_state(user["id"], {"last_eod_summary": today_str})
 
                 if self.is_market_open():
                     if last_position_sync is None or (now - last_position_sync).total_seconds() >= self.POSITION_SYNC_SECONDS:

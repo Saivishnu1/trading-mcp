@@ -283,6 +283,12 @@ try:
         last_market_check: Mapped[str | None]   = mapped_column(Text)
         last_position_check: Mapped[str | None] = mapped_column(Text)
         last_alert_sent: Mapped[str | None]     = mapped_column(Text)
+        # Dedup guards for the once-daily morning brief / EOD summary — a
+        # process restart resets any in-memory "already sent today" tracking,
+        # so this must be persisted (ISO date string, not a live column type,
+        # to match every other date-ish field in this schema).
+        last_morning_brief: Mapped[str | None] = mapped_column(Text)
+        last_eod_summary: Mapped[str | None]   = mapped_column(Text)
         updated_at: Mapped[str]      = mapped_column(Text, nullable=False)
 
     class MonitorInstrumentCache(Base):

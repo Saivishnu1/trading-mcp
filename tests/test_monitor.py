@@ -7,7 +7,7 @@ see src/db/base.py). No real broker, HTTP, or WhatsApp calls are made.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -427,6 +427,191 @@ class TestAdaptivePolling:
     def test_is_market_open_boundaries(self):
         assert self.monitor.MARKET_OPEN.hour == 9 and self.monitor.MARKET_OPEN.minute == 15
         assert self.monitor.MARKET_CLOSE.hour == 15 and self.monitor.MARKET_CLOSE.minute == 30
+
+
+# ---------------------------------------------------------------------------
+# MarketMonitor data-fetching helpers — real sources mocked at the module
+# boundary, so these prove the wiring (function names, dict keys) is right
+# without hitting the network.
+# ---------------------------------------------------------------------------
+
+class TestSchedulerDataFetchers:
+    def setup_method(self):
+        with patch("src.monitor.scheduler.MonitorRepository"), \
+             patch("src.monitor.scheduler.MonitorBootstrap"), \
+             patch("src.monitor.scheduler.PositionTracker"):
+            self.monitor = MarketMonitor()
+
+    @pytest.mark.anyio
+    async def test_get_vix_reads_level_field(self):
+        with patch("src.intelligence.vix.get_india_vix", return_value={"level": 13.5}):
+            result = await self.monitor._get_vix()
+        assert result == 13.5
+
+    @pytest.mark.anyio
+    async def test_get_vix_returns_zero_on_error(self):
+        with patch("src.intelligence.vix.get_india_vix", side_effect=Exception("down")):
+            result = await self.monitor._get_vix()
+        assert result == 0.0
+
+    @pytest.mark.anyio
+    async def test_get_index_quote_reads_last_price_and_previous_close(self):
+        quote = {"last_price": 24380.0, "previous_close": 24300.0}
+        with patch("src.market.service.MarketService.get_quote", return_value=quote):
+            result = await self.monitor._get_index_quote("NIFTY")
+        assert result == {"last_price": 24380.0, "previous_close": 24300.0}
+
+    @pytest.mark.anyio
+    async def test_get_index_quote_returns_zeros_on_error(self):
+        with patch("src.market.service.MarketService.get_quote", side_effect=Exception("down")):
+            result = await self.monitor._get_index_quote("NIFTY")
+        assert result == {"last_price": 0.0, "previous_close": 0.0}
+
+    @pytest.mark.anyio
+    async def test_get_key_levels_reads_nearest_support_resistance(self):
+        chain = {"records": {"data": []}}
+        levels = {
+            "nearest_support": {"strike": 24200, "oi": 100, "basis": "high put OI"},
+            "nearest_resistance": {"strike": 24500, "oi": 200, "basis": "high call OI"},
+        }
+        with patch("src.options.service.OptionsService.get_option_chain", return_value=chain), \
+             patch("src.options.analytics.identify_support_resistance_from_oi", return_value=levels):
+            result = await self.monitor._get_key_levels()
+        assert result == {"support": 24200, "resistance": 24500}
+
+    @pytest.mark.anyio
+    async def test_get_key_levels_handles_missing_levels(self):
+        chain = {"records": {"data": []}}
+        levels = {"nearest_support": None, "nearest_resistance": None}
+        with patch("src.options.service.OptionsService.get_option_chain", return_value=chain), \
+             patch("src.options.analytics.identify_support_resistance_from_oi", return_value=levels):
+            result = await self.monitor._get_key_levels()
+        assert result == {"support": "", "resistance": ""}
+
+    @pytest.mark.anyio
+    async def test_get_key_levels_returns_empty_on_error(self):
+        with patch("src.options.service.OptionsService.get_option_chain", side_effect=RuntimeError("blocked")):
+            result = await self.monitor._get_key_levels()
+        assert result == {"support": "", "resistance": ""}
+
+    @pytest.mark.anyio
+    async def test_get_calendar_returns_dict(self):
+        cal = {"next_nse_expiry": "2026-07-09", "nse_holidays": []}
+        with patch("src.market.calendar.get_market_calendar", return_value=cal):
+            result = await self.monitor._get_calendar()
+        assert result == cal
+
+    @pytest.mark.anyio
+    async def test_get_calendar_returns_empty_dict_on_error(self):
+        with patch("src.market.calendar.get_market_calendar", side_effect=Exception("down")):
+            result = await self.monitor._get_calendar()
+        assert result == {}
+
+    @pytest.mark.anyio
+    async def test_get_global_sentiment_reads_overall_sentiment(self):
+        with patch("src.intelligence.global_pulse.get_global_pulse", return_value={"overall_sentiment": "RISK_ON"}):
+            result = await self.monitor._get_global_sentiment()
+        assert result == "RISK_ON"
+
+    @pytest.mark.anyio
+    async def test_get_global_sentiment_returns_empty_on_error(self):
+        with patch("src.intelligence.global_pulse.get_global_pulse", side_effect=Exception("down")):
+            result = await self.monitor._get_global_sentiment()
+        assert result == ""
+
+    @pytest.mark.anyio
+    async def test_get_realized_pnl_today_unwraps_body_data(self):
+        raw = {"status_code": 200, "body": {"data": {"realized_pnl": "1234.5"}}}
+        mock_broker = AsyncMock()
+        mock_broker.get_raw_funds.return_value = raw
+        with patch("src.brokers.indmoney.INDmoneyBroker", return_value=mock_broker):
+            result = await self.monitor._get_realized_pnl_today()
+        assert result == 1234.5
+
+    @pytest.mark.anyio
+    async def test_get_realized_pnl_today_returns_zero_when_not_configured(self):
+        mock_broker = AsyncMock()
+        mock_broker.get_raw_funds.return_value = {"error": "not_configured"}
+        with patch("src.brokers.indmoney.INDmoneyBroker", return_value=mock_broker):
+            result = await self.monitor._get_realized_pnl_today()
+        assert result == 0.0
+
+    def test_tomorrow_note_empty_calendar(self):
+        assert self.monitor._tomorrow_note({}) == ""
+
+    def test_tomorrow_note_with_expiry_no_holiday(self):
+        cal = {"next_nse_expiry": "2026-07-09", "nse_holidays": []}
+        note = self.monitor._tomorrow_note(cal)
+        assert "2026-07-09" in note
+        assert "holiday" not in note.lower()
+
+    def test_tomorrow_note_flags_holiday(self):
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        cal = {"next_nse_expiry": "2026-07-09", "nse_holidays": [tomorrow]}
+        note = self.monitor._tomorrow_note(cal)
+        assert "holiday" in note.lower()
+        assert "2026-07-09" in note
+
+
+# ---------------------------------------------------------------------------
+# Brief/summary dedup — persisted via monitor.session_state so a restart
+# doesn't re-send the once-daily morning brief / EOD summary.
+# ---------------------------------------------------------------------------
+
+class TestBriefDedup:
+    def setup_method(self):
+        with patch("src.monitor.scheduler.MonitorRepository"), \
+             patch("src.monitor.scheduler.MonitorBootstrap"), \
+             patch("src.monitor.scheduler.PositionTracker"):
+            self.monitor = MarketMonitor()
+        self.monitor.repo = AsyncMock()
+        self.monitor.bootstrap = AsyncMock()
+        self.monitor.tracker = AsyncMock()
+
+    @pytest.mark.anyio
+    async def test_run_skips_morning_brief_if_already_sent_today(self):
+        today_str = datetime.now(self.monitor.IST).date().isoformat()
+        self.monitor.repo.get_active_users.return_value = [{"id": "u1", "name": "Vishnu"}]
+        self.monitor.repo.get_session_state.return_value = {"last_morning_brief": today_str, "last_eod_summary": today_str}
+        self.monitor.repo.get_active_positions.return_value = []
+        self.monitor.send_morning_brief = AsyncMock()
+        self.monitor.send_eod_summary = AsyncMock()
+
+        async def _raise_stop(*a, **k):
+            raise StopAsyncIteration
+
+        with patch("asyncio.sleep", new=AsyncMock(side_effect=_raise_stop)):
+            with pytest.raises(StopAsyncIteration):
+                await self.monitor.run()
+
+        self.monitor.send_morning_brief.assert_not_awaited()
+        self.monitor.send_eod_summary.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_run_sends_morning_brief_once_and_persists_date(self):
+        self.monitor.repo.get_active_users.return_value = [{"id": "u1", "name": "Vishnu"}]
+        self.monitor.repo.get_session_state.return_value = {}
+        self.monitor.repo.get_active_positions.return_value = []
+        self.monitor.send_morning_brief = AsyncMock()
+        self.monitor.send_eod_summary = AsyncMock()
+        self.monitor.check_market_conditions = AsyncMock()
+        self.monitor._get_vix = AsyncMock(return_value=13.0)
+        # Force "now" past MORNING_BRIEF_TIME but before EOD_SUMMARY_TIME
+        fixed_now = self.monitor.IST.localize(datetime.combine(date.today(), time(10, 0)))
+
+        async def _raise_stop(*a, **k):
+            raise StopAsyncIteration
+
+        with patch("src.monitor.scheduler.datetime") as mock_dt, \
+             patch("asyncio.sleep", new=AsyncMock(side_effect=_raise_stop)):
+            mock_dt.now.return_value = fixed_now
+            with pytest.raises(StopAsyncIteration):
+                await self.monitor.run()
+
+        self.monitor.send_morning_brief.assert_awaited_once()
+        self.monitor.send_eod_summary.assert_not_awaited()
+        saved = self.monitor.repo.save_session_state.call_args_list
+        assert any(c.args[1].get("last_morning_brief") == fixed_now.date().isoformat() for c in saved)
 
 
 # ---------------------------------------------------------------------------

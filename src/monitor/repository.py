@@ -219,6 +219,8 @@ class MonitorRepository:
                     open_call_wall=state.get("open_call_wall"),
                     open_put_wall=state.get("open_put_wall"),
                     session_date=state.get("session_date", now[:10]),
+                    last_morning_brief=state.get("last_morning_brief"),
+                    last_eod_summary=state.get("last_eod_summary"),
                     updated_at=now,
                 ))
             else:
@@ -227,6 +229,8 @@ class MonitorRepository:
                 row.open_call_wall = state.get("open_call_wall", row.open_call_wall)
                 row.open_put_wall = state.get("open_put_wall", row.open_put_wall)
                 row.session_date = state.get("session_date", row.session_date)
+                row.last_morning_brief = state.get("last_morning_brief", row.last_morning_brief)
+                row.last_eod_summary = state.get("last_eod_summary", row.last_eod_summary)
                 row.updated_at = now
 
     async def save_heartbeat(self, user_id: str, field: str) -> None:
