@@ -286,6 +286,74 @@ class TestWhatsAppAlerter:
             result = await alerter.send("911234567890", "key123", "test")
         assert result is False
 
+    @pytest.mark.anyio
+    async def test_telegram_not_attempted_when_not_configured(self):
+        """No telegram_bot_token/chat_id on the user -> only CallMeBot fires."""
+        alerter = WhatsAppAlerter()
+        with patch.object(alerter, "_send_callmebot", new=AsyncMock(return_value=True)) as cb, \
+             patch.object(alerter, "_send_telegram", new=AsyncMock(return_value=True)) as tg:
+            result = await alerter.send("911234567890", "key123", "test", user={})
+        assert result is True
+        cb.assert_awaited_once()
+        tg.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_telegram_fires_when_configured(self):
+        alerter = WhatsAppAlerter()
+        user = {"telegram_bot_token": "bot-token", "telegram_chat_id": "12345"}
+        with patch.object(alerter, "_send_callmebot", new=AsyncMock(return_value=False)), \
+             patch.object(alerter, "_send_telegram", new=AsyncMock(return_value=True)) as tg:
+            result = await alerter.send("911234567890", "key123", "test", user=user)
+        assert result is True
+        tg.assert_awaited_once_with("bot-token", "12345", "test")
+
+    @pytest.mark.anyio
+    async def test_overall_success_if_either_channel_succeeds(self):
+        alerter = WhatsAppAlerter()
+        user = {"telegram_bot_token": "bot-token", "telegram_chat_id": "12345"}
+        with patch.object(alerter, "_send_callmebot", new=AsyncMock(return_value=True)), \
+             patch.object(alerter, "_send_telegram", new=AsyncMock(return_value=False)):
+            result = await alerter.send("911234567890", "key123", "test", user=user)
+        assert result is True
+
+    @pytest.mark.anyio
+    async def test_overall_failure_if_both_channels_fail(self):
+        alerter = WhatsAppAlerter()
+        user = {"telegram_bot_token": "bot-token", "telegram_chat_id": "12345"}
+        with patch.object(alerter, "_send_callmebot", new=AsyncMock(return_value=False)), \
+             patch.object(alerter, "_send_telegram", new=AsyncMock(return_value=False)):
+            result = await alerter.send("911234567890", "key123", "test", user=user)
+        assert result is False
+
+    @pytest.mark.anyio
+    async def test_telegram_send_success(self):
+        alerter = WhatsAppAlerter()
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+            result = await alerter._send_telegram("bot-token", "12345", "test")
+        assert result is True
+        mock_client.post.assert_awaited_once()
+        call_kwargs = mock_client.post.call_args.kwargs
+        assert call_kwargs["json"] == {"chat_id": "12345", "text": "test"}
+
+    @pytest.mark.anyio
+    async def test_telegram_send_failure_returns_false(self):
+        alerter = WhatsAppAlerter()
+        mock_response = AsyncMock()
+        mock_response.status_code = 400
+        mock_response.text = "bad request"
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch("asyncio.sleep", new=AsyncMock()):
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+            result = await alerter._send_telegram("bot-token", "12345", "test")
+        assert result is False
+
     def test_position_alert_message_format(self):
         alerter = WhatsAppAlerter()
         user = {"whatsapp_phone": "91123", "callmebot_key": "key"}

@@ -34,6 +34,10 @@ class MonitorBootstrap:
                     "No monitor.users row exists and DEFAULT_USER_NAME / "
                     "DEFAULT_WHATSAPP_PHONE / DEFAULT_CALLMEBOT_API_KEY are not all set."
                 )
+            # Optional second channel — Telegram has no onboarding delay,
+            # unlike CallMeBot's WhatsApp opt-in handshake.
+            telegram_bot_token = os.environ.get("DEFAULT_TELEGRAM_BOT_TOKEN", "").strip() or None
+            telegram_chat_id = os.environ.get("DEFAULT_TELEGRAM_CHAT_ID", "").strip() or None
 
             now = datetime.now(timezone.utc).isoformat()
             user = MonitorUser(
@@ -41,6 +45,8 @@ class MonitorBootstrap:
                 name=name,
                 whatsapp_phone=phone,
                 callmebot_key=key,
+                telegram_bot_token=telegram_bot_token,
+                telegram_chat_id=telegram_chat_id,
                 broker_type="zerodha+indmoney",
                 is_default=True,
                 is_active=True,

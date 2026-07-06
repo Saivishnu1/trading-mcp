@@ -188,6 +188,12 @@ try:
         name: Mapped[str]           = mapped_column(Text, nullable=False)
         whatsapp_phone: Mapped[str] = mapped_column(Text, nullable=False)
         callmebot_key: Mapped[str]  = mapped_column(Text, nullable=False)
+        # Optional second delivery channel — Telegram's Bot API has no
+        # onboarding handshake delay (unlike CallMeBot's WhatsApp opt-in),
+        # so alerts still land if CallMeBot is slow/down. Either or both
+        # channels may be configured; send() fans out to whichever is set.
+        telegram_bot_token: Mapped[str | None] = mapped_column(Text)
+        telegram_chat_id: Mapped[str | None]   = mapped_column(Text)
         broker_type: Mapped[str]    = mapped_column(Text, nullable=False, server_default="zerodha+indmoney")
         is_default: Mapped[bool]    = mapped_column(Boolean, server_default=text("false"))
         is_active: Mapped[bool]     = mapped_column(Boolean, server_default=text("true"))
