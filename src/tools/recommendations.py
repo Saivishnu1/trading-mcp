@@ -2,7 +2,6 @@ from mcp.server.fastmcp import FastMCP
 
 from src.recommendations.engine import (
     review_open_trades as _review_open_trades,
-    get_daily_brief as _get_daily_brief,
 )
 
 
@@ -26,21 +25,3 @@ def register(mcp: FastMCP) -> None:
         Does not require an active broker session — uses journal + yfinance.
         """
         return _review_open_trades()
-
-    @mcp.tool()
-    def get_daily_brief() -> dict:
-        """Get a morning briefing combining market context and open position review.
-
-        market_context:
-          vix, vix_caution, overall_risk_score, overall_risk_rating,
-          global_sentiment, upcoming_events (next 3 days)
-
-        open_positions: full review_open_trades() result
-
-        alerts: EXIT signals, stoploss breaches, upcoming HIGH-impact events
-
-        summary: plain-English one-paragraph briefing
-
-        Does not require an active broker session.
-        """
-        return _get_daily_brief()

@@ -540,14 +540,6 @@ class TestIntelligenceMetaWrap:
             result = tools["get_upcoming_events"].fn()
         assert "internal" in result["meta"]["source"]
 
-    def test_get_market_risk_score_meta_type_interpretation(self):
-        tools = _intel_mcp()
-        with patch("src.intelligence.risk.get_market_risk_score", return_value={
-            "score": 35, "rating": "MODERATE", "factors": [], "recommendation": "ok", "inputs": {}
-        }):
-            result = tools["get_market_risk_score"].fn("NIFTY")
-        assert result["meta"]["type"] == "INTERPRETATION"
-
 
 # ---------------------------------------------------------------------------
 # D6 — Calendar source_meta transparency

@@ -17,8 +17,9 @@ def register(mcp: FastMCP) -> None:
         include_global: bool = True,
         include_patterns: bool = True,
     ) -> dict:
-        """Unified market intelligence for a symbol.
-        Combines chart, candle, pattern, option, and global analysis.
+        """PRIMARY COMPOSITE TOOL — call this first for any market analysis.
+        Combines chart, candle, pattern, option, and global analysis in one call.
+        All sub-calls run concurrently. Missing data flagged explicitly.
 
         symbol:          "NIFTY"|"BANKNIFTY"|"SENSEX"|"BANKEX"|stock
         interval:        1minute|5minute|15minute|30minute|60minute|day|week
@@ -26,6 +27,8 @@ def register(mcp: FastMCP) -> None:
         include_options: include option chain analysis (default True)
         include_global:  include global pulse and VIX (default True)
         include_patterns: include chart and candle patterns (default True)
+
+        For top gainers/losers, use Indmoney MCP:get_indian_stocks_movers.
 
         Returns factual observations only — no buy/sell signals, no price targets.
         """

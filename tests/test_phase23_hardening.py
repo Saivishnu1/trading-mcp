@@ -135,45 +135,6 @@ class TestOptionsRuntimeExecution:
 
 
 # ---------------------------------------------------------------------------
-# D1B — intelligence.py runtime execution (no NameError)
-# ---------------------------------------------------------------------------
-
-class TestIntelligenceRuntimeExecution:
-    """Verify get_market_risk_score executes without NameError from missing _norm."""
-
-    def test_get_market_risk_score_executes(self):
-        tools = _intel_mcp()
-        with patch("src.intelligence.risk.get_market_risk_score", return_value={
-            "score": 35, "rating": "MODERATE", "factors": [], "recommendation": "ok",
-            "inputs": {}
-        }):
-            result = tools["get_market_risk_score"].fn("NIFTY")
-        assert isinstance(result, dict)
-
-    def test_get_market_risk_score_no_name_error(self):
-        """Regression: missing _norm import caused NameError."""
-        tools = _intel_mcp()
-        with patch("src.intelligence.risk.get_market_risk_score", return_value={
-            "score": 35, "rating": "MODERATE", "factors": [], "recommendation": "ok",
-            "inputs": {}
-        }):
-            # Must not raise NameError
-            result = tools["get_market_risk_score"].fn("BANKNIFTY")
-        assert "score" in result.get("data", result) or "error" in result
-
-    def test_get_market_risk_score_meta_present(self):
-        """Meta must be set even though PASSTHROUGH format produces corrected=False."""
-        tools = _intel_mcp()
-        with patch("src.intelligence.risk.get_market_risk_score", return_value={
-            "score": 40, "rating": "MODERATE", "factors": [], "recommendation": "ok",
-            "inputs": {}
-        }):
-            result = tools["get_market_risk_score"].fn("NSE:INFY")
-        # PASSTHROUGH → corrected=False, but meta must still be present
-        assert "meta" in result
-        assert "type" in result["meta"]
-
-# ---------------------------------------------------------------------------
 # Helper for mocking the provider chain in calendar tests
 # ---------------------------------------------------------------------------
 

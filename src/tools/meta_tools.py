@@ -16,6 +16,7 @@ from src.market.calendar import (
     get_market_calendar as _get_market_calendar,
     get_calendar_health as _get_calendar_health,
 )
+from src.orchestration.manifest import MCP_MANIFEST, get_kite_mcp_status
 
 # ---------------------------------------------------------------------------
 # Static capability declarations
@@ -51,11 +52,8 @@ _DATA_LAG: dict[str, str] = {
     "identify_support_resistance_from_oi": "5-15 min",
     "calculate_max_pain": "5-15 min",
     "calculate_atr": "end_of_day",
-    "detect_market_regime": "end_of_day",
-    "get_regime_alignment": "end_of_day",
     "get_earnings_calendar": "end_of_day",
     "get_event_risk": "15-60 min",
-    "get_market_risk_score": "15 min",
     "get_global_pulse": "15 min",
     "get_upcoming_events": "static",
     "get_market_calendar": "real-time",
@@ -109,10 +107,17 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def get_capabilities() -> dict:
-        """Declare what this MCP instance can and cannot do.
+        """Returns complete MCP manifest — capabilities, data boundaries,
+        companion MCPs, routing rules, and recommended workflows.
 
-        Includes capability flags, per-tool data lag, known broken tools,
-        time-gated tools, and version metadata.
+        ALWAYS call this first when connecting to this MCP.
+        Use routing_rules to decide which MCP to use for each task.
+        Use recommended_workflows for common trading scenarios.
+        Use data_boundaries to avoid calling this MCP for tasks
+        better handled by Indmoney MCP or Kite MCP.
+
+        Also includes the legacy capability flags, per-tool data lag,
+        known broken tools, time-gated tools, and version metadata.
 
         No authentication required.
         """
@@ -121,22 +126,27 @@ def register(mcp: FastMCP) -> None:
         except Exception:
             all_tools = []
 
-        data = {
-            "capabilities": _CAPABILITY_FLAGS,
-            "data_lag": {
-                tool: lag
-                for tool, lag in _DATA_LAG.items()
-                if tool in all_tools or tool == "get_market_calendar"
-            },
-            "known_broken": _KNOWN_BROKEN,
-            "deprecated": _KNOWN_DEPRECATED,
-            "time_gated": _TIME_GATED,
-            "meta": {
-                "as_of": _ist_now(),
-                "mcp_version": _MCP_VERSION,
-                "total_tools": len(all_tools),
-            },
+        manifest = dict(MCP_MANIFEST)
+        manifest["companion_mcps"] = dict(MCP_MANIFEST["companion_mcps"])
+        manifest["companion_mcps"]["kite_mcp"] = dict(MCP_MANIFEST["companion_mcps"]["kite_mcp"])
+        manifest["companion_mcps"]["kite_mcp"]["status"] = get_kite_mcp_status()
+        manifest["generated_at"] = _ist_now()
+
+        manifest["capabilities"] = _CAPABILITY_FLAGS
+        manifest["data_lag"] = {
+            tool: lag
+            for tool, lag in _DATA_LAG.items()
+            if tool in all_tools or tool == "get_market_calendar"
         }
+        manifest["known_broken"] = _KNOWN_BROKEN
+        manifest["deprecated"] = _KNOWN_DEPRECATED
+        manifest["time_gated"] = _TIME_GATED
+        manifest["meta"] = {
+            "as_of": _ist_now(),
+            "mcp_version": _MCP_VERSION,
+            "total_tools": len(all_tools),
+        }
+
         m = _meta.build_meta(
             type_=_meta.TYPE_FACT,
             validation_status=_meta.VALIDATION_VERIFIED,
@@ -145,7 +155,7 @@ def register(mcp: FastMCP) -> None:
             account_type="MARKET_DATA_ONLY",
             stale_threshold_seconds=3600,
         )
-        return _meta.wrap(data, m)
+        return _meta.wrap(manifest, m)
 
     @mcp.tool()
     def get_tool_health() -> dict:
@@ -221,6 +231,7 @@ def register(mcp: FastMCP) -> None:
             except Exception:
                 pass
 
+        kite_status = get_kite_mcp_status()
         data = {
             "summary": {
                 "healthy": healthy,
@@ -230,6 +241,14 @@ def register(mcp: FastMCP) -> None:
                 "total": len(all_tools),
             },
             "tools": tools_detail,
+            "orchestration": {
+                "companion_mcps": {
+                    "indmoney_mcp": "available",
+                    "kite_mcp": kite_status,
+                },
+                "routing_active": True,
+                "manifest_version": MCP_MANIFEST["version"],
+            },
             "meta": {
                 "checked_at": _ist_now(),
                 "market_open": _meta.is_market_hours(),

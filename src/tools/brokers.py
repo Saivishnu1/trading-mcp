@@ -1,9 +1,9 @@
 """
 Phase 1 — Broker Intelligence tools.
 
-Six new MCP tools for unified multi-broker portfolio access:
+MCP tools for unified multi-broker portfolio access:
   get_unified_holdings, get_unified_positions, get_unified_funds,
-  get_unified_orders, get_broker_status, get_indmoney_greeks.
+  get_unified_orders, get_broker_status.
 """
 from __future__ import annotations
 
@@ -93,10 +93,13 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_unified_holdings(broker: str = "all") -> dict:
-        """Returns demat holdings from zerodha, indmoney, or both brokers combined.
+        """Returns combined F&O and equity holdings from Zerodha + INDmoney.
 
         Args:
             broker: "zerodha" | "indmoney" | "all" (default "all")
+
+        For full networth including MF, US stocks, and liabilities,
+        use Indmoney MCP:networth_snapshot instead.
 
         Returns a unified response with per-broker status and a combined list.
         """
@@ -104,10 +107,13 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def get_unified_positions(broker: str = "all") -> dict:
-        """Returns open positions from zerodha, indmoney, or both brokers combined.
+        """Returns open derivative positions from Zerodha + INDmoney.
 
         Args:
             broker: "zerodha" | "indmoney" | "all" (default "all")
+
+        For stock details and live prices of positions,
+        use Indmoney MCP:get_indian_stocks_details instead.
 
         Returns a unified response with per-broker status and a combined list.
         """
@@ -141,49 +147,6 @@ def register(mcp: FastMCP) -> None:
         status = await _get_broker_status()
         m = _broker_meta()
         return _meta.wrap(status, m)
-
-    @mcp.tool()
-    async def get_indmoney_greeks(tokens: list[str]) -> dict:
-        """Returns option Greeks (IV, Delta, Gamma, Theta, Vega) via INDmoney API.
-
-        Args:
-            tokens: list of instrument tokens e.g. ["BANKNIFTY28MAR24C45100"]
-
-        Note: Coming soon in INDstocks API — currently returns not_available.
-        """
-        broker = INDmoneyBroker()
-        result = await broker.get_greeks(tokens)
-        m = _broker_meta()
-        return _meta.wrap(result, m)
-
-    @mcp.tool()
-    async def get_indmoney_raw(endpoint: str = "order-book") -> dict:
-        """Returns raw INDstocks API response for field discovery and debugging.
-
-        Args:
-            endpoint: "order-book" | "holdings" | "positions" | "funds"
-                      | "trade-book" (DERIVATIVE) | "trade-book-equity" (EQUITY)
-                      (default "order-book")
-
-        Use this to inspect actual field names returned by the API.
-        """
-        broker = INDmoneyBroker()
-        if endpoint == "order-book":
-            result = await broker.get_raw_order_book()
-        elif endpoint == "holdings":
-            result = await broker.get_raw_holdings()
-        elif endpoint == "positions":
-            result = await broker.get_raw_positions()
-        elif endpoint == "funds":
-            result = await broker.get_raw_funds()
-        elif endpoint == "trade-book":
-            result = await broker.get_raw_trade_book(segment="DERIVATIVE")
-        elif endpoint == "trade-book-equity":
-            result = await broker.get_raw_trade_book(segment="EQUITY")
-        else:
-            result = {"error": f"Unknown endpoint: {endpoint}"}
-        m = _broker_meta()
-        return _meta.wrap(result, m)
 
     @mcp.tool()
     async def get_indmoney_trades(order_id: str = "", segment: str = "") -> dict:

@@ -6,10 +6,30 @@ Zerodha Personal MCP
 
 Current Phase: Phase 3 — Chart Awareness Engine (analyze_chart)
 
-Current Tool Count: 65
+Current Tool Count: 68
 
 Primary Goal:
 Build a personal trading intelligence MCP server with reusable analysis, planning, strategy, review, and dashboard capabilities.
+
+---
+
+## Orchestration
+
+This MCP is one of three in the trading intelligence stack:
+
+1. zerodha-trading-intelligence (this MCP) — intelligence layer
+2. Indmoney MCP — wealth and stock data layer
+3. Kite MCP — order execution layer (unavailable, fix pending)
+
+Always call get_capabilities() first to get routing rules.
+Use get_market_awareness() as primary composite tool.
+Do not duplicate calls handled better by companion MCPs.
+
+Tool count: 68
+
+Manifest lives in `src/orchestration/manifest.py` (`MCP_MANIFEST`). `get_capabilities()` and
+`get_tool_health()` in `src/tools/meta_tools.py` both read from it — update the manifest, not
+the tool bodies, when routing rules or companion MCP status change.
 
 ---
 

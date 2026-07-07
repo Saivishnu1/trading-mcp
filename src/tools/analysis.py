@@ -2,41 +2,10 @@ from mcp.server.fastmcp import FastMCP
 
 from src.analysis import regime
 from src import meta as _meta
-from src.market.symbols import normalize_symbol_extended as _norm, parse as _parse
-
-_INTERP_LIMITATIONS = [
-    "Regime classification has not been backtested for edge.",
-    "Phase 20A: regime-classifier edge not demonstrated on out-of-sample data.",
-    "Phase 21: momentum signals produced negative spreads in cross-sectional screen.",
-]
 
 # Synthetic conviction fields deleted in Phase 22F (Commit 6).
 # No longer present in any tool output — fully removed, not just deprecated.
 _SETUP_FIELDS_TO_DELETE = {"confidence", "signal", "trade_quality", "quality", "bullish_probability"}
-
-
-def _interp_meta(
-    data: dict,
-    *,
-    symbol_corrected: bool = False,
-    symbol_original: str | None = None,
-    symbol_normalized: str | None = None,
-    symbol_format_applied: str | None = None,
-) -> dict:
-    dq = _meta.DQ_INVALID if "error" in data else _meta.DQ_VALID
-    return _meta.build_meta(
-        type_=_meta.TYPE_INTERPRETATION,
-        validation_status=_meta.VALIDATION_UNVALIDATED,
-        research_status=_meta.RS_EXPERIMENTAL,
-        data_quality=dq,
-        source="yfinance",
-        account_type="MARKET_DATA_ONLY",
-        limitations=_INTERP_LIMITATIONS,
-        symbol_corrected=symbol_corrected,
-        symbol_original=symbol_original,
-        symbol_normalized=symbol_normalized,
-        symbol_format_applied=symbol_format_applied,
-    )
 
 
 def _build_market_structure(raw: dict) -> dict:
@@ -190,60 +159,6 @@ def _generate_reasoning(
 
 
 def register(mcp: FastMCP) -> None:
-
-    @mcp.tool()
-    def get_regime_alignment(symbol: str) -> dict:
-        """Return the market regime across daily, weekly, and monthly timeframes.
-
-        Identifies whether all timeframes agree (STRONG), most agree (PARTIAL),
-        daily and weekly conflict (CONFLICT), or signals are mixed (MIXED).
-        Use before entering a trade to confirm the daily signal is backed by
-        higher timeframe momentum — counter-trend setups carry more risk.
-
-        Args:
-            symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
-        """
-        sym, corrected, fmt = _norm(symbol, "get_regime_alignment")
-        if not symbol.strip():
-            return _meta.make_symbol_error(symbol, "get_regime_alignment")
-        _norm_kw: dict = dict(
-            symbol_corrected=corrected,
-            symbol_original=symbol if corrected else None,
-            symbol_normalized=sym if corrected else None,
-            symbol_format_applied=fmt if corrected else None,
-        )
-        data = regime.get_regime_alignment(sym)
-        return _meta.wrap(data, _interp_meta(data, **_norm_kw))
-
-    @mcp.tool()
-    def detect_market_regime(symbol: str) -> dict:
-        """Detect market structure for a symbol.
-
-        ⚠️ IMPORTANT FOR CLAUDE — READ BEFORE USING:
-        Output is a STRUCTURAL DESCRIPTOR not a prediction.
-        'price_above_ema20' = observed fact.
-        'strong_trend_present' = UNVALIDATED indicator note.
-        Phase 20A confirmed no forward return edge
-        across regime classifications on Nifty 50.
-        Do NOT use market_structure as a directional signal.
-        indicator_interpretation.type = INTERPRETATION
-        indicator_interpretation.validation_status = UNVALIDATED
-
-        Args:
-            symbol: 'NIFTY', 'BANKNIFTY', 'NSE:INFY', or a raw yfinance ticker.
-        """
-        sym, corrected, fmt = _norm(symbol, "detect_market_regime")
-        if not symbol.strip():
-            return _meta.make_symbol_error(symbol, "detect_market_regime")
-        _norm_kw: dict = dict(
-            symbol_corrected=corrected,
-            symbol_original=symbol if corrected else None,
-            symbol_normalized=sym if corrected else None,
-            symbol_format_applied=fmt if corrected else None,
-        )
-        raw = regime.detect_market_regime(sym)
-        data = _build_market_structure(raw)
-        return _meta.wrap(data, _interp_meta(data, **_norm_kw))
 
     @mcp.tool()
     def calculate_risk_reward(entry: float, stoploss: float, target: float) -> dict:
