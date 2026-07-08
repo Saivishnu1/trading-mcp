@@ -20,14 +20,22 @@ from src.brokers.indmoney import INDmoneyBroker
 from src.brokers.zerodha import ZerodhaBroker
 
 
-def _broker_meta() -> dict:
+def _broker_meta(zerodha_connected: bool = False) -> dict:
     return _meta.build_meta(
         type_=_meta.TYPE_FACT,
         validation_status=_meta.VALIDATION_VERIFIED,
         data_quality=_meta.DQ_VALID,
         source="broker_api",
         account_type="LIVE_ACCOUNT",
+        zerodha_connected=zerodha_connected,
     )
+
+
+async def _check_zerodha_connected() -> bool:
+    try:
+        return await ZerodhaBroker().is_authenticated()
+    except Exception:
+        return False
 
 
 async def _fetch_broker_data(adapter, method_name: str) -> dict:
@@ -48,12 +56,14 @@ async def _unified(method_name: str, broker: str) -> dict:
     brokers_result: dict = {}
     combined: list = []
 
+    zerodha_connected = False
     if broker in ("zerodha", "all"):
         z = ZerodhaBroker()
         try:
             auth = await z.is_authenticated()
         except Exception:
             auth = False
+        zerodha_connected = auth
         if auth:
             brokers_result["zerodha"] = await _fetch_broker_data(z, method_name)
             if brokers_result["zerodha"]["status"] == "ok":
@@ -85,7 +95,7 @@ async def _unified(method_name: str, broker: str) -> dict:
         "combined": combined,
         "total": len(combined),
     }
-    m = _broker_meta()
+    m = _broker_meta(zerodha_connected=zerodha_connected)
     return _meta.wrap(payload, m)
 
 
@@ -145,7 +155,7 @@ def register(mcp: FastMCP) -> None:
     async def get_broker_status() -> dict:
         """Returns authentication status for each configured broker (zerodha, indmoney)."""
         status = await _get_broker_status()
-        m = _broker_meta()
+        m = _broker_meta(zerodha_connected=bool(status.get("zerodha", {}).get("authenticated")))
         return _meta.wrap(status, m)
 
     @mcp.tool()
@@ -164,5 +174,5 @@ def register(mcp: FastMCP) -> None:
         oid = order_id.strip() or None
         seg = segment.strip().upper() or None
         trades = await broker.get_trades(order_id=oid, segment=seg)
-        m = _broker_meta()
+        m = _broker_meta(zerodha_connected=await _check_zerodha_connected())
         return _meta.wrap({"trades": trades, "total": len(trades)}, m)

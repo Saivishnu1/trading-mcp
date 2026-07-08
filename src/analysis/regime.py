@@ -116,7 +116,12 @@ def _analyze_technicals(symbol: str, lookback_days: int = 150, interval: str = "
 
     candles = _load_candles(symbol, lookback_days, interval=yf_interval)
     if not candles:
-        result = _error(symbol, "no price data - check the symbol")
+        result = _error(
+            symbol,
+            "no price data available — the data source may be temporarily "
+            "unavailable or rate-limited; retry shortly, or verify the symbol "
+            "if this persists",
+        )
         with _ANALYSIS_LOCK:
             _ANALYSIS_CACHE[cache_key] = (result, time.monotonic())
         return result

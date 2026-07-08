@@ -200,8 +200,10 @@ def register(mcp: FastMCP) -> None:
 
         Returns count and list of raw Zerodha order objects.
         """
+        connected = False
         try:
             orders = _require_broker().orders()
+            connected = True
             if status:
                 s = status.upper()
                 orders = [o for o in orders if (o.get("status") or "").upper() == s]
@@ -214,7 +216,7 @@ def register(mcp: FastMCP) -> None:
             data_quality=_meta.DQ_INVALID if "error" in data else _meta.DQ_VALID,
             source="zerodha_api",
             account_type="MARKET_DATA_ONLY",
-            zerodha_connected=True,
+            zerodha_connected=connected,
         )
         return _meta.wrap(data, m)
 

@@ -233,18 +233,43 @@ class MarketService:
 
         NaN rows (holidays/halts/thin names) are filtered below so float('nan')
         never enters the indicator pipeline (Phase 14.5, Fix 1).
+
+        Retries the yfinance download up to 3 times with a short backoff before
+        giving up — transient rate-limits/timeouts are common and otherwise get
+        misreported to callers as "no price data" for a perfectly valid symbol.
         """
+        import time
         import yfinance as yf  # type: ignore[import]
         yf_sym = _to_yf(symbol)
-        df = yf.download(
-            yf_sym,
-            start=from_date,
-            end=to_date,
-            interval=interval,
-            progress=False,
-            auto_adjust=True,
-        )
-        if df.empty:
+
+        df = None
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                df = yf.download(
+                    yf_sym,
+                    start=from_date,
+                    end=to_date,
+                    interval=interval,
+                    progress=False,
+                    auto_adjust=True,
+                )
+                if df is not None and not df.empty:
+                    break
+                logger.warning(
+                    "yfinance returned no data for %s (attempt %d/%d)",
+                    yf_sym, attempt, max_attempts,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "yfinance historical fetch failed for %s (attempt %d/%d): %s",
+                    yf_sym, attempt, max_attempts, exc,
+                )
+                df = None
+            if attempt < max_attempts:
+                time.sleep(0.5 * attempt)
+
+        if df is None or df.empty:
             return []
         # yfinance 0.2.x returns MultiIndex columns when single ticker
         if hasattr(df.columns, "levels"):

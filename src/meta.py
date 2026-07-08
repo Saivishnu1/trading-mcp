@@ -50,6 +50,12 @@ DQ_NAN = "NaN_DETECTED"
 DQ_STALE = "STALE"
 DQ_PARTIAL = "PARTIAL"
 DQ_INVALID = "INVALID"
+# Internally inconsistent but not obviously wrong — e.g. spot price falls
+# outside the same response's own day_high/day_low range. Surfaced instead
+# of VALID so a caller doesn't act on it (e.g. pick an option strike) without
+# a second look, but distinct from INVALID since the data isn't necessarily
+# unusable.
+DQ_SUSPECT = "SUSPECT"
 
 # ---------------------------------------------------------------------------
 # Research status constants
@@ -126,6 +132,20 @@ def detect_data_quality(data: dict | list, symbol: str = "", tool: str = "") -> 
             return DQ_STALE
 
     return DQ_VALID
+
+
+def spot_outside_range(spot: float | None, day_high: float | None, day_low: float | None) -> bool:
+    """True if spot is a real number that falls outside [day_low, day_high].
+
+    Returns False (not suspect) whenever any input is missing — this is a
+    sanity check on internally-inconsistent data, not a substitute for the
+    normal "data unavailable" handling.
+    """
+    if spot is None or day_high is None or day_low is None:
+        return False
+    if not all(isinstance(v, (int, float)) for v in (spot, day_high, day_low)):
+        return False
+    return spot > day_high or spot < day_low
 
 
 # ---------------------------------------------------------------------------

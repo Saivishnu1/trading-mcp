@@ -18,9 +18,14 @@ Returns a list of normalized candle dicts:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+# Retries for the yfinance download call before giving up on this tier.
+_YF_MAX_ATTEMPTS = 3
+_YF_RETRY_BACKOFF_SECONDS = 0.5
 
 # ---------------------------------------------------------------------------
 # Symbol sets
@@ -336,34 +341,43 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
 
     # .BO tickers: yf.download() ignores date range and returns only recent data.
     # Use Ticker.history() with explicit start/end instead.
-    if yf_sym.endswith(".BO"):
+    is_bo = yf_sym.endswith(".BO")
+
+    for attempt in range(1, _YF_MAX_ATTEMPTS + 1):
         try:
-            ticker_obj = yf.Ticker(yf_sym)
-            df = ticker_obj.history(
-                start=from_date,
-                end=to_date,
-                interval=yf_interval,
-                auto_adjust=True,
-            )
+            if is_bo:
+                ticker_obj = yf.Ticker(yf_sym)
+                df = ticker_obj.history(
+                    start=from_date,
+                    end=to_date,
+                    interval=yf_interval,
+                    auto_adjust=True,
+                )
+            else:
+                df = yf.download(
+                    yf_sym,
+                    start=from_date,
+                    end=to_date,
+                    interval=yf_interval,
+                    progress=False,
+                    auto_adjust=True,
+                )
             result = _normalize(df)
             if result:
                 return result
+            logger.warning(
+                "yfinance returned no usable candles for %s (attempt %d/%d)",
+                yf_sym, attempt, _YF_MAX_ATTEMPTS,
+            )
         except Exception as exc:
-            logger.debug("YF .BO Ticker.history() failed for %s: %s", yf_sym, exc)
-        return []
+            logger.warning(
+                "yfinance fetch failed for %s (attempt %d/%d): %s",
+                yf_sym, attempt, _YF_MAX_ATTEMPTS, exc,
+            )
+        if attempt < _YF_MAX_ATTEMPTS:
+            time.sleep(_YF_RETRY_BACKOFF_SECONDS * attempt)
 
-    try:
-        df = yf.download(
-            yf_sym,
-            start=from_date,
-            end=to_date,
-            interval=yf_interval,
-            progress=False,
-            auto_adjust=True,
-        )
-        return _normalize(df)
-    except Exception:
-        return []
+    return []
 
 
 
@@ -391,9 +405,10 @@ def _fetch_yahoo(symbol: str, interval: str, from_date: str, to_date: str) -> li
             if result:
                 logger.debug("Yahoo ticker %s returned only %d candle(s), treating as failure", ticker, len(result))
 
+        logger.warning("Yahoo Finance returned no usable candles for %s after trying %d ticker(s)", symbol, len(tickers))
         return []
     except Exception as exc:
-        logger.debug("Yahoo Finance fetch failed for %s: %s", symbol, exc)
+        logger.warning("Yahoo Finance fetch failed for %s: %s", symbol, exc)
         return []
 
 
@@ -430,4 +445,5 @@ async def fetch_candles(
         if candles:
             return candles, "yahoo"
 
+    logger.warning("All data sources exhausted for %s (%s); no candles available", symbol, interval)
     return [], "none"

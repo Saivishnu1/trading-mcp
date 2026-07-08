@@ -120,12 +120,18 @@ def _event_component() -> tuple[int, str, bool]:
     return score, desc, True
 
 
+_BSE_INDICES = {"SENSEX", "BANKEX"}
+
+
 def _pcr_component(symbol: str) -> tuple[int, str, bool]:
     try:
         from src.options.service import get_options_service
+        from src.options.bse_service import get_bse_options_service
         from src.options import analytics as oa
-        svc = get_options_service()
+        svc = get_bse_options_service() if symbol.upper() in _BSE_INDICES else get_options_service()
         chain = svc.get_option_chain(symbol)
+        if not isinstance(chain, dict):
+            return 50, "PCR chain unavailable — using neutral 50", False
         records = chain.get("records", {})
         expiry = (records.get("expiryDates") or [None])[0]
         if expiry is None:

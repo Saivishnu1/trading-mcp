@@ -89,6 +89,9 @@ class MarketAwarenessEngine:
         elif chart.get("levels", {}).get("pivot", {}).get("pp") is not None:
             spot = chart.get("levels", {}).get("pivot", {}).get("pp")
 
+        day_high = chart.get("day_high")
+        day_low = chart.get("day_low")
+
         # Resolve expiry metrics
         idx_key = get_calendar_index_key(symbol_upper)
         expiries = calendar.get("expiries") or {}
@@ -136,6 +139,8 @@ class MarketAwarenessEngine:
         final_data = {
             "symbol": symbol_upper,
             "spot": spot,
+            "day_high": day_high,
+            "day_low": day_low,
             "as_of": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "session_active": calendar.get("nse_session_active", False),
             "expiry": {
@@ -147,21 +152,21 @@ class MarketAwarenessEngine:
             "market_structure": {
                 "trend": chart.get("trend", {}).get("direction", "sideways"),
                 "trend_strength": chart.get("trend", {}).get("strength", "weak"),
-                "adx": chart.get("indicators", {}).get("adx") or regime_res.get("adx") or 0.0,
+                "adx": chart.get("indicators", {}).get("adx") or regime_res.get("adx"),
                 "regime": regime_val,
                 "price_vs_ema20": chart.get("trend", {}).get("price_vs_ema20", "below"),
                 "price_vs_ema50": chart.get("trend", {}).get("price_vs_ema50", "below"),
                 "price_vs_ema200": price_vs_ema200,
             },
             "indicators": {
-                "rsi": chart.get("indicators", {}).get("rsi") or regime_res.get("rsi") or 0.0,
-                "macd": chart.get("indicators", {}).get("macd") or 0.0,
-                "macd_signal": chart.get("indicators", {}).get("macd_signal") or 0.0,
-                "macd_histogram": chart.get("indicators", {}).get("macd_histogram") or 0.0,
-                "atr": chart.get("indicators", {}).get("atr") or regime_res.get("atr") or 0.0,
-                "ema20": chart.get("indicators", {}).get("ema20") or regime_res.get("ema20") or 0.0,
-                "ema50": chart.get("indicators", {}).get("ema50") or regime_res.get("ema50") or 0.0,
-                "ema200": ema200 or 0.0,
+                "rsi": chart.get("indicators", {}).get("rsi") or regime_res.get("rsi"),
+                "macd": chart.get("indicators", {}).get("macd"),
+                "macd_signal": chart.get("indicators", {}).get("macd_signal"),
+                "macd_histogram": chart.get("indicators", {}).get("macd_histogram"),
+                "atr": chart.get("indicators", {}).get("atr") or regime_res.get("atr"),
+                "ema20": chart.get("indicators", {}).get("ema20") or regime_res.get("ema20"),
+                "ema50": chart.get("indicators", {}).get("ema50") or regime_res.get("ema50"),
+                "ema200": ema200,
             },
             "levels": {
                 "supports": [s["level"] for s in chart.get("levels", {}).get("supports", [])],

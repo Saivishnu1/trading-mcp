@@ -61,11 +61,15 @@ class ChartEngine:
 
         observations = _build_observations(candles, trend, computed_indicators, levels)
 
+        last_candle = candles[-1]
+
         return {
             "symbol": symbol.upper(),
             "interval": interval,
             "data_source": data_source,
             "candles_analyzed": len(candles),
+            "day_high": last_candle.get("high"),
+            "day_low": last_candle.get("low"),
             "trend": trend,
             "structure": structure,
             "indicators": computed_indicators,

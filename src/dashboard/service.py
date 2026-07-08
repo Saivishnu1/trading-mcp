@@ -103,7 +103,13 @@ def _technicals_section(symbol: str) -> tuple[dict, float | None]:
     """
     closes, highs, lows = _load_closes(symbol, lookback_days=150)
     if not closes:
-        return {"error": "no price data — check symbol"}, None
+        return {
+            "error": (
+                "no price data available — the data source may be temporarily "
+                "unavailable or rate-limited; retry shortly, or verify the symbol "
+                "if this persists"
+            )
+        }, None
 
     adx_result = indicators.adx(highs, lows, closes, 14)
     return {

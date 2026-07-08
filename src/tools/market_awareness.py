@@ -43,19 +43,35 @@ def register(mcp: FastMCP) -> None:
         )
 
         has_error = "error" in result
+        spot_suspect = _meta.spot_outside_range(
+            result.get("spot"), result.get("day_high"), result.get("day_low")
+        )
+        if has_error:
+            data_quality = _meta.DQ_INVALID
+        elif spot_suspect:
+            data_quality = _meta.DQ_SUSPECT
+        else:
+            data_quality = _meta.DQ_VALID
+
+        warning = None if _meta.is_market_hours() else "Outside NSE session. Indicators and options reflect last available session."
+        if spot_suspect:
+            suspect_note = (
+                f"spot ({result.get('spot')}) falls outside this response's own "
+                f"day_high/day_low range ({result.get('day_low')}-{result.get('day_high')}) "
+                "— sources may be out of sync; verify before acting on this price."
+            )
+            warning = suspect_note if warning is None else f"{warning} {suspect_note}"
+
         m = _meta.build_meta(
             type_=_meta.TYPE_FACT,
             validation_status=_meta.VALIDATION_COMPUTED,
-            data_quality=_meta.DQ_INVALID if has_error else _meta.DQ_VALID,
+            data_quality=data_quality,
             source="composite",
             account_type="MARKET_DATA_ONLY",
             limitations=[
                 "Aggregate view combining yfinance, NSELive/BSE option chains, and local calendars.",
                 "Market indicators are EOD-adjusted when sourced from Yahoo Finance.",
             ],
-            warning=(
-                None if _meta.is_market_hours()
-                else "Outside NSE session. Indicators and options reflect last available session."
-            ),
+            warning=warning,
         )
         return _meta.wrap(result, m)
