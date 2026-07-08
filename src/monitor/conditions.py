@@ -40,6 +40,33 @@ class MarketConditions:
             return True, f"Spot broke put wall at {put_wall}"
         return False, ""
 
+    def check_index_move(self, index: str, current: float, reference: float, threshold_pct: float) -> tuple[bool, str]:
+        """Percentage move of an index (NIFTY/SENSEX) since the last check,
+        observed fact only — no direction implied beyond the arithmetic sign."""
+        if not reference:
+            return False, ""
+        change_pct = (current - reference) / reference * 100
+        if abs(change_pct) >= threshold_pct:
+            return True, f"{index} moved {change_pct:+.1f}% ({reference:.0f} to {current:.0f})"
+        return False, ""
+
+    def check_asset_move(self, name: str, change_pct: float, threshold_pct: float) -> tuple[bool, str]:
+        """Percentage move of a global macro asset (crude/gold/S&P) already
+        expressed as a change_pct by the data source (get_global_pulse)."""
+        if abs(change_pct) >= threshold_pct:
+            return True, f"{name} moved {change_pct:+.1f}%"
+        return False, ""
+
+    def check_risk_off_alignment(self, signals: dict[str, bool], min_count: int) -> tuple[bool, str]:
+        """Multiple independent macro signals aligned in the same risk-off
+        direction — a factual count, not a directional call. `signals` maps a
+        label to whether that signal is currently active (e.g. {"crude_up": True}).
+        """
+        active = [label for label, is_active in signals.items() if is_active]
+        if len(active) >= min_count:
+            return True, f"{len(active)}/{len(signals)} risk-off signals active: {', '.join(active)}"
+        return False, ""
+
     def is_alert_on_cooldown(self, last_sent: datetime | None, cooldown_seconds: int) -> bool:
         if last_sent is None:
             return False

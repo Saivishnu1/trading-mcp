@@ -10,6 +10,7 @@ import pytz
 from src.monitor.alerts import WhatsAppAlerter
 from src.monitor.bootstrap import MonitorBootstrap
 from src.monitor.conditions import MarketConditions
+from src.monitor.market_intelligence import MarketIntelligence
 from src.monitor.position_tracker import PositionTracker
 from src.monitor.repository import MonitorRepository
 
@@ -36,6 +37,7 @@ class MarketMonitor:
         self.tracker = PositionTracker(repo=self.repo)
         self.conditions = MarketConditions()
         self.alerter = WhatsAppAlerter()
+        self.market_intelligence = MarketIntelligence(self.conditions)
 
     def get_poll_interval(self, min_dte: int, max_premium: float) -> int:
         if min_dte == 0:
@@ -157,6 +159,41 @@ class MarketMonitor:
             logger.debug("_get_global_sentiment error: %s", exc)
             return ""
 
+    async def _get_global_pulse_raw(self) -> dict:
+        try:
+            from src.intelligence.global_pulse import get_global_pulse
+            loop = asyncio.get_running_loop()
+            pulse = await loop.run_in_executor(None, get_global_pulse)
+            return pulse if isinstance(pulse, dict) and "error" not in pulse else {}
+        except Exception as exc:
+            logger.debug("_get_global_pulse_raw error: %s", exc)
+            return {}
+
+    def _macro_risk_note(self, global_pulse: dict, vix: float) -> str:
+        """Plain-English macro observation for the morning brief — same
+        risk-off signal count as MarketIntelligence.check_macro_signals,
+        just formatted for a one-line brief instead of a standalone alert."""
+        assets = global_pulse.get("assets") or {}
+        crude = float((assets.get("crude_oil") or {}).get("change_pct") or 0)
+        gold = float((assets.get("gold") or {}).get("change_pct") or 0)
+        sp500 = float((assets.get("sp500") or {}).get("change_pct") or 0)
+
+        signals = []
+        if crude > 2:
+            signals.append(f"Crude +{crude:.1f}%")
+        if gold > 1.5:
+            signals.append(f"Gold +{gold:.1f}%")
+        if sp500 < -1:
+            signals.append(f"S&P {sp500:.1f}%")
+        if vix > 15:
+            signals.append(f"VIX {vix:.1f}")
+
+        if len(signals) >= 2:
+            return f"RISK-OFF: {', '.join(signals)}"
+        if len(signals) == 1:
+            return f"Watch: {signals[0]}"
+        return "Global: neutral"
+
     async def _get_realized_pnl_today(self) -> float:
         """Realized P&L from INDmoney's own funds snapshot (realized_pnl
         field) — no per-trade realized-P&L helper exists in this codebase
@@ -198,14 +235,18 @@ class MarketMonitor:
         return ""
 
     async def send_morning_brief(self, user: dict) -> bool:
+        from src.options.analytics import calculate_pcr
+
         positions = await self.repo.get_active_positions(user["id"])
-        vix, nifty_q, sensex_q, key_levels, calendar, sentiment = await asyncio.gather(
+        vix, nifty_q, sensex_q, key_levels, calendar, sentiment, global_pulse, nifty_chain = await asyncio.gather(
             self._get_vix(),
             self._get_index_quote("NIFTY"),
             self._get_index_quote("SENSEX"),
             self._get_key_levels(),
             self._get_calendar(),
             self._get_global_sentiment(),
+            self._get_global_pulse_raw(),
+            self._get_option_chain("NIFTY"),
         )
         data = {
             "date": self._today_ist().isoformat(),
@@ -214,10 +255,37 @@ class MarketMonitor:
             "sensex": sensex_q["last_price"],
             "vix": vix,
             "global_sentiment": sentiment,
+            "macro_note": self._macro_risk_note(global_pulse, vix),
             "positions": positions,
             "support": key_levels["support"],
             "resistance": key_levels["resistance"],
         }
+
+        # Seed session-open reference values used by check_market_conditions'
+        # PCR-shift/VIX-spike/wall-break checks — these columns previously
+        # existed but were never written, so those checks could never fire.
+        try:
+            records = nifty_chain.get("records", {}) or {}
+            expiry = (records.get("expiryDates") or [None])[0]
+            pcr = calculate_pcr(nifty_chain, expiry)
+            resistance_strike = key_levels.get("resistance")
+            support_strike = key_levels.get("support")
+            assets = global_pulse.get("assets") or {}
+            await self.repo.save_session_state(user["id"], {
+                "open_pcr": pcr.get("pcr_oi"),
+                "open_vix": vix or None,
+                "open_call_wall": resistance_strike or None,
+                "open_put_wall": support_strike or None,
+                "open_crude": (assets.get("crude_oil") or {}).get("change_pct"),
+                "open_gold": (assets.get("gold") or {}).get("change_pct"),
+                "open_nifty": nifty_q["last_price"] or None,
+                "open_sensex": sensex_q["last_price"] or None,
+                "last_nifty_spot": nifty_q["last_price"] or None,
+                "last_sensex_spot": sensex_q["last_price"] or None,
+            })
+        except Exception as exc:
+            logger.debug("send_morning_brief session-open seed failed: %s", exc)
+
         return await self.alerter.send_morning_brief(user, data)
 
     async def send_eod_summary(self, user: dict) -> bool:
@@ -246,15 +314,89 @@ class MarketMonitor:
         }
         return await self.alerter.send_eod_summary(user, data)
 
+    async def _get_market_intelligence_data(self) -> dict:
+        """Fetch everything MarketIntelligence.run_all_checks needs. Every
+        sub-fetch is independently guarded — a single failing source (e.g.
+        NSE option chain soft-blocked) must not prevent the other checks
+        (macro, VIX) from running."""
+        from src.options.analytics import calculate_pcr, identify_support_resistance_from_oi
+
+        async def _nifty_chain_data() -> dict:
+            try:
+                chain = await self._get_option_chain("NIFTY")
+                records = chain.get("records", {}) or {}
+                spot = float(records.get("underlyingValue") or 0)
+                expiry = (records.get("expiryDates") or [None])[0]
+                pcr = calculate_pcr(chain, expiry)
+                levels = identify_support_resistance_from_oi(chain, expiry)
+                nearest_support = levels.get("nearest_support") or {}
+                nearest_resistance = levels.get("nearest_resistance") or {}
+                return {
+                    "nifty_spot": spot,
+                    "nifty_pcr": pcr.get("pcr_oi"),
+                    "nifty_call_wall": nearest_resistance.get("strike"),
+                    "nifty_put_wall": nearest_support.get("strike"),
+                }
+            except Exception as exc:
+                logger.debug("_get_market_intelligence_data nifty chain error: %s", exc)
+                return {}
+
+        async def _sensex_spot() -> dict:
+            try:
+                chain = await self._get_option_chain("SENSEX")
+                spot = float(chain.get("records", {}).get("underlyingValue") or 0)
+                return {"sensex_spot": spot}
+            except Exception as exc:
+                logger.debug("_get_market_intelligence_data sensex chain error: %s", exc)
+                return {}
+
+        async def _global_pulse() -> dict:
+            try:
+                from src.intelligence.global_pulse import get_global_pulse
+                loop = asyncio.get_running_loop()
+                return {"global_pulse": await loop.run_in_executor(None, get_global_pulse)}
+            except Exception as exc:
+                logger.debug("_get_market_intelligence_data global_pulse error: %s", exc)
+                return {}
+
+        nifty_data, sensex_data, pulse_data, vix = await asyncio.gather(
+            _nifty_chain_data(), _sensex_spot(), _global_pulse(), self._get_vix(),
+        )
+        return {**nifty_data, **sensex_data, **pulse_data, "vix": vix}
+
     async def check_market_conditions(self, user: dict) -> None:
         settings = await self.repo.get_user_settings(user["id"])
         session_state = await self.repo.get_session_state(user["id"])
         if not session_state:
             return
-        # PCR/VIX shift and wall-break checks reuse the same cooldown +
-        # alert-persist pattern as PositionTracker._maybe_alert but at the
-        # market level rather than per-position; left as an extension point
-        # for src/options/analytics.py-backed live PCR/VIX values.
+
+        market_data = await self._get_market_intelligence_data()
+        alerts = await self.market_intelligence.run_all_checks(market_data, session_state, settings)
+
+        for alert in alerts:
+            cooldown_seconds = settings.get(alert["cooldown_key"], 1800)
+            last_sent = await self.repo.get_last_alert_time(user["id"], alert["type"], alert["symbol"])
+            if self.conditions.is_alert_on_cooldown(last_sent, cooldown_seconds):
+                continue
+
+            delivered = await self.alerter.send_macro_alert(user, alert["type"], alert["message"])
+            await self.repo.save_alert(user["id"], {
+                "alert_type": alert["type"],
+                "symbol": alert["symbol"],
+                "message": alert["message"],
+                "severity": alert["severity"],
+                "delivered": delivered,
+            })
+            await self.repo.save_heartbeat(user["id"], "last_alert_sent")
+
+        # Persist the latest spot/PCR/VIX as the reference point for the NEXT
+        # check_market_conditions call (index-move and wall-break diff
+        # against the prior poll, not the session open — matches the
+        # existing prev_spot convention in check_wall_break).
+        await self.repo.save_session_state(user["id"], {
+            "last_nifty_spot": market_data.get("nifty_spot") or session_state.get("last_nifty_spot"),
+            "last_sensex_spot": market_data.get("sensex_spot") or session_state.get("last_sensex_spot"),
+        })
 
     async def run(self) -> None:
         await self.bootstrap.ensure_default_user()

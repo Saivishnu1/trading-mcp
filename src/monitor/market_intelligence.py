@@ -1,0 +1,224 @@
+"""Phase 9B — proactive market intelligence checks for the monitor.
+
+Wired into MarketMonitor.check_market_conditions() (scheduler.py). Every
+check is observation-only: a factual description of what moved and by how
+much, never a buy/sell signal, price target, or confidence score (see
+src/monitor/conditions.py's module docstring — the same rule applies here).
+
+All checks reuse the existing, tested MarketConditions primitives
+(check_pcr_shift, check_vix_spike, check_wall_break, check_index_move,
+check_asset_move, check_risk_off_alignment) rather than duplicating
+threshold logic — this module is just orchestration: fetch live data,
+diff it against session_state, and call the right condition check.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from src.monitor.conditions import MarketConditions
+
+logger = logging.getLogger(__name__)
+
+# Default thresholds — overridden per-user by monitor.settings columns
+# (crude_move_threshold, gold_move_threshold, nifty_move_threshold,
+# sensex_move_threshold, risk_off_count_threshold, pcr_shift_threshold,
+# vix_spike_threshold). Used only when a settings row/column is missing.
+_DEFAULT_THRESHOLDS = {
+    "crude_move_threshold": 2.0,
+    "gold_move_threshold": 1.5,
+    "nifty_move_threshold": 1.0,
+    "sensex_move_threshold": 1.0,
+    "vix_spike_threshold": 14.0,
+    "pcr_shift_threshold": 0.3,
+    "risk_off_count_threshold": 3,
+}
+
+
+class MarketIntelligence:
+    """Stateless orchestrator — takes already-fetched data + session_state/
+    settings dicts and returns a list of alert dicts. Does not fetch data or
+    touch the repository itself (the scheduler owns I/O and persistence),
+    which keeps this class trivial to unit-test without mocking HTTP/DB."""
+
+    def __init__(self, conditions: MarketConditions | None = None):
+        self.conditions = conditions or MarketConditions()
+
+    def check_macro_signals(self, global_pulse: dict, settings: dict) -> list[dict]:
+        """Crude/gold/S&P moves and a combined risk-off alignment count.
+        global_pulse is the raw get_global_pulse() dict — nested under
+        "assets" (assets.crude_oil.change_pct etc.), not top-level fields."""
+        alerts: list[dict] = []
+        if not isinstance(global_pulse, dict) or "error" in global_pulse:
+            return alerts
+
+        assets = global_pulse.get("assets") or {}
+        crude_change = float((assets.get("crude_oil") or {}).get("change_pct") or 0)
+        gold_change = float((assets.get("gold") or {}).get("change_pct") or 0)
+        sp500_change = float((assets.get("sp500") or {}).get("change_pct") or 0)
+
+        crude_threshold = settings.get("crude_move_threshold") or _DEFAULT_THRESHOLDS["crude_move_threshold"]
+        gold_threshold = settings.get("gold_move_threshold") or _DEFAULT_THRESHOLDS["gold_move_threshold"]
+
+        triggered, reason = self.conditions.check_asset_move("Crude", crude_change, crude_threshold)
+        if triggered:
+            alerts.append({
+                "type": "macro_crude",
+                "severity": "high" if abs(crude_change) > crude_threshold * 1.5 else "medium",
+                "symbol": "CRUDE",
+                "message": reason,
+                "cooldown_key": "cooldown_macro",
+            })
+
+        triggered, reason = self.conditions.check_asset_move("Gold", gold_change, gold_threshold)
+        if triggered:
+            alerts.append({
+                "type": "macro_gold",
+                "severity": "medium",
+                "symbol": "GOLD",
+                "message": reason,
+                "cooldown_key": "cooldown_macro",
+            })
+
+        risk_off_signals = {
+            "crude_up": crude_change > 2,
+            "gold_up": gold_change > 1.5,
+            "sp500_down": sp500_change < -1,
+        }
+        min_count = int(settings.get("risk_off_count_threshold") or _DEFAULT_THRESHOLDS["risk_off_count_threshold"])
+        triggered, reason = self.conditions.check_risk_off_alignment(risk_off_signals, min_count)
+        if triggered:
+            alerts.append({
+                "type": "macro_risk_off",
+                "severity": "critical",
+                "symbol": "MARKET",
+                "message": (
+                    f"{reason}\n"
+                    f"Crude {crude_change:+.1f}% | Gold {gold_change:+.1f}% | S&P {sp500_change:+.1f}%"
+                ),
+                "cooldown_key": "cooldown_macro",
+            })
+
+        return alerts
+
+    def check_vix(self, current_vix: float, open_vix: float | None, settings: dict) -> list[dict]:
+        if open_vix is None or not current_vix:
+            return []
+        threshold = settings.get("vix_spike_threshold") or _DEFAULT_THRESHOLDS["vix_spike_threshold"]
+        triggered, reason = self.conditions.check_vix_spike(current_vix, open_vix, threshold)
+        if not triggered:
+            return []
+        return [{
+            "type": "macro_vix",
+            "severity": "high",
+            "symbol": "VIX",
+            "message": reason,
+            "cooldown_key": "cooldown_vix",
+        }]
+
+    def check_index_movement(
+        self, nifty_spot: float, last_nifty_spot: float | None,
+        sensex_spot: float, last_sensex_spot: float | None,
+        settings: dict,
+    ) -> list[dict]:
+        """Moves since the LAST CHECK (not session open) — matches the
+        wall-break convention of diffing against the prior poll."""
+        alerts: list[dict] = []
+        nifty_threshold = settings.get("nifty_move_threshold") or _DEFAULT_THRESHOLDS["nifty_move_threshold"]
+        sensex_threshold = settings.get("sensex_move_threshold") or _DEFAULT_THRESHOLDS["sensex_move_threshold"]
+
+        if last_nifty_spot and nifty_spot:
+            triggered, reason = self.conditions.check_index_move("NIFTY", nifty_spot, last_nifty_spot, nifty_threshold)
+            if triggered:
+                alerts.append({
+                    "type": "index_move_nifty",
+                    "severity": "high",
+                    "symbol": "NIFTY",
+                    "message": reason,
+                    "cooldown_key": "cooldown_pcr",
+                })
+
+        if last_sensex_spot and sensex_spot:
+            triggered, reason = self.conditions.check_index_move("SENSEX", sensex_spot, last_sensex_spot, sensex_threshold)
+            if triggered:
+                alerts.append({
+                    "type": "index_move_sensex",
+                    "severity": "high",
+                    "symbol": "SENSEX",
+                    "message": reason,
+                    "cooldown_key": "cooldown_pcr",
+                })
+
+        return alerts
+
+    def check_oi_walls(
+        self, spot: float, prev_spot: float | None,
+        call_wall: float | None, put_wall: float | None,
+    ) -> list[dict]:
+        if not prev_spot or not call_wall or not put_wall:
+            return []
+        triggered, reason = self.conditions.check_wall_break(spot, prev_spot, call_wall, put_wall)
+        if not triggered:
+            return []
+        alert_type = "oi_call_wall_break" if "call wall" in reason else "oi_put_wall_break"
+        return [{
+            "type": alert_type,
+            "severity": "high",
+            "symbol": "NIFTY",
+            "message": reason,
+            "cooldown_key": "cooldown_wall_break",
+        }]
+
+    def check_pcr_shift(self, current_pcr: float | None, open_pcr: float | None, settings: dict) -> list[dict]:
+        if current_pcr is None or open_pcr is None:
+            return []
+        threshold = settings.get("pcr_shift_threshold") or _DEFAULT_THRESHOLDS["pcr_shift_threshold"]
+        triggered, reason = self.conditions.check_pcr_shift(current_pcr, open_pcr, threshold)
+        if not triggered:
+            return []
+        return [{
+            "type": "pcr_shift",
+            "severity": "medium",
+            "symbol": "NIFTY",
+            "message": reason,
+            "cooldown_key": "cooldown_pcr",
+        }]
+
+    async def run_all_checks(self, market_data: dict, session_state: dict, settings: dict) -> list[dict]:
+        """market_data carries already-fetched values (the caller/scheduler
+        owns all I/O): global_pulse, vix, nifty_spot, sensex_spot, nifty_pcr,
+        nifty_call_wall, nifty_put_wall. Never raises — a broken sub-check
+        is logged and skipped so one bad source can't take down the others."""
+
+        def _safe(fn, *args):
+            try:
+                return fn(*args)
+            except Exception as exc:
+                logger.warning("market_intelligence check %s failed: %s", getattr(fn, "__name__", fn), exc)
+                return []
+
+        results = await asyncio.gather(
+            asyncio.to_thread(_safe, self.check_macro_signals, market_data.get("global_pulse") or {}, settings),
+            asyncio.to_thread(_safe, self.check_vix, market_data.get("vix") or 0.0, session_state.get("open_vix"), settings),
+            asyncio.to_thread(
+                _safe, self.check_index_movement,
+                market_data.get("nifty_spot") or 0.0, session_state.get("last_nifty_spot"),
+                market_data.get("sensex_spot") or 0.0, session_state.get("last_sensex_spot"),
+                settings,
+            ),
+            asyncio.to_thread(
+                _safe, self.check_oi_walls,
+                market_data.get("nifty_spot") or 0.0, session_state.get("last_nifty_spot"),
+                session_state.get("open_call_wall"), session_state.get("open_put_wall"),
+            ),
+            asyncio.to_thread(_safe, self.check_pcr_shift, market_data.get("nifty_pcr"), session_state.get("open_pcr"), settings),
+            return_exceptions=True,
+        )
+
+        all_alerts: list[dict] = []
+        for result in results:
+            if isinstance(result, list):
+                all_alerts.extend(result)
+            elif isinstance(result, Exception):
+                logger.warning("market_intelligence run_all_checks sub-check raised: %s", result)
+        return all_alerts

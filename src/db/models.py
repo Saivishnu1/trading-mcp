@@ -252,6 +252,9 @@ try:
         delivered: Mapped[bool]   = mapped_column(Boolean, server_default=text("false"))
         delivered_at: Mapped[str | None] = mapped_column(Text)
         created_at: Mapped[str]   = mapped_column(Text, nullable=False)
+        # Operational triage label ("low"|"medium"|"high"|"critical") — purely
+        # for filtering/display in get_market_alerts, never a trading signal.
+        severity: Mapped[str]     = mapped_column(Text, server_default=text("'medium'"))
 
     class MonitorSettings(Base):
         __tablename__ = "settings"
@@ -265,6 +268,14 @@ try:
         cooldown_pcr: Mapped[int]        = mapped_column(Integer, server_default=text("900"))
         cooldown_vix: Mapped[int]        = mapped_column(Integer, server_default=text("900"))
         cooldown_profit: Mapped[int]     = mapped_column(Integer, server_default=text("86400"))
+        # Phase 9B — macro/index-move alert thresholds and cooldowns.
+        crude_move_threshold: Mapped[float]  = mapped_column(Float, server_default=text("2.0"))
+        gold_move_threshold: Mapped[float]   = mapped_column(Float, server_default=text("1.5"))
+        nifty_move_threshold: Mapped[float]  = mapped_column(Float, server_default=text("1.0"))
+        sensex_move_threshold: Mapped[float] = mapped_column(Float, server_default=text("1.0"))
+        risk_off_count_threshold: Mapped[int] = mapped_column(Integer, server_default=text("3"))
+        cooldown_macro: Mapped[int]      = mapped_column(Integer, server_default=text("1800"))
+        cooldown_wall_break: Mapped[int] = mapped_column(Integer, server_default=text("1800"))
         updated_at: Mapped[str]          = mapped_column(Text, nullable=False)
 
     class MonitorSessionState(Base):
@@ -276,6 +287,16 @@ try:
         open_vix: Mapped[float | None]      = mapped_column(Float)
         open_call_wall: Mapped[float | None] = mapped_column(Float)
         open_put_wall: Mapped[float | None]  = mapped_column(Float)
+        # Phase 9B — session-open reference values for macro/index-move diffs,
+        # and the last-observed spot so each check compares against the prior
+        # poll rather than the session open (matches check_wall_break's use
+        # of prev_spot vs. open_call_wall/open_put_wall).
+        open_crude: Mapped[float | None]  = mapped_column(Float)
+        open_gold: Mapped[float | None]   = mapped_column(Float)
+        open_nifty: Mapped[float | None]  = mapped_column(Float)
+        open_sensex: Mapped[float | None] = mapped_column(Float)
+        last_nifty_spot: Mapped[float | None]  = mapped_column(Float)
+        last_sensex_spot: Mapped[float | None] = mapped_column(Float)
         session_date: Mapped[str]    = mapped_column(Text, nullable=False)
         # Liveness fields — let get_monitor_status() answer "is it alive?"
         # without SSHing into the Oracle VM.

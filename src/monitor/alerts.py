@@ -92,6 +92,14 @@ class WhatsAppAlerter:
         )
         return await self.send(user["whatsapp_phone"], user["callmebot_key"], message, user)
 
+    async def send_macro_alert(self, user: dict, alert_type: str, message_body: str) -> bool:
+        """Generic macro/index-move alert — unlike send_market_alert, this
+        doesn't assume a per-symbol Spot/PCR shape, since crude/gold/VIX/
+        risk-off alerts aren't tied to an option chain. message_body is a
+        pre-formatted, purely observational description (no signals/targets)."""
+        message = f"MARKET INTELLIGENCE — {alert_type.upper()}\n{message_body}"
+        return await self.send(user["whatsapp_phone"], user["callmebot_key"], message, user)
+
     async def send_morning_brief(self, user: dict, data: dict) -> bool:
         positions_str = "\n".join(
             f"  {p['symbol']} {p['strike']} {p['option_type']}: "
@@ -99,12 +107,15 @@ class WhatsAppAlerter:
             for p in data.get("positions", [])
         ) or "  None"
 
+        macro_note = data.get("macro_note")
+        macro_line = f"{macro_note}\n" if macro_note else ""
         message = (
             f"MORNING BRIEF — {data['date']}\n"
             f"Expiry: {data['expiry']}\n"
             f"Nifty: {data['nifty']} | Sensex: {data['sensex']}\n"
             f"VIX: {data['vix']}\n"
             f"Global: {data['global_sentiment']}\n"
+            f"{macro_line}"
             f"Open positions:\n{positions_str}\n"
             f"Key levels: S {data['support']} | R {data['resistance']}"
         )

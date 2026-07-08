@@ -171,6 +171,7 @@ class MonitorRepository:
                 delivered=alert.get("delivered", True),
                 delivered_at=_now() if alert.get("delivered", True) else None,
                 created_at=_now(),
+                severity=alert.get("severity", "medium"),
             ))
 
     async def get_recent_alerts(self, user_id: str, hours: int = 24) -> list[dict]:
@@ -230,6 +231,12 @@ class MonitorRepository:
                     open_vix=state.get("open_vix"),
                     open_call_wall=state.get("open_call_wall"),
                     open_put_wall=state.get("open_put_wall"),
+                    open_crude=state.get("open_crude"),
+                    open_gold=state.get("open_gold"),
+                    open_nifty=state.get("open_nifty"),
+                    open_sensex=state.get("open_sensex"),
+                    last_nifty_spot=state.get("last_nifty_spot"),
+                    last_sensex_spot=state.get("last_sensex_spot"),
                     session_date=state.get("session_date", _today_ist()),
                     last_morning_brief=state.get("last_morning_brief"),
                     last_eod_summary=state.get("last_eod_summary"),
@@ -240,6 +247,12 @@ class MonitorRepository:
                 row.open_vix = state.get("open_vix", row.open_vix)
                 row.open_call_wall = state.get("open_call_wall", row.open_call_wall)
                 row.open_put_wall = state.get("open_put_wall", row.open_put_wall)
+                row.open_crude = state.get("open_crude", row.open_crude)
+                row.open_gold = state.get("open_gold", row.open_gold)
+                row.open_nifty = state.get("open_nifty", row.open_nifty)
+                row.open_sensex = state.get("open_sensex", row.open_sensex)
+                row.last_nifty_spot = state.get("last_nifty_spot", row.last_nifty_spot)
+                row.last_sensex_spot = state.get("last_sensex_spot", row.last_sensex_spot)
                 row.session_date = state.get("session_date", row.session_date)
                 row.last_morning_brief = state.get("last_morning_brief", row.last_morning_brief)
                 row.last_eod_summary = state.get("last_eod_summary", row.last_eod_summary)

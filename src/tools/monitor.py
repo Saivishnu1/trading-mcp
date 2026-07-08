@@ -142,11 +142,53 @@ def register(mcp: FastMCP) -> None:
             source="monitor.alerts",
         ))
 
+    _MARKET_ALERT_TYPES = {
+        "macro_crude", "macro_gold", "macro_vix", "macro_risk_off",
+        "index_move_nifty", "index_move_sensex",
+        "oi_call_wall_break", "oi_put_wall_break",
+        "pcr_shift",
+    }
+
+    @mcp.tool()
+    async def get_market_alerts(hours: int = 24) -> dict:
+        """Return market intelligence alerts sent in the last N hours —
+        macro (crude/gold/VIX/risk-off), NIFTY/SENSEX index moves, OI wall
+        breaks, and PCR shifts. Excludes per-position alerts (trailing SL,
+        profit milestones); use get_recent_alerts for those.
+
+        Args:
+            hours: lookback window in hours (default 24).
+
+        No authentication required.
+        """
+        repo = MonitorRepository()
+        users = await repo.get_active_users()
+        if not users:
+            return _meta.wrap({"alerts": []}, _meta.build_meta(
+                type_=_meta.TYPE_FACT,
+                validation_status=_meta.VALIDATION_VERIFIED,
+                data_quality=_meta.DQ_INVALID,
+                source="monitor.users",
+            ))
+        all_alerts = await repo.get_recent_alerts(users[0]["id"], hours=hours)
+        market_alerts = [a for a in all_alerts if a.get("alert_type") in _MARKET_ALERT_TYPES]
+        return _meta.wrap({"alerts": market_alerts}, _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_VALID,
+            source="monitor.alerts",
+        ))
+
     @mcp.tool()
     async def update_monitor_settings(
         pcr_shift_threshold: float | None = None,
         vix_spike_threshold: float | None = None,
         profit_alert_pct: float | None = None,
+        crude_move_threshold: float | None = None,
+        gold_move_threshold: float | None = None,
+        nifty_move_threshold: float | None = None,
+        sensex_move_threshold: float | None = None,
+        risk_off_count_threshold: int | None = None,
     ) -> dict:
         """Update the position monitor's alert thresholds without restarting the service.
 
@@ -154,6 +196,12 @@ def register(mcp: FastMCP) -> None:
             pcr_shift_threshold: absolute PCR shift that triggers a market alert.
             vix_spike_threshold: India VIX level that triggers a market alert.
             profit_alert_pct: position profit fraction (e.g. 0.5 = +50%) that triggers a milestone alert.
+            crude_move_threshold: crude oil % move that triggers a macro alert (default 2.0).
+            gold_move_threshold: gold % move that triggers a macro alert (default 1.5).
+            nifty_move_threshold: NIFTY % move since the last check that triggers an alert (default 1.0).
+            sensex_move_threshold: SENSEX % move since the last check that triggers an alert (default 1.0).
+            risk_off_count_threshold: number of aligned risk-off signals (of 3: crude up,
+                gold up, S&P down) required to trigger the combined risk-off alert (default 3).
 
         No authentication required.
         """
@@ -174,6 +222,16 @@ def register(mcp: FastMCP) -> None:
             updates["vix_spike_threshold"] = vix_spike_threshold
         if profit_alert_pct is not None:
             updates["profit_alert_pct"] = profit_alert_pct
+        if crude_move_threshold is not None:
+            updates["crude_move_threshold"] = crude_move_threshold
+        if gold_move_threshold is not None:
+            updates["gold_move_threshold"] = gold_move_threshold
+        if nifty_move_threshold is not None:
+            updates["nifty_move_threshold"] = nifty_move_threshold
+        if sensex_move_threshold is not None:
+            updates["sensex_move_threshold"] = sensex_move_threshold
+        if risk_off_count_threshold is not None:
+            updates["risk_off_count_threshold"] = risk_off_count_threshold
 
         if updates:
             from datetime import datetime, timezone
