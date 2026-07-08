@@ -931,3 +931,171 @@ class TestSingletonLock:
 
         second = service_module._acquire_singleton_lock()
         second.close()
+
+
+# ---------------------------------------------------------------------------
+# INDmoney as a monitor position source (Zerodha unauthenticated / broken).
+#
+# INDmoneyBroker.get_raw_positions() wraps the parsed JSON one level deeper
+# under "body" (see INDmoneyBroker._raw_get), but _raw_option_items used to
+# read raw.get("data", raw) directly — silently dropping every INDmoney
+# position. These tests pin the fixed unwrap behaviour and confirm the
+# monitor tracks an INDmoney position end-to-end when Zerodha has none.
+# ---------------------------------------------------------------------------
+
+class TestRawOptionItemsIndmoneyUnwrap:
+    def test_indmoney_raw_positions_are_unwrapped_from_body(self):
+        from src.monitor.position_tracker import _raw_option_items
+
+        raw = {
+            "status_code": 200,
+            "body": {
+                "data": {
+                    "net_positions": [{"security_id": "OPT1", "net_quantity": 50}],
+                    "day_positions": [{"security_id": "OPT2", "net_quantity": 25}],
+                }
+            },
+        }
+        items = _raw_option_items("indmoney", raw)
+        assert {i["security_id"] for i in items} == {"OPT1", "OPT2"}
+
+    def test_indmoney_error_response_yields_no_items(self):
+        from src.monitor.position_tracker import _raw_option_items
+
+        assert _raw_option_items("indmoney", {"error": "not_configured"}) == []
+        assert _raw_option_items("indmoney", {"status_code": 401, "body": "unauthorized"}) == []
+
+    def test_zerodha_raw_positions_unaffected(self):
+        from src.monitor.position_tracker import _raw_option_items
+
+        raw = {"net": [{"tradingsymbol": "NIFTY26JUL24400CE"}], "day": []}
+        items = _raw_option_items("zerodha", raw)
+        assert items == [{"tradingsymbol": "NIFTY26JUL24400CE"}]
+
+
+class TestSyncFromBrokerIndmoneyFallback:
+    """Zerodha unauthenticated (empty net/day) + INDmoney has one open F&O
+    position -> sync_from_broker must still pick up the INDmoney position,
+    resolve it, and persist it with broker='indmoney' so trailing SL and
+    alerts cover it."""
+
+    @pytest.mark.anyio
+    async def test_indmoney_position_synced_when_zerodha_has_none(self):
+        from src.monitor.position_tracker import PositionTracker
+
+        user = {"id": "u1", "broker_type": "zerodha+indmoney"}
+
+        zerodha_adapter = MagicMock()
+        zerodha_adapter.get_raw_positions = AsyncMock(return_value={"net": [], "day": []})
+
+        indmoney_raw_position = {
+            "security_id": "OPT123",
+            "net_quantity": 75,
+            "average_price": 42.5,
+        }
+        indmoney_adapter = MagicMock()
+        indmoney_adapter.get_raw_positions = AsyncMock(return_value={
+            "status_code": 200,
+            "body": {
+                "data": {
+                    "net_positions": [indmoney_raw_position],
+                    "day_positions": [],
+                }
+            },
+        })
+
+        def _fake_get_broker_adapter(name):
+            return {"zerodha": zerodha_adapter, "indmoney": indmoney_adapter}[name]
+
+        resolved = {
+            "symbol": "BANKNIFTY",
+            "expiry": "2026-07-30",
+            "strike": 52000.0,
+            "option_type": "CE",
+            "exchange": "NSE",
+        }
+
+        repo = AsyncMock()
+        repo.get_active_positions.return_value = []
+
+        tracker = PositionTracker(repo=repo)
+        tracker.resolver.resolve = AsyncMock(return_value=resolved)
+
+        with patch("src.monitor.position_tracker.get_broker_adapter", side_effect=_fake_get_broker_adapter):
+            await tracker.sync_from_broker(user)
+
+        tracker.resolver.resolve.assert_awaited_once_with("indmoney", "OPT123")
+        repo.upsert_position.assert_awaited_once()
+        (user_id_arg, position_arg), _ = repo.upsert_position.call_args
+        assert user_id_arg == "u1"
+        assert position_arg["broker"] == "indmoney"
+        assert position_arg["symbol"] == "BANKNIFTY"
+        assert position_arg["qty"] == 75
+        assert position_arg["entry_premium"] == 42.5
+
+    @pytest.mark.anyio
+    async def test_indmoney_position_then_tracked_for_trailing_sl(self):
+        """Once synced, the position (broker='indmoney') must flow through
+        check_positions like any other tracked position — trailing SL logic
+        is broker-agnostic and dispatches via get_broker_adapter(pos['broker'])."""
+        from src.monitor.position_tracker import PositionTracker
+
+        repo = AsyncMock()
+        repo.get_active_positions.return_value = [{
+            "id": "pos-ind-1",
+            "broker": "indmoney",
+            "symbol": "BANKNIFTY",
+            "expiry": "2026-07-30",
+            "strike": 52000.0,
+            "option_type": "CE",
+            "entry_premium": 42.5,
+            "qty": 75,
+            "spot": 0.0,
+        }]
+        repo.get_user_settings.return_value = {
+            "profit_alert_pct": 0.5,
+            "cooldown_trailing": 300,
+            "cooldown_profit": 86400,
+        }
+        repo.get_peak.return_value = None
+
+        tracker = PositionTracker(repo=repo)
+
+        indmoney_adapter = MagicMock()
+        quote = MagicMock(ltp=55.0)
+        indmoney_adapter.get_quote = AsyncMock(return_value=[quote])
+
+        with patch("src.monitor.position_tracker.get_broker_adapter", return_value=indmoney_adapter) as mock_get_adapter:
+            await tracker.check_positions({"id": "u1"}, vix=13.0)
+
+        mock_get_adapter.assert_called_with("indmoney")
+        repo.upsert_peak.assert_awaited_once()
+        peak_call = repo.upsert_peak.call_args
+        assert peak_call[0][1]["peak_premium"] == 55.0
+
+
+class TestGetMonitorStatusBrokerVisibility:
+    @pytest.mark.anyio
+    async def test_positions_by_broker_summary_present(self):
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+        from src.tools import monitor as monitor_tools
+
+        mcp = _FastMCP("test")
+        monitor_tools.register(mcp)
+        tools = {t.name: t for t in mcp._tool_manager.list_tools()}
+
+        mock_repo = AsyncMock()
+        mock_repo.get_active_users.return_value = [{"id": "u1", "name": "trader"}]
+        mock_repo.get_active_positions.return_value = [
+            {"id": "p1", "broker": "zerodha", "symbol": "NIFTY"},
+            {"id": "p2", "broker": "indmoney", "symbol": "BANKNIFTY"},
+            {"id": "p3", "broker": "indmoney", "symbol": "SENSEX"},
+        ]
+        mock_repo.get_peak.return_value = None
+        mock_repo.get_session_state.return_value = {"last_heartbeat": None}
+        mock_repo.get_recent_alerts.return_value = []
+
+        with patch("src.tools.monitor.MonitorRepository", return_value=mock_repo):
+            result = await tools["get_monitor_status"].fn()
+
+        assert result["data"]["positions_by_broker"] == {"zerodha": 1, "indmoney": 2}

@@ -29,7 +29,13 @@ def _raw_option_items(broker_name: str, raw: dict) -> list[dict]:
     if broker_name == "zerodha":
         return raw.get("net", []) or []
     if broker_name == "indmoney":
-        data = raw.get("data", raw) if isinstance(raw, dict) else {}
+        # INDmoneyBroker.get_raw_positions() wraps the parsed JSON one level
+        # deeper under "body" (see INDmoneyBroker._raw_get) — the actual
+        # positions payload is body.data.{net_positions,day_positions}.
+        if not isinstance(raw, dict):
+            return []
+        body = raw.get("body", raw)
+        data = body.get("data", body) if isinstance(body, dict) else {}
         if isinstance(data, dict):
             return (data.get("net_positions") or []) + (data.get("day_positions") or [])
         return []

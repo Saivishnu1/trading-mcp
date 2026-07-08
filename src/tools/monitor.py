@@ -58,6 +58,11 @@ def register(mcp: FastMCP) -> None:
         timestamps so you can tell if the systemd service is alive without
         SSHing into the Oracle VM.
 
+        Each tracked position includes a "broker" field ("zerodha" | "indmoney")
+        showing which account it was synced from; positions_by_broker gives a
+        quick per-broker count so it's visible at a glance whether positions
+        are coming from Zerodha, INDmoney, or both.
+
         No authentication required — reads the monitor.* Postgres schema directly.
         """
         repo = MonitorRepository()
@@ -89,12 +94,18 @@ def register(mcp: FastMCP) -> None:
         }
         alerts_today = await repo.get_recent_alerts(user["id"], hours=24)
 
+        positions_by_broker: dict[str, int] = {}
+        for pos in positions:
+            broker_name = pos.get("broker", "unknown")
+            positions_by_broker[broker_name] = positions_by_broker.get(broker_name, 0) + 1
+
         data = {
             "user": user["name"],
             "running": last_heartbeat is not None,
             "healthy": healthy,
             "status": status,
             "positions": enriched,
+            "positions_by_broker": positions_by_broker,
             "alert_count_today": len(alerts_today),
             "heartbeat": heartbeat,
         }
