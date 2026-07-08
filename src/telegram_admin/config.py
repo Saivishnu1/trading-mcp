@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 ENV_FILE_PATH = Path("/etc/zerodha-mcp/.env")
 SERVICE_NAME = "zerodha-mcp"
 
+# Services restarted together after an env var update — both zerodha-mcp and
+# zerodha-monitor read the same ENV_FILE_PATH, so a shared var (e.g.
+# INDSTOCKS_TOKEN) must reach both processes or the monitor keeps running on
+# the stale value until someone restarts it by hand.
+RESTART_SERVICES = ["zerodha-mcp", "zerodha-monitor"]
+
 # Whitelist of editable variables via Telegram bot
 ALLOWED_VARIABLES = [
     "INDSTOCKS_TOKEN",

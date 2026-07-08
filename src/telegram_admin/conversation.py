@@ -86,7 +86,7 @@ async def receive_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         reply_markup = get_restart_keyboard()
         await update.message.reply_text(
             f"✅ `{var_name}` updated.\n\n"
-            f"Restart zerodha-mcp now?",
+            f"Restart zerodha-mcp and zerodha-monitor now?",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
@@ -105,34 +105,25 @@ async def confirm_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         data = query.data or ""
         if data == "restart:yes":
-            await query.message.edit_text("♻️ Restarting service...")
-            
+            await query.message.edit_text("♻️ Restarting zerodha-mcp and zerodha-monitor...")
+
             import time
             start_time = time.perf_counter()
-            # Restart service
+            # Restart both services — env vars like INDSTOCKS_TOKEN are read
+            # by both processes, not just zerodha-mcp.
             service_manager.restart_service()
             duration = time.perf_counter() - start_time
-            
-            # Fetch status and return first few lines
-            status_raw = service_manager.get_service_status()
-            # For verification, fetch the first few lines of systemctl status output
-            try:
-                result = subprocess_status_raw()
-                first_lines = "\n".join(result.splitlines()[:8])
-            except Exception:
-                # Fallback to structured status if raw fails
-                first_lines = (
-                    f"Active: {status_raw['active']}\n"
-                    f"PID: {status_raw['pid']}\n"
-                    f"Uptime: {status_raw['uptime']}\n"
-                    f"Memory: {status_raw['memory']}"
-                )
-                
+
+            active = service_manager.are_restart_services_active()
+            status_lines = "\n".join(
+                f"  {'🟢' if ok else '🔴'} {name}" for name, ok in active.items()
+            )
+            all_ok = all(active.values())
+
             await query.message.reply_text(
-                f"♻️ Restart successful.\n"
+                f"{'♻️ Restart successful.' if all_ok else '⚠️ Restart completed with issues.'}\n"
                 f"✔ Completed in {duration:.1f} s\n\n"
-                f"Service Status:\n"
-                f"```\n{first_lines}\n```",
+                f"{status_lines}",
                 parse_mode="Markdown"
             )
         elif data == "restart:no":
@@ -151,18 +142,6 @@ async def confirm_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.message.reply_text(f"❌ Error restarting service: {exc}")
         context.user_data.clear()
         return ConversationHandler.END
-
-def subprocess_status_raw() -> str:
-    """Utility to run systemctl status and get raw output for verification."""
-    import subprocess
-    from src.telegram_admin.config import SERVICE_NAME
-    result = subprocess.run(
-        ["sudo", "systemctl", "status", SERVICE_NAME, "--no-pager"],
-        check=True,
-        text=True,
-        capture_output=True
-    )
-    return result.stdout
 
 @admin_only
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

@@ -28,7 +28,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             "/show        - Show current variables (secrets masked)\n"
             "/status      - Get structured service status\n"
             "/health      - Run systemctl & HTTP API health check\n"
-            "/restart     - Restart zerodha-mcp service\n"
+            "/restart     - Restart zerodha-mcp and zerodha-monitor\n"
             "/reload      - Re-read .env file configurations\n"
             "/tail [N]    - View last N logs (default 20)\n"
             "/logs        - View last 20 logs (shortcut)\n"
@@ -50,7 +50,7 @@ async def restart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         reply_markup = get_cmd_restart_keyboard()
         await update.message.reply_text(
-            "Restart zerodha-mcp?",
+            "Restart zerodha-mcp and zerodha-monitor?",
             reply_markup=reply_markup
         )
     except Exception as exc:
@@ -66,20 +66,20 @@ async def cmd_restart_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         data = query.data or ""
         if data == "cmd_restart:yes":
-            await query.message.edit_text("♻️ Restarting zerodha-mcp service...")
-            
+            await query.message.edit_text("♻️ Restarting zerodha-mcp and zerodha-monitor...")
+
             start_time = time.perf_counter()
             service_manager.restart_service()
             duration = time.perf_counter() - start_time
-            
-            is_active = service_manager.is_service_active()
-            if is_active:
-                await query.message.reply_text(
-                    f"🟢 Service restarted successfully.\n"
-                    f"✔ Completed in {duration:.1f} s"
-                )
-            else:
-                await query.message.reply_text("🔴 Restart failed.")
+
+            active = service_manager.are_restart_services_active()
+            status_lines = "\n".join(
+                f"{'🟢' if ok else '🔴'} {name}" for name, ok in active.items()
+            )
+            await query.message.reply_text(
+                f"{status_lines}\n"
+                f"✔ Completed in {duration:.1f} s"
+            )
         elif data == "cmd_restart:no":
             await query.message.edit_text("Restart cancelled.")
         else:

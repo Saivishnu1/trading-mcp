@@ -1,35 +1,37 @@
 import subprocess
 import logging
-from src.telegram_admin.config import SERVICE_NAME
+from src.telegram_admin.config import SERVICE_NAME, RESTART_SERVICES
 
 logger = logging.getLogger(__name__)
 
 def restart_service() -> None:
-    """Restarts the systemd service.
-    
-    Uses sudo to execute systemctl restart.
-    """
-    logger.info("Restarting service: %s", SERVICE_NAME)
-    try:
-        subprocess.run(
-            ["sudo", "systemctl", "restart", SERVICE_NAME],
-            check=True,
-            text=True,
-            capture_output=True
-        )
-        logger.info("Restart command executed successfully for %s", SERVICE_NAME)
-    except subprocess.CalledProcessError as exc:
-        logger.error("Failed to restart service %s: %s", SERVICE_NAME, exc.stderr)
-        raise
+    """Restarts every service in RESTART_SERVICES (zerodha-mcp and
+    zerodha-monitor) — both read the same /etc/zerodha-mcp/.env file, so an
+    env var update (e.g. INDSTOCKS_TOKEN) must reach both processes or the
+    monitor silently keeps running on the stale value indefinitely.
 
-def is_service_active() -> bool:
-    """Checks if the service is currently active (running).
-    
-    Uses sudo systemctl is-active.
+    Uses sudo to execute systemctl restart. Raises on the first failure —
+    if zerodha-mcp restarts but zerodha-monitor's restart command fails,
+    the exception surfaces so the caller doesn't report a false success.
     """
+    for service in RESTART_SERVICES:
+        logger.info("Restarting service: %s", service)
+        try:
+            subprocess.run(
+                ["sudo", "systemctl", "restart", service],
+                check=True,
+                text=True,
+                capture_output=True
+            )
+            logger.info("Restart command executed successfully for %s", service)
+        except subprocess.CalledProcessError as exc:
+            logger.error("Failed to restart service %s: %s", service, exc.stderr)
+            raise
+
+def _is_active(service: str) -> bool:
     try:
         result = subprocess.run(
-            ["sudo", "systemctl", "is-active", SERVICE_NAME],
+            ["sudo", "systemctl", "is-active", service],
             check=True,
             text=True,
             capture_output=True
@@ -39,8 +41,21 @@ def is_service_active() -> bool:
         # systemctl is-active returns non-zero exit codes if the service is not active
         if exc.stdout and exc.stdout.strip() == "active":
             return True
-        logger.info("Service %s is inactive. Exit code: %d", SERVICE_NAME, exc.returncode)
+        logger.info("Service %s is inactive. Exit code: %d", service, exc.returncode)
         return False
+
+def is_service_active() -> bool:
+    """Checks if the primary service (SERVICE_NAME) is currently active.
+
+    Uses sudo systemctl is-active.
+    """
+    return _is_active(SERVICE_NAME)
+
+def are_restart_services_active() -> dict[str, bool]:
+    """Checks active status for every service touched by restart_service()
+    (zerodha-mcp and zerodha-monitor) — used after a restart so a caller
+    doesn't report success when only one of the two came back up."""
+    return {service: _is_active(service) for service in RESTART_SERVICES}
 
 def get_service_status() -> dict[str, str]:
     """Retrieves service status and parses key fields.
