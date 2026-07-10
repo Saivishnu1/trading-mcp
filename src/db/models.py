@@ -276,6 +276,12 @@ try:
         risk_off_count_threshold: Mapped[int] = mapped_column(Integer, server_default=text("3"))
         cooldown_macro: Mapped[int]      = mapped_column(Integer, server_default=text("1800"))
         cooldown_wall_break: Mapped[int] = mapped_column(Integer, server_default=text("1800"))
+        # Priority 1 (2026-07-10) — consecutive polls spot must hold beyond a
+        # wall before oi_call_wall_break/oi_put_wall_break fires to Telegram.
+        wall_break_confirm_candles: Mapped[int] = mapped_column(Integer, server_default=text("3"))
+        # Priority 3 (2026-07-10) — max-pain pinning-risk alert threshold/cooldown.
+        pinning_risk_threshold_pct: Mapped[float] = mapped_column(Float, server_default=text("0.5"))
+        cooldown_pinning: Mapped[int]             = mapped_column(Integer, server_default=text("1800"))
         updated_at: Mapped[str]          = mapped_column(Text, nullable=False)
 
     class MonitorSessionState(Base):
@@ -297,6 +303,14 @@ try:
         open_sensex: Mapped[float | None] = mapped_column(Float)
         last_nifty_spot: Mapped[float | None]  = mapped_column(Float)
         last_sensex_spot: Mapped[float | None] = mapped_column(Float)
+        # Priority 1 (2026-07-10) — consecutive-poll streaks tracking how long
+        # spot has held beyond each OI wall, plus whether a hold alert has
+        # already fired for the current streak (so it doesn't refire every
+        # poll once confirmed). See MarketIntelligence.check_oi_walls.
+        call_wall_break_streak: Mapped[int]     = mapped_column(Integer, server_default=text("0"))
+        put_wall_break_streak: Mapped[int]      = mapped_column(Integer, server_default=text("0"))
+        call_wall_break_confirmed: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+        put_wall_break_confirmed: Mapped[bool]  = mapped_column(Boolean, server_default=text("false"))
         session_date: Mapped[str]    = mapped_column(Text, nullable=False)
         # Liveness fields — let get_monitor_status() answer "is it alive?"
         # without SSHing into the Oracle VM.

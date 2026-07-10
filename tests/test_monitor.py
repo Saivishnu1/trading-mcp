@@ -182,6 +182,43 @@ class TestMarketConditions:
     def test_cooldown_allows_when_never_sent(self):
         assert self.cond.is_alert_on_cooldown(None, cooldown_seconds=300) is False
 
+    # -----------------------------------------------------------------
+    # Wall-break streak primitives (Priority 1, 2026-07-10)
+    # -----------------------------------------------------------------
+
+    def test_update_wall_break_streak_increments_while_beyond_call_wall(self):
+        assert self.cond.update_wall_break_streak(spot=24410, wall=24400, streak=1, direction="above") == 2
+
+    def test_update_wall_break_streak_resets_when_back_inside_call_wall(self):
+        assert self.cond.update_wall_break_streak(spot=24390, wall=24400, streak=2, direction="above") == 0
+
+    def test_update_wall_break_streak_increments_while_beyond_put_wall(self):
+        assert self.cond.update_wall_break_streak(spot=23990, wall=24000, streak=1, direction="below") == 2
+
+    def test_update_wall_break_streak_resets_when_back_inside_put_wall(self):
+        assert self.cond.update_wall_break_streak(spot=24010, wall=24000, streak=2, direction="below") == 0
+
+    def test_update_wall_break_streak_starts_fresh_from_zero(self):
+        assert self.cond.update_wall_break_streak(spot=24410, wall=24400, streak=0, direction="above") == 1
+
+    def test_check_wall_hold_true_at_threshold(self):
+        assert self.cond.check_wall_hold(streak=3, confirm_candles=3) is True
+
+    def test_check_wall_hold_true_above_threshold(self):
+        assert self.cond.check_wall_hold(streak=5, confirm_candles=3) is True
+
+    def test_check_wall_hold_false_below_threshold(self):
+        assert self.cond.check_wall_hold(streak=2, confirm_candles=3) is False
+
+    def test_check_wall_rejection_true_on_touch_then_fail(self):
+        assert self.cond.check_wall_rejection(prev_streak=2, new_streak=0) is True
+
+    def test_check_wall_rejection_false_when_streak_never_started(self):
+        assert self.cond.check_wall_rejection(prev_streak=0, new_streak=0) is False
+
+    def test_check_wall_rejection_false_while_streak_still_building(self):
+        assert self.cond.check_wall_rejection(prev_streak=1, new_streak=2) is False
+
 
 # ---------------------------------------------------------------------------
 # Symbol resolver — pure parsing (no cache/broker I/O)

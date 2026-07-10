@@ -113,7 +113,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1397 unit + regression tests across 41 test files (pytest, no live network calls).
+* 1924 unit + regression tests across 62 test files (pytest, no live network calls) as of 2026-07-10.
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF / normalize_symbol). Do not add per-module alias tables.
@@ -134,6 +134,10 @@ When generating tests:
 * **Guest token (Phase 22H):** `uid == "__guest__"` is treated identically to `None` in `require_broker()`, `_require_user()`, `check_auth_status()`, and `zerodha_login()`. Guest users get `authenticated: false` and "not_authenticated" from personal tools. Never grant guest access to portfolio, journal, or recommendation tools.
 * **401 guard on `/sse` (GET) and `/mcp`:** Both endpoints return `401 + WWW-Authenticate: Bearer resource_metadata=...` for unauthenticated connections. This triggers OAuth discovery in MCP clients (claude.ai, Claude Desktop) automatically. Do not remove this guard.
 * **OAuth authorize page (`/oauth/authorize`)** shows the Zerodha login form AND a "Continue as guest" button. Guest click → instant OAuth redirect → guest Bearer token mapped to `user_id = "__guest__"` in api_key_store. Full login → real Bearer token (`sess_xxx`) mapped to the owner's Zerodha user_id. Both flows issue standard OAuth tokens; the difference is only the user_id stored server-side.
+* **Wall-break alerts are hold-confirmed, not touch-triggered (2026-07-10).** `oi_call_wall_break`/`oi_put_wall_break` only reach Telegram after `wall_break_confirm_candles` (default 3) consecutive polls beyond the wall — see `MarketIntelligence.check_oi_walls` and `monitor.session_state.call_wall_break_streak`/`put_wall_break_streak`. A touch that reverts before confirmation fires `oi_wall_rejection` instead. The raw single-poll touch is still logged (`delivered=False`) for backtesting, never pushed to Telegram.
+* **Indicator source is Zerodha-first, not yfinance-first (2026-07-10).** `src/tools/technicals.py::_load_candles_with_source`/`_load_closes_with_source` try the tiered chart_awareness fetcher (Zerodha → INDmoney → yfinance) before falling back to the yfinance-only market service. `calculate_atr` and the dashboard's technicals section (`_technicals_section`) both surface which source actually served the candles via a `data_source`/`source` field — never hardcode `"yfinance"` in new indicator meta builders.
+* **Max-pain pinning risk is surfaced proactively (2026-07-10).** `src/options/analytics.py::check_pinning_risk` is the single source of truth — used by `market_awareness/engine.py` (`calendar.pinning_risk`), `dashboard/service.py` (`options.pinning_risk`), and the monitor's intraday `check_pinning_risk` alert (type `pinning_risk`, cooldown `cooldown_pinning`). Do not duplicate the threshold logic.
+* **`get_trade_cost_estimate` (2026-07-10)** is a directional brokerage/STT estimate, not a ledger reconciliation — reuses `require_broker().orders()`, never touches the `Trade` model's immutable snapshot fields.
 
 ---
 

@@ -321,10 +321,18 @@ def market_meta(data: dict, *, symbol: str = "", source: str = "NSELive",
     )
 
 
-def indicator_meta(data: dict, *, symbol: str = "") -> dict:
+_INDICATOR_SOURCE_LIMITATIONS = {
+    "zerodha": ["Derived from live/intraday Zerodha broker candles."],
+    "indmoney": ["Derived from live/intraday INDmoney broker candles."],
+    "yahoo": ["Derived from EOD-adjusted yfinance candles, not tick data."],
+    "yfinance": ["Derived from EOD-adjusted yfinance candles, not tick data."],
+}
+
+
+def indicator_meta(data: dict, *, symbol: str = "", source: str = "yfinance") -> dict:
     dq = detect_data_quality(data, symbol=symbol)
     warning = None
-    if not is_market_hours():
+    if source in ("yahoo", "yfinance") and not is_market_hours():
         warning = "Outside NSE session. Use get_historical_data for end-of-day accuracy."
     if dq == DQ_NAN:
         warning = (warning or "") + " NaN values detected — insufficient data or bad ticker."
@@ -332,10 +340,10 @@ def indicator_meta(data: dict, *, symbol: str = "") -> dict:
         type_=TYPE_INDICATOR,
         validation_status=VALIDATION_COMPUTED,
         data_quality=dq,
-        source="yfinance",
+        source=source,
         account_type="MARKET_DATA_ONLY",
         warning=warning if warning else None,
-        limitations=["Derived from EOD-adjusted yfinance candles, not tick data."],
+        limitations=_INDICATOR_SOURCE_LIMITATIONS.get(source, _INDICATOR_SOURCE_LIMITATIONS["yfinance"]),
     )
 
 

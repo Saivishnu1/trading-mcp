@@ -121,7 +121,7 @@ def test_calculate_atr_error_message_distinguishes_source_failure_from_bad_symbo
     technicals.register(mcp)
     tools = {t.name: t for t in mcp._tool_manager.list_tools()}
 
-    with patch("src.tools.technicals._load_closes", return_value=(None, None, None)):
+    with patch("src.tools.technicals._load_closes_with_source", return_value=(None, None, None, "none")):
         result = tools["calculate_atr"].fn("NIFTY")
 
     msg = result["data"]["error"]

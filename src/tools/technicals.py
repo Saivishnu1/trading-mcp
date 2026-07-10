@@ -1,8 +1,11 @@
 """
 Technical-analysis MCP tools.
 
-OHLCV is pulled through the existing market service (yfinance-backed); the math
-lives in src/technical/indicators.py (pure Python). No auth required.
+OHLCV is pulled through the tiered chart-awareness fetcher (Zerodha, when
+authenticated, -> INDmoney -> yfinance) so indicators reflect live broker
+candles instead of lagging EOD-adjusted yfinance data (Priority 2,
+2026-07-10). The math lives in src/technical/indicators.py (pure Python).
+No auth required — Zerodha is simply skipped when not authenticated.
 """
 
 import logging
@@ -28,14 +31,11 @@ _YF_TO_CANONICAL_INTERVAL = {
 }
 
 
-def _load_candles_via_indmoney_fallback(symbol: str, lookback_days: int, interval: str) -> list[dict]:
-    """Fallback OHLCV fetch when the primary yfinance path returns no data.
-
-    Reuses the chart_awareness tiered fetcher (Zerodha -> INDmoney -> Yahoo),
-    which resolves INDmoney scrip codes properly — unlike the plain yfinance
-    path in src/market/service.py that has no fallback of its own.
-    Returns [] if this also fails; never raises.
-    """
+def _load_candles_tiered(symbol: str, lookback_days: int, interval: str) -> tuple[list[dict], str]:
+    """Primary OHLCV fetch via the chart_awareness tiered fetcher
+    (Zerodha, when authenticated -> INDmoney -> Yahoo). Returns
+    (candles, source) — source is "zerodha"/"indmoney"/"yahoo"/"none".
+    Never raises; returns ([], "none") on total failure."""
     import asyncio
     from src.chart_awareness.data_fetcher import fetch_candles
 
@@ -47,13 +47,12 @@ def _load_candles_via_indmoney_fallback(symbol: str, lookback_days: int, interva
     try:
         candles, source = asyncio.run(fetch_candles(symbol, canonical_interval, from_date, to_date))
     except Exception as exc:
-        logger.warning("INDmoney fallback fetch failed for %s: %s", symbol, exc)
-        return []
+        logger.warning("Tiered candle fetch failed for %s: %s", symbol, exc)
+        return [], "none"
 
     if not candles:
-        return []
+        return [], "none"
 
-    logger.info("Used %s fallback for %s after yfinance returned no data", source, symbol)
     return [
         {
             "date": c["datetime"],
@@ -64,32 +63,49 @@ def _load_candles_via_indmoney_fallback(symbol: str, lookback_days: int, interva
             "volume": c.get("volume", 0),
         }
         for c in candles
-    ]
+    ], source
 
 
-def _load_candles(symbol: str, lookback_days: int, interval: str = "1d") -> list[dict]:
-    """Return raw OHLCV candle dicts (each with a 'date'), or [] on failure.
+def _load_candles_via_yfinance_fallback(symbol: str, lookback_days: int, interval: str) -> list[dict]:
+    """Last-resort OHLCV fetch via the plain yfinance-only market service,
+    used only when the tiered fetcher (Zerodha/INDmoney/Yahoo) returns
+    nothing at all. Returns [] if this also fails; never raises."""
+    today = date.today()
+    start = (today - timedelta(days=lookback_days)).isoformat()
+    end = (today + timedelta(days=1)).isoformat()
+    try:
+        return get_market().get_historical(symbol, start, end, interval)
+    except Exception as exc:
+        logger.warning("yfinance fallback get_historical failed for %s: %s", symbol, exc)
+        return []
+
+
+def _load_candles_with_source(symbol: str, lookback_days: int, interval: str = "1d") -> tuple[list[dict], str]:
+    """Return (candles, source) — candles are raw OHLCV dicts (each with a
+    'date'), source is "zerodha"/"indmoney"/"yahoo"/"none".
 
     Symbol resolution (index aliases, exchange prefixes) is delegated to the
     market service's canonical resolver — see src/market/symbols.py.
     interval: yfinance interval string — '1d' (daily), '1wk' (weekly), '1mo' (monthly).
 
-    Falls back to the INDmoney-backed tiered fetcher when the primary
-    yfinance-only path returns no data (e.g. rate-limited or transient outage).
+    Zerodha-derived candles (when authenticated) are tried first via the
+    tiered chart_awareness fetcher; the plain yfinance-only market service
+    is only used as a last resort if that tier is fully exhausted
+    (Priority 2, 2026-07-10 — previously yfinance ran first unconditionally).
     """
-    today = date.today()
-    start = (today - timedelta(days=lookback_days)).isoformat()
-    end = (today + timedelta(days=1)).isoformat()
-    try:
-        candles = get_market().get_historical(symbol, start, end, interval)
-    except Exception as exc:
-        logger.warning("get_historical failed for %s: %s", symbol, exc)
-        candles = []
-
+    candles, source = _load_candles_tiered(symbol, lookback_days, interval)
     if candles:
-        return candles
+        return candles, source
 
-    return _load_candles_via_indmoney_fallback(symbol, lookback_days, interval)
+    candles = _load_candles_via_yfinance_fallback(symbol, lookback_days, interval)
+    return candles, ("yahoo" if candles else "none")
+
+
+def _load_candles(symbol: str, lookback_days: int, interval: str = "1d") -> list[dict]:
+    """Return raw OHLCV candle dicts (each with a 'date'), or [] on failure.
+    See _load_candles_with_source for the source-aware variant."""
+    candles, _source = _load_candles_with_source(symbol, lookback_days, interval)
+    return candles
 
 
 def _load_closes(symbol: str, lookback_days: int):
@@ -103,14 +119,36 @@ def _load_closes(symbol: str, lookback_days: int):
     return closes, highs, lows
 
 
+def _load_closes_with_source(symbol: str, lookback_days: int):
+    """Return (closes, highs, lows, source), or (None, None, None, "none")
+    on failure. `source` is "zerodha"/"indmoney"/"yahoo"/"none" — used by
+    dashboard/service.py to label which candle source fed the indicators."""
+    candles, source = _load_candles_with_source(symbol, lookback_days)
+    if not candles:
+        return None, None, None, "none"
+    closes = [c["close"] for c in candles]
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    return closes, highs, lows, source
+
+
 def _err(symbol: str, msg: str) -> dict:
     return {"symbol": symbol.upper(), "error": msg}
+
+
+_SOURCE_LIMITATIONS = {
+    "zerodha": ["Derived from live/intraday Zerodha broker candles."],
+    "indmoney": ["Derived from live/intraday INDmoney broker candles."],
+    "yahoo": ["Derived from EOD-adjusted yfinance candles, not tick data."],
+    "yfinance": ["Derived from EOD-adjusted yfinance candles, not tick data."],
+}
 
 
 def _indicator_meta_for(
     data: dict,
     symbol: str,
     *,
+    source: str = "yfinance",
     symbol_corrected: bool = False,
     symbol_original: str | None = None,
     symbol_normalized: str | None = None,
@@ -118,7 +156,7 @@ def _indicator_meta_for(
 ) -> dict:
     dq = _meta.DQ_INVALID if "error" in data else _meta.detect_data_quality(data, symbol=symbol)
     warning = None
-    if not _meta.is_market_hours():
+    if source in ("yahoo", "yfinance") and not _meta.is_market_hours():
         warning = "Outside NSE session. Indicator computed from last available EOD candle."
     if dq == _meta.DQ_NAN:
         warning = (warning or "") + " NaN detected — check symbol or data gap."
@@ -126,9 +164,9 @@ def _indicator_meta_for(
         type_=_meta.TYPE_INDICATOR,
         validation_status=_meta.VALIDATION_COMPUTED,
         data_quality=dq,
-        source="yfinance",
+        source=source,
         account_type="MARKET_DATA_ONLY",
-        limitations=["Derived from EOD-adjusted yfinance candles, not tick data."],
+        limitations=_SOURCE_LIMITATIONS.get(source, _SOURCE_LIMITATIONS["yfinance"]),
         warning=warning,
         symbol_corrected=symbol_corrected,
         symbol_original=symbol_original,
@@ -168,7 +206,7 @@ def register(mcp: FastMCP) -> None:
             symbol_normalized=sym if corrected else None,
             symbol_format_applied=fmt if corrected else None,
         )
-        closes, highs, lows = _load_closes(sym, lookback_days)
+        closes, highs, lows, source = _load_closes_with_source(sym, lookback_days)
         if not closes:
             data = _err(
                 symbol,
@@ -176,11 +214,11 @@ def register(mcp: FastMCP) -> None:
                 "unavailable or rate-limited; retry shortly, or verify the symbol "
                 "if this persists",
             )
-            return _meta.wrap(data, _indicator_meta_for(data, symbol, **_norm_kw))
+            return _meta.wrap(data, _indicator_meta_for(data, symbol, source=source, **_norm_kw))
         value = indicators.atr(highs, lows, closes, period)
         if value is None:
             data = _err(symbol, f"insufficient data for period {period}")
-            return _meta.wrap(data, _indicator_meta_for(data, symbol, **_norm_kw))
+            return _meta.wrap(data, _indicator_meta_for(data, symbol, source=source, **_norm_kw))
         last_close = round(closes[-1], 4)
         atr_pct = round(100.0 * value / last_close, 2) if last_close else None
         data = {
@@ -191,4 +229,4 @@ def register(mcp: FastMCP) -> None:
             "last_close": last_close,
             "atr_percent": atr_pct,
         }
-        return _meta.wrap(data, _indicator_meta_for(data, symbol, **_norm_kw))
+        return _meta.wrap(data, _indicator_meta_for(data, symbol, source=source, **_norm_kw))

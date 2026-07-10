@@ -2,7 +2,7 @@
 Unit and integration tests for src/dashboard/service.py.
 
 _build_summary is pure — no mocking required.
-build_dashboard mocks _analyze_technicals, _load_closes, and get_options_service.
+build_dashboard mocks _analyze_technicals, _load_closes_with_source, and get_options_service.
 
 Phase 22F: dashboard output is factual only — no signal/confidence/
 trade_setup/strategy fields. _build_summary reads market_structure from
@@ -174,8 +174,8 @@ class TestBuildDashboard:
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",
                             lambda s, lookback_days=150: t)
         closes, highs, lows = _make_ohlcv()
-        monkeypatch.setattr("src.dashboard.service._load_closes",
-                            lambda symbol, lookback_days=150: (closes, highs, lows))
+        monkeypatch.setattr("src.dashboard.service._load_closes_with_source",
+                            lambda symbol, lookback_days=150: (closes, highs, lows, "zerodha"))
         from unittest.mock import MagicMock
         svc = MagicMock()
         svc.get_option_chain.return_value = chain_data
@@ -244,8 +244,8 @@ class TestBuildDashboard:
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",
                             lambda s, lookback_days=150: BULL_TECH)
         closes, highs, lows = _make_ohlcv()
-        monkeypatch.setattr("src.dashboard.service._load_closes",
-                            lambda symbol, lookback_days=150: (closes, highs, lows))
+        monkeypatch.setattr("src.dashboard.service._load_closes_with_source",
+                            lambda symbol, lookback_days=150: (closes, highs, lows, "zerodha"))
         monkeypatch.setattr("src.dashboard.service.get_options_service",
                             lambda: _raise_svc())
         monkeypatch.setattr("src.planner.trade_plan.get_options_service",
@@ -262,8 +262,8 @@ class TestBuildDashboard:
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",
                             lambda s, lookback_days=150: BULL_TECH)
         # Return empty OHLCV → technicals section returns error dict
-        monkeypatch.setattr("src.dashboard.service._load_closes",
-                            lambda symbol, lookback_days=150: (None, None, None))
+        monkeypatch.setattr("src.dashboard.service._load_closes_with_source",
+                            lambda symbol, lookback_days=150: (None, None, None, "none"))
         from unittest.mock import MagicMock
         svc = MagicMock()
         svc.get_option_chain.return_value = chain_data

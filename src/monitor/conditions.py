@@ -40,6 +40,29 @@ class MarketConditions:
             return True, f"Spot broke put wall at {put_wall}"
         return False, ""
 
+    def update_wall_break_streak(self, spot: float, wall: float, streak: int, direction: str) -> int:
+        """direction: 'above' (call wall) means the streak continues while
+        spot stays at/beyond the wall; 'below' (put wall) means it continues
+        while spot stays at/beneath it. Returns the new streak count —
+        incremented while still beyond, reset to 0 once spot falls back
+        inside the wall."""
+        beyond = spot >= wall if direction == "above" else spot <= wall
+        return streak + 1 if beyond else 0
+
+    def check_wall_hold(self, streak: int, confirm_candles: int) -> bool:
+        """True once spot has stayed beyond the wall for at least
+        `confirm_candles` consecutive polls — the hold-confirmation gate
+        that keeps a single momentary cross from reaching Telegram."""
+        return streak >= confirm_candles
+
+    def check_wall_rejection(self, prev_streak: int, new_streak: int) -> bool:
+        """True exactly on the touch-then-fail transition: a streak that was
+        building (prev_streak > 0) just reset to 0 (new_streak == 0) without
+        ever reaching the hold threshold. Callers must gate on this already
+        having not been confirmed — a reversal AFTER confirmation is not a
+        rejection, it's just the confirmed break ending."""
+        return prev_streak > 0 and new_streak == 0
+
     def check_index_move(self, index: str, current: float, reference: float, threshold_pct: float) -> tuple[bool, str]:
         """Percentage move of an index (NIFTY/SENSEX) since the last check,
         observed fact only — no direction implied beyond the arithmetic sign."""

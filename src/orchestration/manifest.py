@@ -59,6 +59,7 @@ MCP_MANIFEST: dict = {
             "review_trade",
             "review_open_trades",
             "sync_trades_from_zerodha",
+            "get_trade_cost_estimate",
         ],
         "trade_planning": [
             "create_trade_plan",

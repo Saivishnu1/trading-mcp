@@ -7,7 +7,8 @@ analytics/regime/indicator functions — no calculations are duplicated here.
 Call graph (per dashboard build):
   _options_section    → OptionsService/BSEOptionsService.get_option_chain
                          (1 fetch, cached) → analytics.calculate_pcr / max_pain / identify_sr
-  _technicals_section → _load_closes (1 yfinance fetch) → all indicators.*
+  _technicals_section → _load_closes_with_source (1 tiered fetch:
+                         Zerodha -> INDmoney -> yfinance) → all indicators.*
   _analysis_section   → detect_market_regime → _analyze_technicals (1 yfinance fetch)
                          → _build_market_structure (Phase 22F factual descriptor)
 
@@ -22,6 +23,7 @@ same-ticker requests, so the duplicate analysis fetches are negligible.
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime
 
 from src.analysis import regime as regime_mod
 from src.intelligence.events import get_upcoming_events, nearest_high_impact_days
@@ -33,7 +35,7 @@ from src.options.bse_service import get_bse_options_service
 from src.options.service import get_options_service
 from src.technical import indicators
 from src.tools.analysis import _build_market_structure
-from src.tools.technicals import _load_closes
+from src.tools.technicals import _load_closes_with_source
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
         "resistances": [],
         "nearest_support": None,
         "nearest_resistance": None,
+        "pinning_risk": {"active": False, "distance_points": None, "note": None},
         "note": "Option chain unavailable — market closed or data not yet loaded",
     }
 
@@ -80,6 +83,23 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
         ns = sr.get("nearest_support") or {}
         nr = sr.get("nearest_resistance") or {}
 
+        # Priority 3 (2026-07-10) — pinning risk during expiry week, derived
+        # from the expiry date already in hand (no extra calendar fetch).
+        is_expiry_week = False
+        try:
+            exp_date = datetime.strptime(expiry, "%d-%b-%Y").date()
+            is_expiry_week = (exp_date - date.today()).days <= 5
+        except ValueError:
+            pass
+        pinning = analytics.check_pinning_risk(spot, mp.get("max_pain"), is_expiry_week)
+        pinning_note = None
+        if pinning["active"]:
+            pinning_note = (
+                f"Spot within {pinning['distance_points']:.0f} points of max pain "
+                f"({mp.get('max_pain'):.0f}) — expect range-bound chop until "
+                f"expiry unwinds OI concentration."
+            )
+
         return {
             "expiry": expiry,
             "pcr": pcr.get("pcr_oi"),
@@ -90,6 +110,11 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
             "resistances": [r["strike"] for r in sr.get("resistance_levels", [])],
             "nearest_support": ns.get("strike"),
             "nearest_resistance": nr.get("strike"),
+            "pinning_risk": {
+                "active": pinning["active"],
+                "distance_points": pinning["distance_points"],
+                "note": pinning_note,
+            },
         }, spot
     except Exception as exc:
         logger.warning("_options_section failed for %s: %s", symbol, exc)
@@ -99,16 +124,21 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
 def _technicals_section(symbol: str) -> tuple[dict, float | None]:
     """Single OHLCV fetch → full indicator set.
 
-    Returns (section_dict, last_close).
+    Returns (section_dict, last_close). Candles come from the tiered
+    chart_awareness fetcher (Zerodha, when authenticated -> INDmoney ->
+    yfinance) instead of a yfinance-only fetch (Priority 2, 2026-07-10) —
+    `data_source` in the returned dict records which one actually served
+    the candles for this call.
     """
-    closes, highs, lows = _load_closes(symbol, lookback_days=150)
+    closes, highs, lows, source = _load_closes_with_source(symbol, lookback_days=150)
     if not closes:
         return {
             "error": (
                 "no price data available — the data source may be temporarily "
                 "unavailable or rate-limited; retry shortly, or verify the symbol "
                 "if this persists"
-            )
+            ),
+            "data_source": source,
         }, None
 
     adx_result = indicators.adx(highs, lows, closes, 14)
@@ -116,11 +146,13 @@ def _technicals_section(symbol: str) -> tuple[dict, float | None]:
         "rsi": indicators.rsi(closes, 14),
         "ema20": indicators.ema(closes, 20),
         "ema50": indicators.ema(closes, 50),
+        "ema200": indicators.ema(closes, 200),
         "macd": indicators.macd(closes),
         "adx": adx_result.get("adx"),
         "plus_di": adx_result.get("plus_di"),
         "minus_di": adx_result.get("minus_di"),
         "atr": indicators.atr(highs, lows, closes, 14),
+        "data_source": source,
     }, round(closes[-1], 4)
 
 

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from .aggregator import MarketAggregator
 from .narrator import MarketNarrator, get_calendar_index_key
 from src.analysis.regime import detect_market_regime
+from src.options import analytics
 
 
 class MarketAwarenessEngine:
@@ -135,6 +136,18 @@ class MarketAwarenessEngine:
         if include_options and options and "error" not in options:
             options_source = "BSE" if symbol_upper in ("SENSEX", "BANKEX") else "NSE"
 
+        # Priority 3 (2026-07-10) — surface max-pain pinning risk during
+        # expiry week proactively instead of only via a manual deep pull.
+        is_expiry_week_val = days_to_expiry_val <= 5 if next_expiry else False
+        pinning = analytics.check_pinning_risk(spot, options.get("max_pain"), is_expiry_week_val)
+        pinning_note = None
+        if pinning["active"]:
+            pinning_note = (
+                f"Spot within {pinning['distance_points']:.0f} points of max pain "
+                f"({options.get('max_pain'):.0f}) — expect range-bound chop until "
+                f"expiry unwinds OI concentration."
+            )
+
         # Construct final unified data dictionary
         final_data = {
             "symbol": symbol_upper,
@@ -203,8 +216,13 @@ class MarketAwarenessEngine:
             "calendar": {
                 "next_expiry": next_expiry,
                 "days_to_expiry": days_to_expiry_val,
-                "is_expiry_week": days_to_expiry_val <= 5 if next_expiry else False,
+                "is_expiry_week": is_expiry_week_val,
                 "upcoming_holidays": calendar.get("nse", {}).get("upcoming_holidays", []),
+                "pinning_risk": {
+                    "active": pinning["active"],
+                    "distance_points": pinning["distance_points"],
+                    "note": pinning_note,
+                },
             },
             "data_sources": {
                 "chart": chart.get("data_source", "none"),

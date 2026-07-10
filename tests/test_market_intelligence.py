@@ -198,26 +198,95 @@ class TestIndexMovement:
 
 
 class TestOiWallBreak:
+    """Priority 1 (2026-07-10): oi_call_wall_break/oi_put_wall_break now only
+    reach Telegram after wall_break_confirm_candles consecutive polls beyond
+    the wall — the raw touch is logged (delivered=False) but not alerted, and
+    a touch-then-revert fires oi_wall_rejection instead."""
+
     def setup_method(self):
         self.mi = MarketIntelligence()
 
-    def test_call_wall_break_detected(self):
-        alerts = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=24400, put_wall=24000)
-        assert len(alerts) == 1
-        assert alerts[0]["type"] == "oi_call_wall_break"
+    def test_single_touch_logs_raw_event_but_does_not_confirm(self):
+        alerts, streaks = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=24400, put_wall=24000)
+        raw = [a for a in alerts if a["type"] == "oi_call_wall_break"]
+        assert len(raw) == 1
+        assert raw[0]["delivered"] is False
+        assert streaks["call_wall_break_streak"] == 1
+        assert "call_wall_break_confirmed" not in streaks
 
-    def test_put_wall_break_detected(self):
-        alerts = self.mi.check_oi_walls(spot=23990, prev_spot=24010, call_wall=24400, put_wall=24000)
-        assert len(alerts) == 1
-        assert alerts[0]["type"] == "oi_put_wall_break"
+    def test_put_wall_single_touch_logs_raw_event(self):
+        alerts, streaks = self.mi.check_oi_walls(spot=23990, prev_spot=24010, call_wall=24400, put_wall=24000)
+        raw = [a for a in alerts if a["type"] == "oi_put_wall_break"]
+        assert len(raw) == 1
+        assert raw[0]["delivered"] is False
+        assert streaks["put_wall_break_streak"] == 1
 
-    def test_no_break_no_alert(self):
-        alerts = self.mi.check_oi_walls(spot=24300, prev_spot=24290, call_wall=24400, put_wall=24000)
+    def test_no_break_no_alert_streak_resets(self):
+        alerts, streaks = self.mi.check_oi_walls(spot=24300, prev_spot=24290, call_wall=24400, put_wall=24000)
         assert alerts == []
+        assert streaks["call_wall_break_streak"] == 0
+        assert streaks["put_wall_break_streak"] == 0
 
     def test_missing_walls_yields_no_alert(self):
-        alerts = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=None, put_wall=None)
+        alerts, streaks = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=None, put_wall=None)
         assert alerts == []
+        assert streaks == {}
+
+    def test_confirmed_after_n_consecutive_holds(self):
+        settings = {"wall_break_confirm_candles": 3}
+        session_state: dict = {}
+        confirmed_alerts = []
+        # Spot holds beyond the call wall for 3 consecutive polls.
+        for spot in (24410, 24420, 24430):
+            alerts, streaks = self.mi.check_oi_walls(
+                spot=spot, prev_spot=24390, call_wall=24400, put_wall=24000,
+                session_state=session_state, settings=settings,
+            )
+            session_state.update(streaks)
+            confirmed_alerts.extend(a for a in alerts if a["type"] == "oi_call_wall_break" and a.get("delivered") is not False)
+        assert len(confirmed_alerts) == 1
+        assert session_state["call_wall_break_confirmed"] is True
+
+    def test_rejection_fires_on_touch_then_revert_before_confirmation(self):
+        settings = {"wall_break_confirm_candles": 3}
+        session_state: dict = {}
+        # Poll 1: touch (streak -> 1). Poll 2: reverts back inside (streak -> 0).
+        alerts1, streaks1 = self.mi.check_oi_walls(
+            spot=24410, prev_spot=24390, call_wall=24400, put_wall=24000,
+            session_state=session_state, settings=settings,
+        )
+        session_state.update(streaks1)
+        alerts2, streaks2 = self.mi.check_oi_walls(
+            spot=24380, prev_spot=24410, call_wall=24400, put_wall=24000,
+            session_state=session_state, settings=settings,
+        )
+        rejection = [a for a in alerts2 if a["type"] == "oi_wall_rejection"]
+        assert len(rejection) == 1
+        assert "call wall" in rejection[0]["message"]
+
+    def test_whipsaw_across_wall_confirms_once_not_repeatedly(self):
+        """Regression test for the reported failure: spot bounces across the
+        NIFTY 24200 call wall multiple times before finally holding — this
+        must yield exactly one hold-confirmed alert and rejection alerts for
+        the earlier bounces, not a fresh oi_call_wall_break every poll."""
+        settings = {"wall_break_confirm_candles": 3}
+        session_state: dict = {}
+        confirmed = []
+        rejections = []
+        # Bounce sequence: touch, revert, touch, revert, then hold for 3 polls.
+        spots = [24205, 24195, 24210, 24190, 24205, 24215, 24225]
+        prev = 24190
+        for spot in spots:
+            alerts, streaks = self.mi.check_oi_walls(
+                spot=spot, prev_spot=prev, call_wall=24200, put_wall=24000,
+                session_state=session_state, settings=settings,
+            )
+            session_state.update(streaks)
+            confirmed.extend(a for a in alerts if a["type"] == "oi_call_wall_break" and a.get("delivered") is not False)
+            rejections.extend(a for a in alerts if a["type"] == "oi_wall_rejection")
+            prev = spot
+        assert len(confirmed) == 1
+        assert len(rejections) >= 1
 
 
 class TestPcrShiftCheck:
@@ -261,7 +330,7 @@ class TestRunAllChecks:
             "open_put_wall": 24300,
             "open_pcr": 1.0,
         }
-        alerts = await mi.run_all_checks(market_data, session_state, _settings())
+        alerts, _streaks = await mi.run_all_checks(market_data, session_state, _settings())
         types = {a["type"] for a in alerts}
         assert "macro_crude" in types
         assert "macro_vix" in types
@@ -291,7 +360,7 @@ class TestRunAllChecks:
             "open_pcr": None,
         }
         # Should not raise despite the malformed global_pulse.
-        alerts = await mi.run_all_checks(market_data, session_state, _settings())
+        alerts, _streaks = await mi.run_all_checks(market_data, session_state, _settings())
         types = {a["type"] for a in alerts}
         assert "index_move_nifty" in types
         assert "macro_vix" in types
@@ -299,8 +368,9 @@ class TestRunAllChecks:
     @pytest.mark.anyio
     async def test_run_all_checks_empty_data_yields_no_alerts(self):
         mi = MarketIntelligence()
-        alerts = await mi.run_all_checks({}, {}, _settings())
+        alerts, streaks = await mi.run_all_checks({}, {}, _settings())
         assert alerts == []
+        assert streaks == {}
 
 
 # ---------------------------------------------------------------------------

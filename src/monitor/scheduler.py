@@ -319,7 +319,7 @@ class MarketMonitor:
         sub-fetch is independently guarded — a single failing source (e.g.
         NSE option chain soft-blocked) must not prevent the other checks
         (macro, VIX) from running."""
-        from src.options.analytics import calculate_pcr, identify_support_resistance_from_oi
+        from src.options.analytics import calculate_max_pain, calculate_pcr, identify_support_resistance_from_oi
 
         async def _nifty_chain_data() -> dict:
             try:
@@ -331,11 +331,25 @@ class MarketMonitor:
                 levels = identify_support_resistance_from_oi(chain, expiry)
                 nearest_support = levels.get("nearest_support") or {}
                 nearest_resistance = levels.get("nearest_resistance") or {}
+
+                # Priority 3 (2026-07-10) — max pain + expiry-week from the
+                # same chain fetch, no extra I/O, for the pinning-risk check.
+                mp = calculate_max_pain(chain, expiry)
+                is_expiry_week = False
+                if expiry:
+                    try:
+                        exp_date = datetime.strptime(expiry, "%d-%b-%Y").date()
+                        is_expiry_week = (exp_date - self._today_ist()).days <= 5
+                    except ValueError:
+                        pass
+
                 return {
                     "nifty_spot": spot,
                     "nifty_pcr": pcr.get("pcr_oi"),
                     "nifty_call_wall": nearest_resistance.get("strike"),
                     "nifty_put_wall": nearest_support.get("strike"),
+                    "nifty_max_pain": mp.get("max_pain"),
+                    "nifty_is_expiry_week": is_expiry_week,
                 }
             except Exception as exc:
                 logger.debug("_get_market_intelligence_data nifty chain error: %s", exc)
@@ -371,9 +385,22 @@ class MarketMonitor:
             return
 
         market_data = await self._get_market_intelligence_data()
-        alerts = await self.market_intelligence.run_all_checks(market_data, session_state, settings)
+        alerts, wall_streak_updates = await self.market_intelligence.run_all_checks(market_data, session_state, settings)
 
         for alert in alerts:
+            # Raw wall-touch events (Priority 1, 2026-07-10) are logged for
+            # backtesting/analysis but never pushed to Telegram — they carry
+            # delivered=False explicitly and skip cooldown/alerter entirely.
+            if alert.get("delivered") is False:
+                await self.repo.save_alert(user["id"], {
+                    "alert_type": alert["type"],
+                    "symbol": alert["symbol"],
+                    "message": alert["message"],
+                    "severity": alert["severity"],
+                    "delivered": False,
+                })
+                continue
+
             cooldown_seconds = settings.get(alert["cooldown_key"], 1800)
             last_sent = await self.repo.get_last_alert_time(user["id"], alert["type"], alert["symbol"])
             if self.conditions.is_alert_on_cooldown(last_sent, cooldown_seconds):
@@ -392,10 +419,12 @@ class MarketMonitor:
         # Persist the latest spot/PCR/VIX as the reference point for the NEXT
         # check_market_conditions call (index-move and wall-break diff
         # against the prior poll, not the session open — matches the
-        # existing prev_spot convention in check_wall_break).
+        # existing prev_spot convention in check_wall_break), plus this
+        # poll's wall-break streak/confirmed state (Priority 1, 2026-07-10).
         await self.repo.save_session_state(user["id"], {
             "last_nifty_spot": market_data.get("nifty_spot") or session_state.get("last_nifty_spot"),
             "last_sensex_spot": market_data.get("sensex_spot") or session_state.get("last_sensex_spot"),
+            **wall_streak_updates,
         })
 
     async def run(self) -> None:

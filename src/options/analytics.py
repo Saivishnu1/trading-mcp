@@ -239,3 +239,34 @@ def calculate_max_pain(chain_data: dict, expiry: str | None = None) -> dict:
         "distance_from_spot":     round(spot - max_pain_strike, 2) if spot else None,
         "pain_table_top20":       pain_table[:20],
     }
+
+
+# ---------------------------------------------------------------------------
+# Pinning risk (Priority 3, 2026-07-10)
+# ---------------------------------------------------------------------------
+
+def check_pinning_risk(
+    spot: float | None, max_pain: float | None, is_expiry_week: bool, threshold_pct: float = 0.5,
+) -> dict:
+    """Factual check for whether spot is pinned near max pain during expiry
+    week — historically a strong indicator of range-bound chop as expiry
+    unwinds OI concentration at that strike.
+
+    Returns {"active": bool, "distance_points": float | None,
+    "distance_pct": float | None}. No plain-language note here — that is
+    composed by the caller so this stays a pure, reusable primitive (per
+    CLAUDE.md: do not duplicate option analytics; single source of truth
+    for both market_awareness and dashboard callers).
+    """
+    if not spot or not max_pain or not is_expiry_week:
+        return {"active": False, "distance_points": None, "distance_pct": None}
+
+    distance_points = abs(spot - max_pain)
+    distance_pct = (distance_points / spot) * 100 if spot else None
+    active = distance_pct is not None and distance_pct <= threshold_pct
+
+    return {
+        "active": active,
+        "distance_points": round(distance_points, 2),
+        "distance_pct": round(distance_pct, 3) if distance_pct is not None else None,
+    }
