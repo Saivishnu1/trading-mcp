@@ -19,7 +19,7 @@ infra/
 │   └── deploy.sh                    — master runner for all of the above
 │
 ├── Application deployment (run on every deploy)
-│   ├── deploy_app.sh                — git pull + uv sync + migrate + restart
+│   ├── deploy_app.sh                — git pull + uv sync + migrate + restart mcp+monitor
 │   ├── migrate.sh                   — alembic upgrade head (double-locked)
 │   └── rollback.sh                  — alembic downgrade + git reset + restart
 │
@@ -148,8 +148,8 @@ Flow:
 ```
 git pull
   └── uv sync --frozen
-        └── alembic upgrade head   ← if this fails, app is NOT restarted
-              └── systemctl restart zerodha-mcp
+        └── alembic upgrade head   ← if this fails, neither service is restarted
+              └── systemctl restart zerodha-mcp AND zerodha-monitor
 ```
 
 The application **never starts with a stale schema**. If migration fails, the previous version keeps running.
