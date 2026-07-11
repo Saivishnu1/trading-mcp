@@ -2386,3 +2386,34 @@ HTML form — they never appear in MCP traffic, agent context, or tool logs.
 - Monthly-vs-weekly routing lives in `_MONTHLY_ONLY_INDICES`, not a per-call flag, so every caller of `_nearest_expiry_algorithmic` (including tests) gets the correct behavior without remembering to opt in.
 - BSE static holiday files mirror the NSE calendars rather than inventing unverified BSE-specific dates — consistent with the existing documented fallback design ("NSE holidays, 95%+ overlap"), just made durable against network failure instead of computed live every time.
 - Dashboard cleanup expands Phase 22F's tool-layer-only boundary to include the dashboard aggregator: Phase 22F explicitly preserved internal consumers like the dashboard so downstream code wouldn't break, but the dashboard is itself a directly-callable MCP tool surface (not an internal-only consumer), so it now gets the same treatment as `detect_market_regime`.
+
+## Phase 23 — Order Placement (Telegram bot + mobile web app)
+
+**Tests:** 1984 passing + 6 skipped (42 new; the single Windows-only `test_env_manager.py::test_update_existing_and_preserve_spacing` `os.replace` PermissionError is a pre-existing sandbox artifact, unrelated to this work — passes on the Linux VM).
+
+### What was built
+
+First in-repo order *placement* (previously deferred to an unavailable external "Kite MCP"). Two surfaces share one core so the placement logic lives in exactly one place.
+
+**Core — broker layer + execution package**
+- `INDmoneyBroker.place_order(OrderRequest)` (`src/brokers/indmoney.py`) — first non-GET call in the file; `POST https://api.indstocks.com/order` with the same `Authorization` header as every read call. Contract from api-docs.indstocks.com/normal_orders/. Returns a uniform `{status, order_id, order_status, status_code, body}` dict; never raises. Success requires both HTTP 2xx AND body `status == "success"`.
+- `OrderRequest` write-model + `to_indstocks_payload()` (`src/brokers/models.py`) — maps to native field names (`txn_type/security_id/limit_price/qty/segment/algo_id`), injects `algo_id` by exchange (`99999` NSE / `9999999999999999` BSE), omits `limit_price` for MARKET. The read-only `Order` dataclass is untouched (backward-compat).
+- `place_order` is a new **abstract** method on `BrokerAdapter`; `ZerodhaBroker.place_order` is a concrete stub returning an error (no Kite subscription) so the class stays instantiable.
+- `INDmoneyBroker.resolve_security_id(symbol, source)` — resolves trading symbol → INDstocks `security_id` via the existing `get_instruments()` CSV master (cached in-process). Orders key on `security_id`, not the symbol.
+- `src/execution/service.py::submit_order(req, *, source, user_id, broker)` — the single entry point for both surfaces: places via the adapter, then best-effort logs to `zerodha.orders` (a logging failure never fails the order).
+- `src/execution/repository.py::ExecutionRepository` — mirrors `MonitorRepository` (lazy ORM import, ISO-8601 timestamps, degrades to no-op when `DATABASE_URL` unset). New `zerodha.orders` table (`OrderLog` in `src/db/models.py`) + Alembic migration `0009_orders_table.py`, with `user_id` isolation and immutable requested-intent snapshot columns.
+
+**A — Telegram command bot** (extends the existing `telegram_admin` bot — no new process)
+- `/buy` and `/sell SYMBOL QTY [MARKET|LIMIT price] [product] [exchange]`, parsed by the pure `src/telegram_admin/order_parser.py` (unit-testable without Telegram). Symbol is resolved to `security_id` up front (bad symbol fails before the confirm prompt). Every order shows a YES/NO confirm keyboard (reuses the restart-confirm pattern) and only fires on `order_confirm:yes` — mirrors `cmd_restart_callback`.
+- `/positions` and `/orders` read-only helpers. All handlers keep the existing `@admin_only` gate.
+
+**B — Mobile web app** (`src/ui/trade.html` + routes in `src/server.py`)
+- PIN-gated (`TRADE_PIN`), independent of the MCP OAuth/Bearer flow. `GET /trade` serves a phone-friendly form; `POST /trade/preview` validates + returns a confirm summary (no order); `POST /trade/place` is the only route that fires — so every order requires an explicit second request. Routes sit before the MCP fall-through and never touch `current_user`; `TRADE_PIN` (unset ⇒ feature disabled) is compared with `hmac.compare_digest`.
+- `TRADE_PIN` added to `.env.example` and the admin bot's `ALLOWED_VARIABLES` (live-rotatable); `/show` masking extended to hide `*PIN*` vars.
+
+### Key decisions
+
+- **INDstocks native API over OpenAlgo.** OpenAlgo supports IndMoney but is a separate self-hosted server; native placement reuses the exact base URL + auth header `INDmoneyBroker` already speaks, adding zero infrastructure for a single-broker personal button.
+- **One `submit_order` core, two surfaces.** Both the bot and the web app call it, so placement + logging never diverge.
+- **MARKET passthrough.** INDstocks has no true MARKET order (it converts to LIMIT@live server-side); `order_type="MARKET"` is passed as-is and the confirm summaries state the live-price-LIMIT behavior.
+- **Confirm-every-order on both surfaces** — the risk control for real-money placement, given the whole point is brokerage savings, not speed at the cost of fat-fingers.

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Place Order</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px;
+         max-width: 480px; margin-inline: auto; background: #f6f7f9; color: #111; }
+  @media (prefers-color-scheme: dark) { body { background: #14151a; color: #eee; } input, select { background:#1e2029; color:#eee; border-color:#333; } .card{background:#1c1e26;} }
+  h1 { font-size: 1.3rem; margin: 0 0 12px; }
+  .card { background:#fff; border:1px solid #e2e5ea; border-radius:12px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:.8rem; font-weight:600; margin:10px 0 4px; opacity:.85; }
+  input, select { width:100%; padding:12px; font-size:1rem; border:1px solid #ccd0d6; border-radius:8px; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  .side { display:flex; gap:10px; margin-top:6px; }
+  .side button { flex:1; padding:14px; font-size:1rem; font-weight:700; border:2px solid transparent; border-radius:8px; cursor:pointer; }
+  .buy  { background:#e7f7ec; color:#0a7f3f; } .buy.active  { border-color:#0a7f3f; }
+  .sell { background:#fdecec; color:#c0392b; } .sell.active { border-color:#c0392b; }
+  .primary { width:100%; padding:14px; font-size:1.05rem; font-weight:700; color:#fff; background:#2d6cdf; border:none; border-radius:8px; cursor:pointer; margin-top:14px; }
+  .primary:disabled { opacity:.5; }
+  #limitWrap { display:none; }
+  .msg { padding:12px; border-radius:8px; margin-top:12px; font-size:.95rem; white-space:pre-wrap; display:none; }
+  .msg.err { background:#fdecec; color:#c0392b; display:block; }
+  .msg.ok  { background:#e7f7ec; color:#0a7f3f; display:block; }
+  .summary { font-size:1rem; line-height:1.7; }
+  .hint { font-size:.75rem; opacity:.65; margin-top:4px; }
+</style>
+</head>
+<body>
+<h1>Place Order</h1>
+
+<div class="card" id="formCard">
+  <label>PIN</label>
+  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="trade PIN">
+
+  <label>Symbol</label>
+  <input id="symbol" type="text" autocapitalize="characters" autocomplete="off" placeholder="RELIANCE / NIFTY24200CE">
+
+  <div class="side">
+    <button type="button" class="buy active" data-side="BUY" onclick="setSide('BUY')">BUY</button>
+    <button type="button" class="sell" data-side="SELL" onclick="setSide('SELL')">SELL</button>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Quantity</label>
+      <input id="qty" type="number" min="1" step="1" value="1">
+    </div>
+    <div>
+      <label>Order type</label>
+      <select id="orderType" onchange="toggleLimit()">
+        <option value="MARKET">MARKET</option>
+        <option value="LIMIT">LIMIT</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="limitWrap">
+    <label>Limit price</label>
+    <input id="limitPrice" type="number" min="0" step="0.05" placeholder="e.g. 2870">
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Product</label>
+      <select id="product">
+        <option value="INTRADAY">INTRADAY</option>
+        <option value="CNC">CNC</option>
+        <option value="MARGIN">MARGIN</option>
+      </select>
+    </div>
+    <div>
+      <label>Exchange</label>
+      <select id="exchange">
+        <option value="NSE">NSE</option>
+        <option value="BSE">BSE</option>
+      </select>
+    </div>
+  </div>
+
+  <button class="primary" id="previewBtn" onclick="preview()">Review order →</button>
+  <div class="hint">MARKET orders are placed as a LIMIT at the live price (INDstocks rule).</div>
+  <div class="msg" id="formMsg"></div>
+</div>
+
+<div class="card" id="confirmCard" style="display:none;">
+  <div class="summary" id="summary"></div>
+  <button class="primary" id="placeBtn" onclick="place()">✅ Confirm & place order</button>
+  <button class="primary" style="background:#888;margin-top:8px;" onclick="back()">← Back</button>
+  <div class="msg" id="confirmMsg"></div>
+</div>
+
+<script>
+let side = "BUY";
+function setSide(s){ side=s;
+  document.querySelectorAll(".side button").forEach(b=>b.classList.toggle("active", b.dataset.side===s)); }
+function toggleLimit(){ document.getElementById("limitWrap").style.display =
+  document.getElementById("orderType").value==="LIMIT" ? "block":"none"; }
+
+function payload(){
+  return {
+    pin: document.getElementById("pin").value,
+    symbol: document.getElementById("symbol").value.trim().toUpperCase(),
+    side: side,
+    quantity: parseInt(document.getElementById("qty").value,10),
+    order_type: document.getElementById("orderType").value,
+    limit_price: parseFloat(document.getElementById("limitPrice").value||"0"),
+    product: document.getElementById("product").value,
+    exchange: document.getElementById("exchange").value
+  };
+}
+function show(id,cls,txt){ const e=document.getElementById(id); e.className="msg "+cls; e.textContent=txt; }
+
+async function preview(){
+  show("formMsg","",""); document.getElementById("formMsg").className="msg";
+  const btn=document.getElementById("previewBtn"); btn.disabled=true;
+  try{
+    const r=await fetch("/trade/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())});
+    const d=await r.json();
+    if(!r.ok){ show("formMsg","err", d.error || ("Error "+r.status)); return; }
+    document.getElementById("summary").innerHTML = d.summary_html;
+    window._order = payload();
+    document.getElementById("formCard").style.display="none";
+    document.getElementById("confirmCard").style.display="block";
+  }catch(e){ show("formMsg","err", String(e)); }
+  finally{ btn.disabled=false; }
+}
+function back(){ document.getElementById("confirmCard").style.display="none";
+  document.getElementById("formCard").style.display="block"; show("confirmMsg","",""); }
+
+async function place(){
+  const btn=document.getElementById("placeBtn"); btn.disabled=true; btn.textContent="Placing…";
+  try{
+    const r=await fetch("/trade/place",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(window._order)});
+    const d=await r.json();
+    if(r.ok && d.status==="ok"){ show("confirmMsg","ok","✅ Order placed. ID: "+(d.order_id||"—")+"\nStatus: "+(d.order_status||"submitted")); }
+    else { show("confirmMsg","err","❌ "+(d.error || d.message || d.order_status || "Rejected")); btn.disabled=false; btn.textContent="✅ Confirm & place order"; }
+  }catch(e){ show("confirmMsg","err", String(e)); btn.disabled=false; btn.textContent="✅ Confirm & place order"; }
+}
+</script>
+</body>
+</html>

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .models import Holding, Position, Fund, Order, Quote
+from .models import Holding, Position, Fund, Order, OrderRequest, Quote
 
 
 class BrokerAdapter(ABC):
@@ -62,4 +62,15 @@ class BrokerAdapter(ABC):
         to_date: str,
     ) -> list[dict]:
         """Return OHLCV candles for the given symbol and date range. Return [] on error."""
+        ...
+
+    @abstractmethod
+    async def place_order(self, req: OrderRequest) -> dict:
+        """Place a new order.
+
+        Returns a uniform dict:
+          {"status": "ok"|"error", "order_id": str|None, "order_status": str|None,
+           "status_code": int|None, "body": <raw>, "message": <on error>}
+        Never raises — errors are returned in the dict.
+        """
         ...

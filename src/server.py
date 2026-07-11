@@ -259,6 +259,7 @@ _http_app = mcp.streamable_http_app()
 _UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
 _LOGIN_TEMPLATE = open(os.path.join(_UI_DIR, "login.html"), encoding="utf-8").read()
 _HOME_TEMPLATE  = open(os.path.join(_UI_DIR, "home.html"),  encoding="utf-8").read()
+_TRADE_TEMPLATE = open(os.path.join(_UI_DIR, "trade.html"), encoding="utf-8").read()
 
 _TOOL_COUNT = len(mcp._tool_manager.list_tools())
 
@@ -287,6 +288,73 @@ async def _send_json(send, status: int, data: dict, extra_headers: list = []) ->
                [b"content-length", str(len(body)).encode()]] + extra_headers
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
+
+
+def _trade_pin_ok(supplied: str) -> bool:
+    """Constant-time compare of the supplied PIN against TRADE_PIN.
+
+    The /trade routes are gated ONLY by this PIN — they deliberately do not use
+    the MCP OAuth/Bearer flow (see the routes in _app). Returns False if
+    TRADE_PIN is unset so the feature is disabled-by-default until configured.
+    """
+    import hmac
+    expected = os.environ.get("TRADE_PIN", "")
+    if not expected:
+        return False
+    return hmac.compare_digest(str(supplied or ""), expected)
+
+
+def _build_order_from_web(data: dict):
+    """Turn the trade page's JSON payload into an OrderRequest (security_id blank).
+
+    Returns (OrderRequest, None) on success or (None, error_message) on bad input.
+    Reuses the same validation vocabulary as the Telegram order_parser.
+    """
+    from src.brokers.models import OrderRequest
+    from src.telegram_admin.order_parser import _is_derivative_symbol
+
+    symbol = str(data.get("symbol", "")).strip().upper()
+    side = str(data.get("side", "")).strip().upper()
+    order_type = str(data.get("order_type", "MARKET")).strip().upper()
+    product = str(data.get("product", "INTRADAY")).strip().upper()
+    exchange = str(data.get("exchange", "NSE")).strip().upper()
+    if not symbol:
+        return None, "Symbol is required."
+    if side not in ("BUY", "SELL"):
+        return None, "Side must be BUY or SELL."
+    try:
+        qty = int(data.get("quantity"))
+    except (TypeError, ValueError):
+        return None, "Quantity must be a whole number."
+    if qty <= 0:
+        return None, "Quantity must be positive."
+    if order_type not in ("MARKET", "LIMIT"):
+        return None, "Order type must be MARKET or LIMIT."
+    if product not in ("CNC", "INTRADAY", "MARGIN"):
+        return None, "Product must be CNC, INTRADAY or MARGIN."
+    if exchange not in ("NSE", "BSE"):
+        return None, "Exchange must be NSE or BSE."
+    limit_price = 0.0
+    if order_type == "LIMIT":
+        try:
+            limit_price = float(data.get("limit_price") or 0)
+        except (TypeError, ValueError):
+            return None, "Invalid limit price."
+        if limit_price <= 0:
+            return None, "LIMIT orders need a positive price."
+
+    req = OrderRequest(
+        security_id="",
+        exchange=exchange,
+        segment="DERIVATIVE" if _is_derivative_symbol(symbol) else "EQUITY",
+        transaction_type=side,
+        quantity=qty,
+        order_type=order_type,
+        product=product,
+        limit_price=limit_price,
+        symbol=symbol,
+    )
+    return req, None
 
 
 _oauth_codes = {}
@@ -772,6 +840,71 @@ async def _app(scope, receive, send):
             logger.info("Logout: %s", uid)
             await _send_json(send, 200, {"logged_out": True, "user_id": uid},
                              extra_headers=[[b"set-cookie", b"mcp_uid=; Path=/; Max-Age=0; SameSite=Strict"]])
+            return
+
+        # ── Mobile order-placement web app (Phase 23) ──────────────────────
+        # PIN-gated, independent of the MCP OAuth/Bearer flow. The GET serves
+        # the form; /trade/preview validates + echoes a confirm summary (no
+        # order placed); /trade/place is the only route that fires an order,
+        # so every order requires an explicit second request ("confirm every
+        # order"). These sit before the MCP fall-through and never touch
+        # current_user — TRADE_PIN is the sole gate.
+        if path == "/trade" and method == "GET":
+            await _send_html(send, 200, _TRADE_TEMPLATE)
+            return
+
+        if path == "/trade/preview" and method == "POST":
+            raw = await _read_body(receive)
+            try:
+                data = json.loads(raw.decode()) if raw else {}
+            except Exception:
+                await _send_json(send, 400, {"error": "invalid JSON"})
+                return
+            if not _trade_pin_ok(data.get("pin", "")):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            req, err = _build_order_from_web(data)
+            if err:
+                await _send_json(send, 400, {"error": err})
+                return
+            price = ("at market (auto-LIMIT @ live price)" if req.order_type == "MARKET"
+                     else f"LIMIT @ ₹{req.limit_price:g}")
+            summary_html = (
+                f"<b>{req.transaction_type} {req.symbol}</b><br>"
+                f"Qty: <b>{req.quantity}</b><br>{price}<br>"
+                f"Product: {req.product} &nbsp;|&nbsp; {req.exchange} {req.segment}"
+            )
+            await _send_json(send, 200, {"ok": True, "summary_html": summary_html})
+            return
+
+        if path == "/trade/place" and method == "POST":
+            raw = await _read_body(receive)
+            try:
+                data = json.loads(raw.decode()) if raw else {}
+            except Exception:
+                await _send_json(send, 400, {"error": "invalid JSON"})
+                return
+            if not _trade_pin_ok(data.get("pin", "")):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            req, err = _build_order_from_web(data)
+            if err:
+                await _send_json(send, 400, {"error": err})
+                return
+            from src.execution.service import submit_order, resolve_symbol
+            try:
+                sec_id = await resolve_symbol(req.symbol, exchange=req.exchange, segment=req.segment)
+            except Exception as exc:
+                await _send_json(send, 502, {"error": f"symbol resolution failed: {exc}"})
+                return
+            if not sec_id:
+                await _send_json(send, 400, {
+                    "error": f"Symbol '{req.symbol}' not found in {req.exchange} {req.segment} instruments."})
+                return
+            req.security_id = sec_id
+            result = await submit_order(req, source="web", user_id=os.environ.get("ZERODHA_USER_ID"))
+            status = 200 if result.get("status") == "ok" else 502
+            await _send_json(send, status, result)
             return
 
         if path == "/sse" or path.startswith("/messages"):

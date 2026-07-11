@@ -2,7 +2,13 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Update, Message, User
 from telegram.ext import ContextTypes
-from src.telegram_admin.handlers import status_command
+from src.telegram_admin.handlers import (
+    status_command,
+    buy_command,
+    order_confirm_callback,
+)
+
+ADMIN_ID = 1344481918
 
 @pytest.mark.anyio
 async def test_status_command_success():
@@ -42,3 +48,112 @@ async def test_status_command_success():
         assert "**Uptime**: 10h ago" in reply_msg
         assert "**Memory**: `50M`" in reply_msg
         assert "**Latest Log**: `Started Zerodha MCP`" in reply_msg
+
+
+# ---------------------------------------------------------------------------
+# Phase 23 — trading command handlers
+# ---------------------------------------------------------------------------
+
+def _admin_update_with_message():
+    update = MagicMock(spec=Update)
+    message = AsyncMock(spec=Message)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    user.username = "admin_user"
+    update.effective_user = user
+    update.message = message
+    return update, message
+
+
+@pytest.mark.anyio
+async def test_buy_command_resolves_and_prompts_confirmation():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["RELIANCE", "1", "LIMIT", "2870"]
+    context.user_data = {}
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.resolve_symbol", AsyncMock(return_value="2885")):
+        await buy_command(update, context)
+
+    # pending order stashed with the resolved security_id, awaiting confirmation
+    pending = context.user_data.get("pending_order")
+    assert pending is not None
+    assert pending.security_id == "2885"
+    assert pending.transaction_type == "BUY"
+    assert pending.limit_price == 2870.0
+    # a confirm keyboard was sent — no order placed yet
+    assert message.reply_text.called
+    assert message.reply_text.call_args.kwargs.get("reply_markup") is not None
+
+
+@pytest.mark.anyio
+async def test_buy_command_unknown_symbol_no_pending():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["MADEUPSYM", "1"]
+    context.user_data = {}
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.resolve_symbol", AsyncMock(return_value=None)):
+        await buy_command(update, context)
+
+    assert "pending_order" not in context.user_data
+    assert message.reply_text.called
+    assert "not found" in message.reply_text.call_args[0][0]
+
+
+@pytest.mark.anyio
+async def test_order_confirm_yes_places_order():
+    from src.brokers.models import OrderRequest
+    query = AsyncMock()
+    query.data = "order_confirm:yes"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    user.username = "admin_user"
+    update.effective_user = user
+    update.callback_query = query
+
+    req = OrderRequest(security_id="2885", exchange="NSE", segment="EQUITY",
+                       transaction_type="BUY", quantity=1, symbol="RELIANCE")
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.user_data = {"pending_order": req}
+
+    placed = {"status": "ok", "order_id": "DRV-1", "order_status": "O-PENDING"}
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        await order_confirm_callback(update, context)
+
+    sub.assert_awaited_once()
+    assert sub.call_args.kwargs["source"] == "telegram"
+    assert "pending_order" not in context.user_data  # consumed
+    # success message mentions the order id
+    assert any("DRV-1" in str(c.args[0]) for c in query.message.reply_text.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_order_confirm_no_cancels_without_placing():
+    from src.brokers.models import OrderRequest
+    query = AsyncMock()
+    query.data = "order_confirm:no"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.callback_query = query
+
+    req = OrderRequest(security_id="1", exchange="NSE", segment="EQUITY",
+                       transaction_type="BUY", quantity=1, symbol="TCS")
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.user_data = {"pending_order": req}
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.submit_order", AsyncMock()) as sub:
+        await order_confirm_callback(update, context)
+
+    sub.assert_not_awaited()
+    assert "pending_order" not in context.user_data
+    query.message.edit_text.assert_awaited()  # "Order cancelled."

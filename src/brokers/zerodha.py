@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from .base import BrokerAdapter
-from .models import Holding, Position, Fund, Order, Quote
+from .models import Holding, Position, Fund, Order, OrderRequest, Quote
 
 logger = logging.getLogger(__name__)
 
@@ -174,3 +174,12 @@ class ZerodhaBroker(BrokerAdapter):
         except Exception as exc:
             logger.debug("ZerodhaBroker.get_historical_data error: %s", exc)
             return []
+
+    async def place_order(self, req: OrderRequest) -> dict:
+        # Order placement in this stack is routed through INDmoney (no Kite
+        # Connect subscription on this account). Kept concrete so the class
+        # satisfies BrokerAdapter; never places a real Zerodha order.
+        return {
+            "status": "error",
+            "message": "order placement via INDmoney only; Zerodha execution not available",
+        }
