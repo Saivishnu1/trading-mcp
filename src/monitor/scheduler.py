@@ -29,7 +29,7 @@ class MarketMonitor:
     # Slowest possible adaptive interval (see get_poll_interval) — used as the
     # staleness threshold since get_monitor_status() can't know which interval
     # was actually active on the last loop iteration.
-    MAX_POLL_INTERVAL_SECONDS = 900
+    MAX_POLL_INTERVAL_SECONDS = 300
     STALE_AFTER_SECONDS = MAX_POLL_INTERVAL_SECONDS * 2
 
     def __init__(self):
@@ -42,14 +42,20 @@ class MarketMonitor:
         self.live_prices = LivePriceCache()
 
     def get_poll_interval(self, min_dte: int, max_premium: float) -> int:
+        # Piece C (2026-07-11) — the far-DTE tier was 900s (15 min), a real
+        # detection-delay risk for market-condition checks (wall-break/PCR/
+        # macro) since those still only run once per tick (position-level
+        # SL/profit checks no longer wait on this loop at all — see
+        # PositionPriceCache's on_tick in position_tracker.py). Lowered to
+        # 300s: a meaningful cut to worst-case staleness without tripling+
+        # the NSE/BSE option-chain REST call rate the way dropping to 60s
+        # everywhere would.
         if min_dte == 0:
             base = 60
         elif min_dte == 1:
             base = 120
-        elif min_dte <= 3:
-            base = 300
         else:
-            base = 900
+            base = 300
 
         if max_premium > 200:
             premium_interval = 60
