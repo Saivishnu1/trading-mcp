@@ -259,6 +259,56 @@ async def test_search_command_no_matches():
     assert "No symbols found" in message.reply_text.call_args[0][0]
 
 
+@pytest.mark.anyio
+async def test_search_command_bare_tap_forces_reply_keyboard():
+    """Tapping /search from the "/" picker sends it with zero args — the
+    usage reply must use ForceReply so it's obvious typing (not another
+    tap) is what's needed next (2026-07-11: this is what "I click search
+    and can't type after the symbol" was actually describing)."""
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = []
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await search_command(update, context)
+
+    call = message.reply_text.call_args
+    assert "Usage" in call.args[0]
+    assert "reply_markup" in call.kwargs
+    assert call.kwargs["reply_markup"].force_reply is True
+
+
+@pytest.mark.anyio
+async def test_buy_command_bare_tap_forces_reply_keyboard():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = []
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await buy_command(update, context)
+
+    call = message.reply_text.call_args
+    assert "Usage" in call.args[0]
+    assert "reply_markup" in call.kwargs
+    assert call.kwargs["reply_markup"].force_reply is True
+
+
+@pytest.mark.anyio
+async def test_buy_command_bad_args_does_not_force_reply():
+    """A typo/mistake (some args present, just wrong) is a different signal
+    than a bare tap — don't force the reply keyboard, the usage hint alone
+    is enough since the user was already typing."""
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["RELIANCE", "notanumber"]
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await buy_command(update, context)
+
+    call = message.reply_text.call_args
+    assert "reply_markup" not in call.kwargs or call.kwargs.get("reply_markup") is None
+
+
 # ---------------------------------------------------------------------------
 # /admin menu — categorized navigation over rarely-used admin/ops commands
 # ---------------------------------------------------------------------------
@@ -353,7 +403,12 @@ async def test_admin_cmd_callback_replies_with_command_to_type():
     with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
         await admin_cmd_callback(update, context)
 
-    query.message.reply_text.assert_awaited_once_with("Type: /restart")
+    query.message.reply_text.assert_awaited_once()
+    call = query.message.reply_text.call_args
+    assert call.args[0] == "Type: /restart"
+    # ForceReply pops the client's keyboard open — the fix for "tapping a
+    # menu item sends it immediately, I can't type args after" (2026-07-11).
+    assert "reply_markup" in call.kwargs
 
 
 @pytest.mark.anyio

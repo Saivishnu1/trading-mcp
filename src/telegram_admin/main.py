@@ -44,9 +44,17 @@ logger = logging.getLogger(__name__)
 # menu instead of cluttering this list. See keyboards.py::ADMIN_CATEGORIES.
 _BOT_COMMANDS = [
     BotCommand("start", "Show the welcome message and command list"),
-    BotCommand("search", "Find the exact tradable symbol"),
-    BotCommand("buy", "Place a buy order (confirmed)"),
-    BotCommand("sell", "Place a sell order (confirmed)"),
+    # Telegram's "/" picker SENDS the command immediately on tap — there is
+    # no client-side "insert without sending" gesture (a Bot API/client
+    # limitation, not something set_my_commands controls). For commands
+    # that need typed arguments, tapping the row just sends the bare
+    # command and the bot bounces back a usage hint, which reads as "it
+    # ate my tap and I can't type anything." The description now says
+    # "(type args, don't tap)" so the picker itself signals this before
+    # you tap it (2026-07-11).
+    BotCommand("search", "Type: /search TEXT — don't tap, needs args"),
+    BotCommand("buy", "Type: /buy SYMBOL QTY ... — don't tap, needs args"),
+    BotCommand("sell", "Type: /sell SYMBOL QTY ... — don't tap, needs args"),
     BotCommand("positions", "Show open positions"),
     BotCommand("orders", "Show today's order book"),
     BotCommand("env", "Edit environment variables"),

@@ -6,7 +6,7 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from telegram import Update
+from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
 from src.telegram_admin.auth import admin_only
 from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH, SERVICE_NAME, reload_config
@@ -573,7 +573,10 @@ async def admin_cmd_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     try:
         command = (query.data or "").split(":", 1)[1]
-        await query.message.reply_text(f"Type: {command}")
+        await query.message.reply_text(
+            f"Type: {command}",
+            reply_markup=ForceReply(selective=True, input_field_placeholder=command),
+        )
     except Exception as exc:
         logger.error("Error in admin_cmd_callback: %s", exc, exc_info=True)
         await query.message.reply_text(f"❌ Error: {exc}")
@@ -588,7 +591,16 @@ async def _handle_order_command(update: Update, context: ContextTypes.DEFAULT_TY
     prompt for YES/NO confirmation. The order is only placed on confirmation."""
     parsed = parse_order_args(context.args or [], side)
     if isinstance(parsed, ParseError):
-        await update.message.reply_text(parsed.message)
+        if not context.args:
+            # Bare tap from the "/" picker (no args at all) — ForceReply
+            # makes it obvious typing is expected, not another tap
+            # (2026-07-11, see search_command for the same reasoning).
+            await update.message.reply_text(
+                parsed.message,
+                reply_markup=ForceReply(selective=True, input_field_placeholder="RELIANCE 1 LIMIT 2870"),
+            )
+        else:
+            await update.message.reply_text(parsed.message)
         return
 
     # Resolve the trading symbol → INDstocks security_id before confirming, so a
@@ -728,7 +740,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         query = " ".join(context.args or []).strip()
         if len(query) < 2:
-            await update.message.reply_text("Usage: /search TEXT (at least 2 characters)\ne.g. /search reliance")
+            # ForceReply pops the client's keyboard open with focus on this
+            # message — the clearest signal that typing (not tapping) is
+            # what's needed here (2026-07-11: tapping /search from the "/"
+            # picker sends it bare immediately, no way to add text after).
+            await update.message.reply_text(
+                "Usage: /search TEXT (at least 2 characters)\ne.g. /search reliance",
+                reply_markup=ForceReply(selective=True, input_field_placeholder="reliance"),
+            )
             return
         from src.execution.service import search_symbols
         results = await search_symbols(query)
