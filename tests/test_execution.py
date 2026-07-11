@@ -227,6 +227,30 @@ class TestResolveSecurityId:
             assert await b2.resolve_security_id("TCS") == "1"
         indmoney_module._instrument_cache.clear()
 
+    @pytest.mark.anyio
+    async def test_warm_instrument_cache_fetches_both_sources_concurrently(self):
+        # Startup pre-warm (server.py / telegram_admin/main.py) must not
+        # serialize the two source fetches — that would defeat the purpose
+        # of warming ahead of the user's first search.
+        import asyncio
+        import time
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+
+        async def slow_get(source):
+            await asyncio.sleep(0.1)
+            return [{"TRADING_SYMBOL": source.upper(), "SECURITY_ID": "1"}]
+
+        with patch.object(b, "get_instruments", slow_get):
+            start = time.monotonic()
+            await b.warm_instrument_cache()
+            elapsed = time.monotonic() - start
+        assert elapsed < 0.17
+        assert "equity" in indmoney_module._instrument_cache
+        assert "fno" in indmoney_module._instrument_cache
+        indmoney_module._instrument_cache.clear()
+
 
 # ---------------------------------------------------------------------------
 # search_instruments (broker) / search_symbols (execution service)
@@ -313,6 +337,31 @@ class TestSearchSymbols:
         with patch.object(svc, "get_broker_adapter", return_value=adapter):
             await svc.search_symbols("nifty", segment="DERIVATIVE")
         assert called_sources == ["fno"]
+
+    @pytest.mark.anyio
+    async def test_equity_and_fno_searched_concurrently_not_sequentially(self):
+        # Perf regression guard: without a segment hint, equity+fno must run
+        # via asyncio.gather (concurrently), not one `await` after another —
+        # on a cold instrument-cache this was the dominant cost of a "slow"
+        # search (two ~sequential CSV downloads instead of one wall-clock wait).
+        import asyncio
+        import time
+        import src.execution.service as svc
+        adapter = MagicMock()
+
+        async def slow_search(query, source="equity", limit=15):
+            await asyncio.sleep(0.1)
+            return [{"symbol": source.upper(), "name": "", "exchange": "NSE", "segment": ""}]
+
+        adapter.search_instruments = slow_search
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            start = time.monotonic()
+            await svc.search_symbols("test")
+            elapsed = time.monotonic() - start
+        # Sequential would take ~0.2s; concurrent should take ~0.1s. Generous
+        # threshold to avoid CI flakiness while still catching a regression
+        # to sequential awaits.
+        assert elapsed < 0.17, f"search_symbols took {elapsed:.3f}s — sources may be running sequentially"
 
 
 # ---------------------------------------------------------------------------

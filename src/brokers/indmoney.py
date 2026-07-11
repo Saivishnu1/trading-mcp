@@ -6,6 +6,7 @@ Rate limits: Data APIs 5/sec, 100k/day; Non-trading 15/sec.
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
@@ -390,6 +391,15 @@ class INDmoneyBroker(BrokerAdapter):
         normalized = [{str(k).strip().upper(): v for k, v in row.items()} for row in rows]
         _instrument_cache[source] = (now, normalized)
         return normalized
+
+    async def warm_instrument_cache(self, sources: tuple[str, ...] = ("equity", "fno")) -> None:
+        """Pre-fetch instrument masters for the given sources, in parallel.
+
+        Call once at process startup (web server / Telegram bot) so the
+        first live /search or /buy doesn't pay the full CSV download —
+        previously the dominant cost behind a "slow" first search of the day.
+        """
+        await asyncio.gather(*(self._cached_instruments(s) for s in sources))
 
     async def resolve_security_id(self, symbol: str, source: str = "equity") -> str | None:
         """Resolve a trading symbol to its INDstocks ``security_id``.

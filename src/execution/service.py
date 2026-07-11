@@ -9,6 +9,7 @@ logic is never duplicated. It:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from src.brokers.factory import get_broker_adapter
@@ -36,17 +37,24 @@ async def search_symbols(query: str, *, segment: str | None = None, limit: int =
     """Search tradable symbols for autocomplete/dropdown UIs (web + Telegram).
 
     Without a segment hint, searches both the equity and fno instrument
-    masters and interleaves results so a bare stock query ("RELIANCE") and an
-    options query ("NIFTY24200CE") both work from one search box.
+    masters IN PARALLEL (asyncio.gather — these are two independent HTTP/cache
+    lookups with no shared state) and interleaves results so a bare stock
+    query ("RELIANCE") and an options query ("NIFTY24200CE") both work from
+    one search box. On a cold cache this halves worst-case latency versus
+    awaiting the two sources one after another.
     """
     broker = get_broker_adapter("indmoney")
     sources = ["fno" if segment and segment.upper() == "DERIVATIVE" else "equity"] \
         if segment else ["equity", "fno"]
 
+    per_source = await asyncio.gather(
+        *(broker.search_instruments(query, source=source, limit=limit) for source in sources)
+    )
+
     seen: set[str] = set()
     results: list[dict] = []
-    for source in sources:
-        for row in await broker.search_instruments(query, source=source, limit=limit):
+    for source, rows in zip(sources, per_source):
+        for row in rows:
             if row["symbol"] in seen:
                 continue
             seen.add(row["symbol"])

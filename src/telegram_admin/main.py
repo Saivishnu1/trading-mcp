@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from telegram import BotCommand
@@ -55,8 +56,25 @@ _BOT_COMMANDS = [
 ]
 
 
+async def _warm_instrument_cache() -> None:
+    """Pre-fetch the equity + fno instrument masters so the FIRST /search or
+    /buy of the day doesn't pay the full CSV download (previously the
+    dominant cost of a "slow" search — see src/brokers/indmoney.py's
+    process-wide TTL cache). Runs once at startup; failures are logged and
+    swallowed since /search/resolve still work, just slower, on cache miss.
+    """
+    try:
+        from src.brokers.factory import get_broker_adapter
+        await get_broker_adapter("indmoney").warm_instrument_cache()
+        logger.info("Instrument cache pre-warmed (equity + fno).")
+    except Exception as exc:
+        logger.warning("Instrument cache warm-up failed (will lazy-load on first search): %s", exc)
+
+
 async def _post_init(application: Application) -> None:
     await application.bot.set_my_commands(_BOT_COMMANDS)
+    # Fire-and-forget so bot startup isn't blocked by the instrument download.
+    asyncio.create_task(_warm_instrument_cache())
 
 
 def main() -> None:

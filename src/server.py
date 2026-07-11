@@ -102,6 +102,34 @@ except Exception as exc:
     logger.warning("Calendar background refresh error: %s", exc)
 
 
+def _warm_instrument_cache_background() -> None:
+    """Pre-fetch the INDstocks equity + fno instrument masters on startup so
+    the FIRST /trade search of the day doesn't pay the full CSV download —
+    previously the dominant cost behind a "slow" first search (see the
+    process-wide TTL cache in src/brokers/indmoney.py). Own thread + own
+    event loop (asyncio.run) since this runs before the main app's event
+    loop exists, mirroring _refresh_calendar_background()'s pattern.
+    """
+    import threading
+
+    def _run() -> None:
+        try:
+            import asyncio
+            from src.brokers.factory import get_broker_adapter
+            asyncio.run(get_broker_adapter("indmoney").warm_instrument_cache())
+            logger.info("Instrument cache pre-warmed (equity + fno).")
+        except Exception as exc:
+            logger.warning("Instrument cache warm-up failed (will lazy-load on first search): %s", exc)
+
+    threading.Thread(target=_run, daemon=True, name="instrument-cache-warmup").start()
+
+
+try:
+    _warm_instrument_cache_background()
+except Exception as exc:
+    logger.warning("Instrument cache warm-up error: %s", exc)
+
+
 _public_host = os.environ.get("PUBLIC_HOST", "")
 _allowed_hosts = ["localhost", "localhost:8000", "127.0.0.1", "127.0.0.1:8000"]
 if _public_host:
