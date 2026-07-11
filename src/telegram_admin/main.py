@@ -1,9 +1,11 @@
 import logging
 import os
+from telegram import BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from src.telegram_admin.config import BOT_TOKEN
 from src.telegram_admin.handlers import (
     start_command,
+    help_command,
     restart_command,
     cmd_restart_callback,
     show_command,
@@ -30,6 +32,37 @@ from src.telegram_admin.conversation import env_conversation_handler
 
 logger = logging.getLogger(__name__)
 
+# Shown in Telegram's native "/" autocomplete menu — lets you see every
+# command without remembering them, complementing the /help text dump.
+_BOT_COMMANDS = [
+    BotCommand("start", "Show the welcome message and command list"),
+    BotCommand("search", "Find the exact tradable symbol"),
+    BotCommand("buy", "Place a buy order (confirmed)"),
+    BotCommand("sell", "Place a sell order (confirmed)"),
+    BotCommand("positions", "Show open positions"),
+    BotCommand("orders", "Show today's order book"),
+    BotCommand("env", "Edit environment variables"),
+    BotCommand("show", "Show current variables (secrets masked)"),
+    BotCommand("status", "Get structured service status"),
+    BotCommand("health", "Run systemctl & HTTP API health check"),
+    BotCommand("restart", "Restart zerodha-mcp and zerodha-monitor"),
+    BotCommand("reload", "Re-read .env file configurations"),
+    BotCommand("tail", "View last N logs (default 20)"),
+    BotCommand("logs", "View last 20 logs (shortcut)"),
+    BotCommand("backup", "Create a safe backup (excludes secrets)"),
+    BotCommand("backup_env", "Create a sensitive backup of .env file"),
+    BotCommand("disk", "Check disk, RAM, CPU load info"),
+    BotCommand("uptime", "Check Oracle VM and service uptimes"),
+    BotCommand("ip", "Get public and private IPs"),
+    BotCommand("cancel", "Cancel active operation"),
+    BotCommand("help", "Show the full command list"),
+]
+
+
+async def _post_init(application: Application) -> None:
+    await application.bot.set_my_commands(_BOT_COMMANDS)
+
+
 def main() -> None:
     """Initializes and runs the Telegram Admin bot."""
     if not BOT_TOKEN:
@@ -40,7 +73,7 @@ def main() -> None:
         return
 
     # Build the telegram application
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
 
     # Add the conversation handler for /env command
     application.add_handler(env_conversation_handler)
@@ -55,6 +88,7 @@ def main() -> None:
 
     # Add other administrative command handlers
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("restart", restart_command))
     application.add_handler(CallbackQueryHandler(cmd_restart_callback, pattern="^cmd_restart:"))
     application.add_handler(CommandHandler("show", show_command))

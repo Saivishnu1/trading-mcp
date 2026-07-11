@@ -7,9 +7,58 @@ from src.telegram_admin.handlers import (
     buy_command,
     order_confirm_callback,
     search_command,
+    help_command,
+    start_command,
 )
 
 ADMIN_ID = 1344481918
+
+
+@pytest.mark.anyio
+async def test_help_command_lists_all_commands():
+    """/help exists so the command list is available on demand, not just at
+    /start — must cover every command actually registered in main.py, not
+    drift out of sync as new ones get added."""
+    update = MagicMock(spec=Update)
+    message = AsyncMock(spec=Message)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.message = message
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await help_command(update, context)
+
+    message.reply_text.assert_called_once()
+    reply_msg = message.reply_text.call_args[0][0]
+    for cmd in (
+        "/search", "/buy", "/sell", "/positions", "/orders",
+        "/env", "/show", "/status", "/health", "/restart", "/reload",
+        "/tail", "/logs", "/backup", "/backup_env", "/disk", "/uptime",
+        "/ip", "/cancel", "/help",
+    ):
+        assert cmd in reply_msg, f"{cmd} missing from /help output"
+
+
+@pytest.mark.anyio
+async def test_start_and_help_return_identical_message():
+    update = MagicMock(spec=Update)
+    message = AsyncMock(spec=Message)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.message = message
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await start_command(update, context)
+        start_msg = message.reply_text.call_args[0][0]
+        message.reply_text.reset_mock()
+        await help_command(update, context)
+        help_msg = message.reply_text.call_args[0][0]
+
+    assert start_msg == help_msg
 
 @pytest.mark.anyio
 async def test_status_command_success():

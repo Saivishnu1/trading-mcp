@@ -22,37 +22,52 @@ from src.telegram_admin.utils import split_message
 
 logger = logging.getLogger(__name__)
 
+_COMMAND_LIST_MESSAGE = (
+    "✅ Zerodha MCP Admin Bot\n\n"
+    "📈 Trading:\n\n"
+    "/search TEXT - Find the exact tradable symbol (do this first!)\n"
+    "/buy SYM QTY [MARKET|LIMIT price] - Place a buy order (confirmed)\n"
+    "/sell SYM QTY [MARKET|LIMIT price] - Place a sell order (confirmed)\n"
+    "/positions   - Show open positions\n"
+    "/orders      - Show today's order book\n\n"
+    "🛠 Admin:\n\n"
+    "/env         - Edit environment variables\n"
+    "/show        - Show current variables (secrets masked)\n"
+    "/status      - Get structured service status\n"
+    "/health      - Run systemctl & HTTP API health check\n"
+    "/restart     - Restart zerodha-mcp and zerodha-monitor\n"
+    "/reload      - Re-read .env file configurations\n"
+    "/tail [N]    - View last N logs (default 20)\n"
+    "/logs        - View last 20 logs (shortcut)\n"
+    "/backup      - Create a safe backup (excludes secrets)\n"
+    "/backup_env  - Create a sensitive backup of .env file\n"
+    "/disk        - Check disk, RAM, CPU load info\n"
+    "/uptime      - Check Oracle VM and service uptimes\n"
+    "/ip          - Get public and private IPs\n"
+    "/cancel      - Cancel active operation\n"
+    "/help        - Show this command list"
+)
+
+
 @admin_only
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Replies to the /start command with the welcome message and available commands."""
     try:
-        msg = (
-            "✅ Zerodha MCP Admin Bot\n\n"
-            "📈 Trading:\n\n"
-            "/search TEXT - Find the exact tradable symbol (do this first!)\n"
-            "/buy SYM QTY [MARKET|LIMIT price] - Place a buy order (confirmed)\n"
-            "/sell SYM QTY [MARKET|LIMIT price] - Place a sell order (confirmed)\n"
-            "/positions   - Show open positions\n"
-            "/orders      - Show today's order book\n\n"
-            "🛠 Admin:\n\n"
-            "/env         - Edit environment variables\n"
-            "/show        - Show current variables (secrets masked)\n"
-            "/status      - Get structured service status\n"
-            "/health      - Run systemctl & HTTP API health check\n"
-            "/restart     - Restart zerodha-mcp and zerodha-monitor\n"
-            "/reload      - Re-read .env file configurations\n"
-            "/tail [N]    - View last N logs (default 20)\n"
-            "/logs        - View last 20 logs (shortcut)\n"
-            "/backup      - Create a safe backup (excludes secrets)\n"
-            "/backup_env  - Create a sensitive backup of .env file\n"
-            "/disk        - Check disk, RAM, CPU load info\n"
-            "/uptime      - Check Oracle VM and service uptimes\n"
-            "/ip          - Get public and private IPs\n"
-            "/cancel      - Cancel active operation"
-        )
-        await update.message.reply_text(msg)
+        await update.message.reply_text(_COMMAND_LIST_MESSAGE)
     except Exception as exc:
         logger.error("Error in start_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error: {exc}")
+
+
+@admin_only
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Replies to /help with the same command list as /start — for when you
+    forget what the bot can do mid-session, without re-triggering /start's
+    welcome framing."""
+    try:
+        await update.message.reply_text(_COMMAND_LIST_MESSAGE)
+    except Exception as exc:
+        logger.error("Error in help_command: %s", exc, exc_info=True)
         await update.message.reply_text(f"❌ Error: {exc}")
 
 @admin_only
