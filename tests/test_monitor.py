@@ -541,10 +541,14 @@ class TestAdaptivePolling:
         assert self.monitor.get_poll_interval(min_dte=1, max_premium=10) == 120
 
     def test_far_dte_low_premium(self):
-        assert self.monitor.get_poll_interval(min_dte=10, max_premium=10) == 900
+        # Piece C (2026-07-11) — far-DTE ceiling lowered 900s -> 300s
+        assert self.monitor.get_poll_interval(min_dte=10, max_premium=10) == 300
 
     def test_far_dte_high_premium_overrides_to_faster(self):
         assert self.monitor.get_poll_interval(min_dte=10, max_premium=250) == 60
+
+    def test_dte_between_2_and_far_also_uses_300s_tier(self):
+        assert self.monitor.get_poll_interval(min_dte=3, max_premium=10) == 300
 
     def test_is_market_open_boundaries(self):
         assert self.monitor.MARKET_OPEN.hour == 9 and self.monitor.MARKET_OPEN.minute == 15
@@ -883,6 +887,114 @@ class TestPositionTrackerDTETimezone:
             await tracker.check_positions({"id": "u1"}, vix=13.0)
 
         assert captured_dte["dte"] == 0
+
+
+class TestPositionTrackerLivePriceWiring:
+    """Piece C — check_positions()'s premium source and the event-driven
+    on_tick path that lets an SL/profit-milestone check fire the moment a
+    price ticks, instead of waiting for the next poll (up to 300s away)."""
+
+    def _make_tracker(self, position=None):
+        from src.monitor.position_tracker import PositionTracker
+        repo = AsyncMock()
+        repo.get_active_positions.return_value = [position] if position else []
+        repo.get_user_settings.return_value = {
+            "profit_alert_pct": 0.5, "cooldown_trailing": 300, "cooldown_profit": 86400,
+        }
+        repo.get_peak.return_value = None
+        return PositionTracker(repo=repo), repo
+
+    def _pos(self, pos_id="pos-1"):
+        return {
+            "id": pos_id, "broker": "indmoney", "symbol": "BANKNIFTY",
+            "expiry": "2026-07-30", "strike": 52000.0, "option_type": "CE",
+            "entry_premium": 42.5, "qty": 75, "spot": 0.0,
+        }
+
+    @pytest.mark.anyio
+    async def test_check_positions_refreshes_price_cache_subscriptions(self):
+        tracker, repo = self._make_tracker(self._pos())
+        tracker.price_cache.refresh_subscriptions = AsyncMock()
+        tracker._get_current_premium = AsyncMock(return_value=None)
+
+        await tracker.check_positions({"id": "u1"}, vix=13.0)
+
+        tracker.price_cache.refresh_subscriptions.assert_awaited_once_with([self._pos()])
+
+    @pytest.mark.anyio
+    async def test_check_positions_survives_refresh_subscriptions_failure(self):
+        tracker, repo = self._make_tracker(self._pos())
+        tracker.price_cache.refresh_subscriptions = AsyncMock(side_effect=RuntimeError("WS down"))
+        tracker._get_current_premium = AsyncMock(return_value=None)
+
+        await tracker.check_positions({"id": "u1"}, vix=13.0)  # must not raise
+
+    @pytest.mark.anyio
+    async def test_get_current_premium_prefers_cache_over_rest(self):
+        tracker, repo = self._make_tracker()
+        pos = self._pos()
+        tracker.price_cache.get = MagicMock(return_value=99.5)
+
+        with patch("src.monitor.position_tracker.INDmoneyBroker") as mock_cls:
+            result = await tracker._get_current_premium(pos)
+
+        assert result == 99.5
+        mock_cls.assert_not_called()  # cache hit — no REST fallback needed
+
+    @pytest.mark.anyio
+    async def test_on_tick_evaluates_position_using_stored_context(self):
+        tracker, repo = self._make_tracker(self._pos())
+        repo.get_user_settings.return_value = {
+            "profit_alert_pct": 0.5, "cooldown_trailing": 300, "cooldown_profit": 86400,
+        }
+        tracker.price_cache.refresh_subscriptions = AsyncMock()
+        tracker._get_current_premium = AsyncMock(return_value=None)  # no cache hit on the poll pass
+
+        # Populate _position_context the way check_positions() does.
+        await tracker.check_positions({"id": "u1"}, vix=13.0)
+        assert "pos-1" in tracker._position_context
+
+        evaluated = []
+        tracker._evaluate_position = AsyncMock(side_effect=lambda *a: evaluated.append(a))
+
+        await tracker._on_price_tick("pos-1", 55.0)
+
+        assert len(evaluated) == 1
+        user_arg, settings_arg, pos_arg, premium_arg, vix_arg = evaluated[0]
+        assert user_arg == {"id": "u1"}
+        assert pos_arg["id"] == "pos-1"
+        assert premium_arg == 55.0
+        assert vix_arg == 13.0
+
+    @pytest.mark.anyio
+    async def test_on_tick_no_op_for_unknown_position(self):
+        tracker, repo = self._make_tracker()
+        tracker._evaluate_position = AsyncMock()
+
+        await tracker._on_price_tick("never-subscribed", 55.0)
+
+        tracker._evaluate_position.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_on_tick_no_op_when_position_closed_since_context_refresh(self):
+        tracker, repo = self._make_tracker(self._pos())
+        tracker.price_cache.refresh_subscriptions = AsyncMock()
+        tracker._get_current_premium = AsyncMock(return_value=None)
+        await tracker.check_positions({"id": "u1"}, vix=13.0)
+
+        repo.get_active_positions.return_value = []  # position closed
+        tracker._evaluate_position = AsyncMock()
+
+        await tracker._on_price_tick("pos-1", 55.0)
+
+        tracker._evaluate_position.assert_not_awaited()
+
+    def test_lock_for_returns_same_lock_for_same_position(self):
+        tracker, _ = self._make_tracker()
+        lock1 = tracker._lock_for("pos-1")
+        lock2 = tracker._lock_for("pos-1")
+        assert lock1 is lock2
+
 
 class TestBriefDedup:
     def setup_method(self):
@@ -1262,8 +1374,10 @@ class TestSyncFromBrokerIndmoneyFallback:
     @pytest.mark.anyio
     async def test_indmoney_position_then_tracked_for_trailing_sl(self):
         """Once synced, the position (broker='indmoney') must flow through
-        check_positions like any other tracked position — trailing SL logic
-        is broker-agnostic and dispatches via get_broker_adapter(pos['broker'])."""
+        check_positions like any other tracked position — price fetching is
+        broker-agnostic (resolves via the F&O instrument resolver + a direct
+        INDmoney quote, not get_broker_adapter(pos['broker']) — see
+        position_price_feed.py's module docstring for why)."""
         from src.monitor.position_tracker import PositionTracker
 
         repo = AsyncMock()
@@ -1287,14 +1401,17 @@ class TestSyncFromBrokerIndmoneyFallback:
 
         tracker = PositionTracker(repo=repo)
 
-        indmoney_adapter = MagicMock()
         quote = MagicMock(ltp=55.0)
-        indmoney_adapter.get_quote = AsyncMock(return_value=[quote])
+        mock_indmoney = MagicMock()
+        mock_indmoney.get_quote = AsyncMock(return_value=[quote])
 
-        with patch("src.monitor.position_tracker.get_broker_adapter", return_value=indmoney_adapter) as mock_get_adapter:
+        with patch.object(tracker.instrument_resolver, "resolve", return_value="NFO:12345"), \
+             patch.object(tracker.price_cache, "refresh_subscriptions", new=AsyncMock()), \
+             patch("src.monitor.position_tracker.INDmoneyBroker", return_value=mock_indmoney) as mock_indmoney_cls:
             await tracker.check_positions({"id": "u1"}, vix=13.0)
 
-        mock_get_adapter.assert_called_with("indmoney")
+        mock_indmoney_cls.assert_called()
+        mock_indmoney.get_quote.assert_awaited_with(["NFO_12345"])
         repo.upsert_peak.assert_awaited_once()
         peak_call = repo.upsert_peak.call_args
         assert peak_call[0][1]["peak_premium"] == 55.0
