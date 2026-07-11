@@ -14,6 +14,7 @@ RESTART_SERVICES = ["zerodha-mcp", "zerodha-monitor"]
 # Whitelist of editable variables via Telegram bot
 ALLOWED_VARIABLES = [
     "INDSTOCKS_TOKEN",
+    "TRADE_PIN",
     "KITE_ACCESS_TOKEN",
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",

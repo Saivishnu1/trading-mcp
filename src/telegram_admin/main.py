@@ -19,6 +19,11 @@ from src.telegram_admin.handlers import (
     uptime_command,
     ip_command,
     cancel_command,
+    buy_command,
+    sell_command,
+    order_confirm_callback,
+    positions_command,
+    orders_command,
 )
 from src.telegram_admin.conversation import env_conversation_handler
 
@@ -38,6 +43,13 @@ def main() -> None:
 
     # Add the conversation handler for /env command
     application.add_handler(env_conversation_handler)
+
+    # Trading command handlers (Phase 23 — order placement)
+    application.add_handler(CommandHandler("buy", buy_command))
+    application.add_handler(CommandHandler("sell", sell_command))
+    application.add_handler(CallbackQueryHandler(order_confirm_callback, pattern="^order_confirm:"))
+    application.add_handler(CommandHandler("positions", positions_command))
+    application.add_handler(CommandHandler("orders", orders_command))
 
     # Add other administrative command handlers
     application.add_handler(CommandHandler("start", start_command))

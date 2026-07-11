@@ -12,7 +12,12 @@ from src.telegram_admin.auth import admin_only
 from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH, SERVICE_NAME, reload_config
 import src.telegram_admin.env_manager as env_manager
 import src.telegram_admin.service_manager as service_manager
-from src.telegram_admin.keyboards import get_cmd_restart_keyboard, get_backup_env_keyboard
+from src.telegram_admin.keyboards import (
+    get_cmd_restart_keyboard,
+    get_backup_env_keyboard,
+    get_order_confirm_keyboard,
+)
+from src.telegram_admin.order_parser import parse_order_args, format_order_summary, ParseError
 from src.telegram_admin.utils import split_message
 
 logger = logging.getLogger(__name__)
@@ -23,7 +28,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         msg = (
             "✅ Zerodha MCP Admin Bot\n\n"
-            "Available commands:\n\n"
+            "📈 Trading:\n\n"
+            "/buy SYM QTY [MARKET|LIMIT price] - Place a buy order (confirmed)\n"
+            "/sell SYM QTY [MARKET|LIMIT price] - Place a sell order (confirmed)\n"
+            "/positions   - Show open positions\n"
+            "/orders      - Show today's order book\n\n"
+            "🛠 Admin:\n\n"
             "/env         - Edit environment variables\n"
             "/show        - Show current variables (secrets masked)\n"
             "/status      - Get structured service status\n"
@@ -100,7 +110,7 @@ async def show_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if val is None:
                 display_val = "[not set]"
             # Automatically mask any secret variables based on keyword matching
-            elif any(secret in var.upper() for secret in ("KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH")):
+            elif any(secret in var.upper() for secret in ("KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH", "PIN")):
                 display_val = "*************"
             else:
                 display_val = val
@@ -493,3 +503,141 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as exc:
         logger.error("Error in cancel_command: %s", exc, exc_info=True)
         await update.message.reply_text(f"❌ Error cancelling: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Trading commands — /buy, /sell, order confirmation, /positions, /orders
+# ---------------------------------------------------------------------------
+
+async def _handle_order_command(update: Update, context: ContextTypes.DEFAULT_TYPE, side: str) -> None:
+    """Shared body for /buy and /sell: parse args, resolve security_id, and
+    prompt for YES/NO confirmation. The order is only placed on confirmation."""
+    parsed = parse_order_args(context.args or [], side)
+    if isinstance(parsed, ParseError):
+        await update.message.reply_text(parsed.message)
+        return
+
+    # Resolve the trading symbol → INDstocks security_id before confirming, so a
+    # bad symbol fails fast (before the user taps PLACE).
+    from src.execution.service import resolve_symbol
+    try:
+        sec_id = await resolve_symbol(
+            parsed.symbol, exchange=parsed.exchange, segment=parsed.segment
+        )
+    except Exception as exc:
+        logger.error("security_id resolution error: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Could not resolve '{parsed.symbol}': {exc}")
+        return
+    if not sec_id:
+        await update.message.reply_text(
+            f"❌ Symbol '{parsed.symbol}' not found in the {parsed.exchange} "
+            f"{parsed.segment} instrument list. Check the exact trading symbol."
+        )
+        return
+    parsed.security_id = sec_id
+
+    context.user_data["pending_order"] = parsed
+    await update.message.reply_text(
+        format_order_summary(parsed),
+        reply_markup=get_order_confirm_keyboard(),
+        parse_mode="Markdown",
+    )
+
+
+@admin_only
+async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/buy SYMBOL QTY [MARKET|LIMIT price] [product] [exchange] — confirm then place."""
+    try:
+        await _handle_order_command(update, context, "BUY")
+    except Exception as exc:
+        logger.error("Error in buy_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error: {exc}")
+
+
+@admin_only
+async def sell_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/sell SYMBOL QTY [MARKET|LIMIT price] [product] [exchange] — confirm then place."""
+    try:
+        await _handle_order_command(update, context, "SELL")
+    except Exception as exc:
+        logger.error("Error in sell_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error: {exc}")
+
+
+@admin_only
+async def order_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the YES/NO confirmation for a pending /buy or /sell order."""
+    query = update.callback_query
+    await query.answer()
+    try:
+        data = query.data or ""
+        if data == "order_confirm:no":
+            context.user_data.pop("pending_order", None)
+            await query.message.edit_text("Order cancelled.")
+            return
+        if data != "order_confirm:yes":
+            logger.warning("Invalid callback data in order_confirm_callback: %s", data)
+            await query.message.reply_text("❌ Invalid selection.")
+            return
+
+        req = context.user_data.pop("pending_order", None)
+        if req is None:
+            await query.message.edit_text("⚠️ No pending order (it may have expired). Send /buy or /sell again.")
+            return
+
+        await query.message.edit_text("⏳ Placing order...")
+        from src.execution.service import submit_order
+        user_id = str(update.effective_user.id) if update.effective_user else None
+        result = await submit_order(req, source="telegram", user_id=user_id)
+
+        if result.get("status") == "ok":
+            await query.message.reply_text(
+                f"✅ Order placed\n"
+                f"• {req.transaction_type} {req.symbol} x{req.quantity}\n"
+                f"• Order ID: `{result.get('order_id')}`\n"
+                f"• Status: {result.get('order_status') or 'submitted'}",
+                parse_mode="Markdown",
+            )
+        else:
+            detail = result.get("message") or result.get("body") or result.get("order_status") or "unknown error"
+            await query.message.reply_text(f"❌ Order rejected: {detail}")
+    except Exception as exc:
+        logger.error("Error in order_confirm_callback: %s", exc, exc_info=True)
+        await query.message.reply_text(f"❌ Error placing order: {exc}")
+
+
+@admin_only
+async def positions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/positions — show open INDmoney positions (read-only, for quick reference)."""
+    try:
+        from src.brokers.factory import get_broker_adapter
+        positions = await get_broker_adapter("indmoney").get_positions()
+        if not positions:
+            await update.message.reply_text("No open positions.")
+            return
+        lines = ["📈 *Positions*"]
+        for p in positions:
+            sign = "🟢" if p.pnl >= 0 else "🔴"
+            lines.append(f"{sign} {p.symbol} x{p.quantity} @ ₹{p.avg_price:g} → ₹{p.current_price:g} (P&L ₹{p.pnl:g})")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as exc:
+        logger.error("Error in positions_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error fetching positions: {exc}")
+
+
+@admin_only
+async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/orders — show today's order book (read-only)."""
+    try:
+        from src.brokers.factory import get_broker_adapter
+        orders = await get_broker_adapter("indmoney").get_orders()
+        if not orders:
+            await update.message.reply_text("No orders today.")
+            return
+        lines = ["🧾 *Order book*"]
+        for o in orders:
+            lines.append(f"• {o.transaction_type} {o.symbol} x{o.quantity} @ ₹{o.price:g} — {o.status}")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as exc:
+        logger.error("Error in orders_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error fetching orders: {exc}")

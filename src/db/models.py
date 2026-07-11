@@ -85,6 +85,48 @@ try:
         user_id: Mapped[str | None] = mapped_column(Text, index=True)
 
     # -------------------------------------------------------------------------
+    # zerodha.orders — placed-order audit log (Telegram bot + web app)
+    # -------------------------------------------------------------------------
+
+    class OrderLog(Base):
+        """Append-only record of every order this app submits to a broker.
+
+        Snapshot semantics (per CLAUDE.md): the requested fields are the
+        entry-time intent and are never mutated. broker_order_id / status /
+        raw_response record what the broker returned at submission time.
+        """
+        __tablename__ = "orders"
+        __table_args__ = (
+            CheckConstraint("transaction_type IN ('BUY','SELL')", name="valid_txn_type"),
+            CheckConstraint("source IN ('telegram','web','mcp')", name="valid_order_source"),
+            Index("ix_orders_user_id",    "user_id"),
+            Index("ix_orders_created_at", "created_at"),
+            Index("ix_orders_symbol",     "symbol"),
+            {"schema": "zerodha"},
+        )
+
+        id: Mapped[str]                = mapped_column(Text, primary_key=True)
+        user_id: Mapped[str | None]    = mapped_column(Text)
+        broker: Mapped[str]            = mapped_column(Text, nullable=False)
+        source: Mapped[str]            = mapped_column(Text, nullable=False)
+        # Requested intent (immutable snapshot)
+        symbol: Mapped[str | None]     = mapped_column(Text)
+        security_id: Mapped[str]       = mapped_column(Text, nullable=False)
+        exchange: Mapped[str]          = mapped_column(Text, nullable=False)
+        segment: Mapped[str | None]    = mapped_column(Text)
+        transaction_type: Mapped[str]  = mapped_column(Text, nullable=False)
+        quantity: Mapped[int]          = mapped_column(Integer, nullable=False)
+        order_type: Mapped[str]        = mapped_column(Text, nullable=False)
+        product: Mapped[str | None]    = mapped_column(Text)
+        limit_price: Mapped[float | None] = mapped_column(Float)
+        # Broker response
+        broker_order_id: Mapped[str | None] = mapped_column(Text)
+        status: Mapped[str]            = mapped_column(Text, nullable=False)
+        order_status: Mapped[str | None]   = mapped_column(Text)
+        raw_response: Mapped[str | None]   = mapped_column(Text)
+        created_at: Mapped[str]        = mapped_column(Text, nullable=False)
+
+    # -------------------------------------------------------------------------
     # journal.recommendation_log
     # -------------------------------------------------------------------------
 

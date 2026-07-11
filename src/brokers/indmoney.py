@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import httpx
 
 from .base import BrokerAdapter
-from .models import Holding, Position, Fund, Order, Quote
+from .models import Holding, Position, Fund, Order, OrderRequest, Quote
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +329,80 @@ class INDmoneyBroker(BrokerAdapter):
         except Exception as exc:
             logger.debug("INDmoneyBroker.get_orders error: %s", exc)
             return []
+
+    async def place_order(self, req: OrderRequest) -> dict:
+        """Place an order via INDstocks ``POST /order``.
+
+        Contract: api-docs.indstocks.com/normal_orders/ — auth is the same
+        ``Authorization`` header as every read call. INDstocks has no pure MARKET
+        order (it converts MARKET → LIMIT at the live price server-side).
+        Returns a uniform dict; never raises.
+        """
+        if not self._token:
+            return {"status": "error", "message": "not_configured"}
+        payload = req.to_indstocks_payload()
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{INDSTOCKS_BASE}/order",
+                    headers=self._headers(),
+                    json=payload,
+                )
+                try:
+                    body = r.json()
+                except Exception:
+                    body = r.text
+                data = body.get("data", {}) if isinstance(body, dict) else {}
+                ok = (
+                    200 <= r.status_code < 300
+                    and isinstance(body, dict)
+                    and body.get("status") == "success"
+                )
+                return {
+                    "status": "ok" if ok else "error",
+                    "status_code": r.status_code,
+                    "order_id": data.get("order_id") if isinstance(data, dict) else None,
+                    "order_status": data.get("order_status") if isinstance(data, dict) else None,
+                    "body": body,
+                }
+        except Exception as exc:
+            logger.error("INDmoneyBroker.place_order failed: %s", exc)
+            return {"status": "error", "message": str(exc)}
+
+    async def resolve_security_id(self, symbol: str, source: str = "equity") -> str | None:
+        """Resolve a trading symbol to its INDstocks ``security_id``.
+
+        Uses the instrument-master CSV (``GET /market/instruments`` via
+        ``get_instruments``). Per the documented schema the CSV headers are
+        UPPER_SNAKE_CASE — ``SECURITY_ID`` and ``TRADING_SYMBOL`` (with
+        ``SYMBOL_NAME``/``CUSTOM_SYMBOL`` as secondary matches). Headers are
+        normalized to uppercase before matching so a future header-casing change
+        does not silently break resolution. The parsed master is cached
+        in-process per source since it rarely changes intraday.
+        Returns None if the symbol is not found.
+        """
+        if not symbol:
+            return None
+        target = symbol.strip().upper()
+        cache = getattr(self, "_instrument_cache", None)
+        if cache is None:
+            cache = self._instrument_cache = {}
+        rows = cache.get(source)
+        if rows is None:
+            rows = await self.get_instruments(source)
+            cache[source] = rows
+        for row in rows:
+            row_up = {str(k).strip().upper(): v for k, v in row.items()}
+            sym = str(
+                row_up.get("TRADING_SYMBOL")
+                or row_up.get("SYMBOL_NAME")
+                or row_up.get("CUSTOM_SYMBOL")
+                or ""
+            ).strip().upper()
+            if sym == target:
+                sec_id = row_up.get("SECURITY_ID")
+                return str(sec_id) if sec_id else None
+        return None
 
     async def get_quote(self, symbols: list[str]) -> list[Quote]:
         """Fetch full quotes. symbols format: 'SEGMENT_TOKEN' e.g. 'NSE_2885'."""

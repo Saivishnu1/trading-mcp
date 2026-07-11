@@ -36,3 +36,13 @@ def get_backup_env_keyboard() -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+def get_order_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Generates a YES/NO keyboard to confirm placing a live order."""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="✅ PLACE", callback_data="order_confirm:yes"),
+            InlineKeyboardButton(text="✖ CANCEL", callback_data="order_confirm:no")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
