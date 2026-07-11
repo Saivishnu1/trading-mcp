@@ -9,16 +9,20 @@ from src.telegram_admin.handlers import (
     search_command,
     help_command,
     start_command,
+    admin_command,
+    admin_menu_callback,
+    admin_cmd_callback,
 )
 
 ADMIN_ID = 1344481918
 
 
 @pytest.mark.anyio
-async def test_help_command_lists_all_commands():
-    """/help exists so the command list is available on demand, not just at
-    /start — must cover every command actually registered in main.py, not
-    drift out of sync as new ones get added."""
+async def test_help_command_lists_daily_commands_and_points_to_admin():
+    """/help shows the daily-trading commands directly, plus /admin as the
+    entry point for everything else (2026-07-11: the old flat 21-command
+    dump was too much to scan — rarely-used ops commands now live behind
+    /admin's categorized menu instead, see keyboards.py::ADMIN_CATEGORIES)."""
     update = MagicMock(spec=Update)
     message = AsyncMock(spec=Message)
     user = MagicMock(spec=User)
@@ -32,13 +36,12 @@ async def test_help_command_lists_all_commands():
 
     message.reply_text.assert_called_once()
     reply_msg = message.reply_text.call_args[0][0]
-    for cmd in (
-        "/search", "/buy", "/sell", "/positions", "/orders",
-        "/env", "/show", "/status", "/health", "/restart", "/reload",
-        "/tail", "/logs", "/backup", "/backup_env", "/disk", "/uptime",
-        "/ip", "/cancel", "/help",
-    ):
+    for cmd in ("/search", "/buy", "/sell", "/positions", "/orders", "/admin", "/cancel", "/help"):
         assert cmd in reply_msg, f"{cmd} missing from /help output"
+    # Rarely-used ops commands must NOT be listed flat anymore — they're
+    # reachable via /admin's submenu instead.
+    for cmd in ("/status", "/health", "/restart", "/tail", "/backup_env"):
+        assert cmd not in reply_msg, f"{cmd} should be behind /admin, not listed flat"
 
 
 @pytest.mark.anyio
@@ -254,3 +257,119 @@ async def test_search_command_no_matches():
         await search_command(update, context)
 
     assert "No symbols found" in message.reply_text.call_args[0][0]
+
+
+# ---------------------------------------------------------------------------
+# /admin menu — categorized navigation over rarely-used admin/ops commands
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_admin_command_shows_category_menu():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await admin_command(update, context)
+
+    message.reply_text.assert_awaited_once()
+    kwargs = message.reply_text.call_args.kwargs
+    assert "reply_markup" in kwargs
+    # 4 categories = 4 rows on the top-level menu
+    assert len(kwargs["reply_markup"].inline_keyboard) == 4
+
+
+@pytest.mark.anyio
+async def test_admin_menu_callback_shows_category_submenu():
+    query = AsyncMock()
+    query.data = "admin_menu:service"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.callback_query = query
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await admin_menu_callback(update, context)
+
+    query.answer.assert_awaited_once()
+    query.message.edit_text.assert_awaited_once()
+    text = query.message.edit_text.call_args.args[0]
+    assert "Service" in text
+
+
+@pytest.mark.anyio
+async def test_admin_menu_callback_root_returns_to_top_menu():
+    query = AsyncMock()
+    query.data = "admin_menu:_root"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.callback_query = query
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await admin_menu_callback(update, context)
+
+    kwargs = query.message.edit_text.call_args.kwargs
+    assert len(kwargs["reply_markup"].inline_keyboard) == 4
+
+
+@pytest.mark.anyio
+async def test_admin_menu_callback_unknown_category():
+    query = AsyncMock()
+    query.data = "admin_menu:not_a_real_category"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.callback_query = query
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await admin_menu_callback(update, context)
+
+    assert "Unknown category" in query.message.edit_text.call_args.args[0]
+
+
+@pytest.mark.anyio
+async def test_admin_cmd_callback_replies_with_command_to_type():
+    """Never runs anything directly — pure navigation, per design (2026-07-11):
+    zero risk to any existing handler's behavior."""
+    query = AsyncMock()
+    query.data = "admin_cmd:/restart"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = ADMIN_ID
+    update.effective_user = user
+    update.callback_query = query
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await admin_cmd_callback(update, context)
+
+    query.message.reply_text.assert_awaited_once_with("Type: /restart")
+
+
+@pytest.mark.anyio
+async def test_admin_commands_rejected_for_non_admin():
+    query = AsyncMock()
+    query.data = "admin_menu:service"
+    query.message = AsyncMock()
+    update = MagicMock(spec=Update)
+    user = MagicMock(spec=User)
+    user.id = 999999  # not ADMIN_ID
+    update.effective_user = user
+    update.callback_query = query
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID):
+        await admin_menu_callback(update, context)
+
+    query.answer.assert_not_awaited()
+    query.message.edit_text.assert_not_awaited()

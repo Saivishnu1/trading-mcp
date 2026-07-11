@@ -6,6 +6,9 @@ from src.telegram_admin.config import BOT_TOKEN
 from src.telegram_admin.handlers import (
     start_command,
     help_command,
+    admin_command,
+    admin_menu_callback,
+    admin_cmd_callback,
     restart_command,
     cmd_restart_callback,
     show_command,
@@ -32,8 +35,12 @@ from src.telegram_admin.conversation import env_conversation_handler
 
 logger = logging.getLogger(__name__)
 
-# Shown in Telegram's native "/" autocomplete menu — lets you see every
-# command without remembering them, complementing the /help text dump.
+# Shown in Telegram's native "/" autocomplete menu — deliberately just the
+# daily-trading commands + /admin + /help/cancel, NOT all 21 commands, so
+# the picker isn't a wall of rarely-used ops/debugging entries. Everything
+# else (status, health, restart, logs, backups, config) is still fully
+# callable by typing it — it's just tucked behind /admin's categorized
+# menu instead of cluttering this list. See keyboards.py::ADMIN_CATEGORIES.
 _BOT_COMMANDS = [
     BotCommand("start", "Show the welcome message and command list"),
     BotCommand("search", "Find the exact tradable symbol"),
@@ -41,19 +48,7 @@ _BOT_COMMANDS = [
     BotCommand("sell", "Place a sell order (confirmed)"),
     BotCommand("positions", "Show open positions"),
     BotCommand("orders", "Show today's order book"),
-    BotCommand("env", "Edit environment variables"),
-    BotCommand("show", "Show current variables (secrets masked)"),
-    BotCommand("status", "Get structured service status"),
-    BotCommand("health", "Run systemctl & HTTP API health check"),
-    BotCommand("restart", "Restart zerodha-mcp and zerodha-monitor"),
-    BotCommand("reload", "Re-read .env file configurations"),
-    BotCommand("tail", "View last N logs (default 20)"),
-    BotCommand("logs", "View last 20 logs (shortcut)"),
-    BotCommand("backup", "Create a safe backup (excludes secrets)"),
-    BotCommand("backup_env", "Create a sensitive backup of .env file"),
-    BotCommand("disk", "Check disk, RAM, CPU load info"),
-    BotCommand("uptime", "Check Oracle VM and service uptimes"),
-    BotCommand("ip", "Get public and private IPs"),
+    BotCommand("admin", "Browse admin/ops commands by category"),
     BotCommand("cancel", "Cancel active operation"),
     BotCommand("help", "Show the full command list"),
 ]
@@ -89,6 +84,9 @@ def main() -> None:
     # Add other administrative command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CallbackQueryHandler(admin_menu_callback, pattern="^admin_menu:"))
+    application.add_handler(CallbackQueryHandler(admin_cmd_callback, pattern="^admin_cmd:"))
     application.add_handler(CommandHandler("restart", restart_command))
     application.add_handler(CallbackQueryHandler(cmd_restart_callback, pattern="^cmd_restart:"))
     application.add_handler(CommandHandler("show", show_command))

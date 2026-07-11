@@ -16,6 +16,9 @@ from src.telegram_admin.keyboards import (
     get_cmd_restart_keyboard,
     get_backup_env_keyboard,
     get_order_confirm_keyboard,
+    get_admin_menu_keyboard,
+    get_admin_category_keyboard,
+    ADMIN_CATEGORIES,
 )
 from src.telegram_admin.order_parser import parse_order_args, format_order_summary, ParseError
 from src.telegram_admin.utils import split_message
@@ -31,21 +34,12 @@ _COMMAND_LIST_MESSAGE = (
     "/positions   - Show open positions\n"
     "/orders      - Show today's order book\n\n"
     "🛠 Admin:\n\n"
-    "/env         - Edit environment variables\n"
-    "/show        - Show current variables (secrets masked)\n"
-    "/status      - Get structured service status\n"
-    "/health      - Run systemctl & HTTP API health check\n"
-    "/restart     - Restart zerodha-mcp and zerodha-monitor\n"
-    "/reload      - Re-read .env file configurations\n"
-    "/tail [N]    - View last N logs (default 20)\n"
-    "/logs        - View last 20 logs (shortcut)\n"
-    "/backup      - Create a safe backup (excludes secrets)\n"
-    "/backup_env  - Create a sensitive backup of .env file\n"
-    "/disk        - Check disk, RAM, CPU load info\n"
-    "/uptime      - Check Oracle VM and service uptimes\n"
-    "/ip          - Get public and private IPs\n"
+    "/admin       - Browse admin/ops commands by category\n"
     "/cancel      - Cancel active operation\n"
-    "/help        - Show this command list"
+    "/help        - Show this command list\n\n"
+    "Tip: /admin groups the rarely-used commands (status, health, restart, "
+    "logs, backups, config) into a tappable menu instead of listing all of "
+    "them here."
 )
 
 
@@ -519,6 +513,69 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as exc:
         logger.error("Error in cancel_command: %s", exc, exc_info=True)
         await update.message.reply_text(f"❌ Error cancelling: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# /admin menu — categorized navigation over the rarely-used admin/ops
+# commands (status, health, restart, logs, backups, config), so the native
+# "/" picker only needs the daily-trading commands + /admin + /help instead
+# of a flat 21-command list. Pure navigation: every leaf button replies with
+# the exact command to type rather than running anything itself, so this
+# never touches any existing handler's behavior.
+# ---------------------------------------------------------------------------
+
+@admin_only
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Shows the top-level /admin category menu."""
+    try:
+        await update.message.reply_text(
+            "🛠 Admin menu — pick a category:",
+            reply_markup=get_admin_menu_keyboard(),
+        )
+    except Exception as exc:
+        logger.error("Error in admin_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error: {exc}")
+
+
+@admin_only
+async def admin_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles category selection: admin_menu:<category> or admin_menu:_root."""
+    query = update.callback_query
+    await query.answer()
+    try:
+        category_key = (query.data or "").split(":", 1)[1]
+        if category_key == "_root":
+            await query.message.edit_text(
+                "🛠 Admin menu — pick a category:",
+                reply_markup=get_admin_menu_keyboard(),
+            )
+            return
+        if category_key not in ADMIN_CATEGORIES:
+            await query.message.edit_text("❌ Unknown category.")
+            return
+        category = ADMIN_CATEGORIES[category_key]
+        await query.message.edit_text(
+            f"{category['label']} — pick a command:",
+            reply_markup=get_admin_category_keyboard(category_key),
+        )
+    except Exception as exc:
+        logger.error("Error in admin_menu_callback: %s", exc, exc_info=True)
+        await query.message.reply_text(f"❌ Error: {exc}")
+
+
+@admin_only
+async def admin_cmd_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles a leaf command selection: admin_cmd:<command>. Replies with
+    the exact command to type/tap rather than running it directly — keeps
+    every existing handler's behavior untouched (see module docstring)."""
+    query = update.callback_query
+    await query.answer()
+    try:
+        command = (query.data or "").split(":", 1)[1]
+        await query.message.reply_text(f"Type: {command}")
+    except Exception as exc:
+        logger.error("Error in admin_cmd_callback: %s", exc, exc_info=True)
+        await query.message.reply_text(f"❌ Error: {exc}")
 
 
 # ---------------------------------------------------------------------------
