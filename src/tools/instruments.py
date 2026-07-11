@@ -13,8 +13,9 @@ def register(mcp: FastMCP) -> None:
     ) -> list[dict]:
         """Search instruments by trading symbol or company name.
 
-        Uses a locally-cached NSE equity list (downloaded once on first call)
-        for fast substring matching. No auth required.
+        Uses a locally-cached NSE equity list (refreshed automatically once a
+        day, or on demand via invalidate_instruments_cache()) for fast
+        substring matching. No auth required.
 
         Args:
             query: Partial or full name/symbol (e.g. 'INFY', 'Infosys', 'NIFTY').
