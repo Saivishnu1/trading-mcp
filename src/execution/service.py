@@ -32,6 +32,28 @@ async def resolve_symbol(symbol: str, *, exchange: str, segment: str) -> str | N
     return await broker.resolve_security_id(symbol, source=source)
 
 
+async def search_symbols(query: str, *, segment: str | None = None, limit: int = 15) -> list[dict]:
+    """Search tradable symbols for autocomplete/dropdown UIs (web + Telegram).
+
+    Without a segment hint, searches both the equity and fno instrument
+    masters and interleaves results so a bare stock query ("RELIANCE") and an
+    options query ("NIFTY24200CE") both work from one search box.
+    """
+    broker = get_broker_adapter("indmoney")
+    sources = ["fno" if segment and segment.upper() == "DERIVATIVE" else "equity"] \
+        if segment else ["equity", "fno"]
+
+    seen: set[str] = set()
+    results: list[dict] = []
+    for source in sources:
+        for row in await broker.search_instruments(query, source=source, limit=limit):
+            if row["symbol"] in seen:
+                continue
+            seen.add(row["symbol"])
+            results.append({**row, "segment": "DERIVATIVE" if source == "fno" else "EQUITY"})
+    return results[:limit]
+
+
 async def submit_order(
     req: OrderRequest,
     *,

@@ -2417,3 +2417,15 @@ First in-repo order *placement* (previously deferred to an unavailable external 
 - **One `submit_order` core, two surfaces.** Both the bot and the web app call it, so placement + logging never diverge.
 - **MARKET passthrough.** INDstocks has no true MARKET order (it converts to LIMIT@live server-side); `order_type="MARKET"` is passed as-is and the confirm summaries state the live-price-LIMIT behavior.
 - **Confirm-every-order on both surfaces** — the risk control for real-money placement, given the whole point is brokerage savings, not speed at the cost of fat-fingers.
+
+### Follow-up — symbol search/autocomplete + web UI redesign (2026-07-11)
+
+Typing exact INDstocks trading symbols blind (no feedback until submission) was the biggest usability gap in both surfaces. Added symbol discovery, reusing the same instrument master already used for `security_id` resolution:
+
+- **`INDmoneyBroker.search_instruments(query, source, limit)`** (`src/brokers/indmoney.py`) — substring search over the cached instrument CSV; prefix matches (`RELIANCE` for query `REL`) rank before mid-string matches. Deliberately does **not** return `security_id` to callers — that's still resolved server-side at order time via `resolve_security_id`, so a client never needs to trust an id it fetched earlier.
+- **Cache moved from instance-level to module-level** (`_instrument_cache` at module scope in `indmoney.py`, 6h TTL). `get_broker_adapter("indmoney")` constructs a fresh `INDmoneyBroker()` per call/request — an instance-level cache (the original design) would re-download the multi-MB instrument CSV on every autocomplete keystroke. Tests use an autouse fixture to clear the shared cache between tests.
+- **`src/execution/service.py::search_symbols(query, segment=None)`** — the surface-agnostic entry point; without a segment hint it searches both `equity` and `fno` instrument masters so one search box covers stocks and options.
+- **Web:** `GET /trade/symbols?q=...&pin=...` (PIN-gated like the other `/trade` routes) backs a live autocomplete dropdown in `trade.html` — debounced input, keyboard nav (↑/↓/Enter/Esc), picking a result also sets the exchange field. `trade.html` redesigned throughout: CSS custom properties for light/dark, card-based layout, BUY/SELL pill toggle, a real order-summary confirm screen (side badge, resolved instrument name, key/value grid) instead of raw HTML string concatenation.
+- **Telegram:** new `/search TEXT` command (`search_command` in `handlers.py`) lists matching symbols with name + exchange so a user can look up the exact symbol before `/buy`/`/sell`, without leaving the chat. Added to `/start` help text as the first trading command.
+
+15 new tests (`TestSearchInstruments`, `TestSearchSymbols`, `/trade/symbols` route tests, `/search` handler tests). Full suite: 2076 passed, 6 skipped.

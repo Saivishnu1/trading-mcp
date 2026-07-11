@@ -33,6 +33,17 @@ def _broker(token: str = "test-token"):
     return b
 
 
+@pytest.fixture(autouse=True)
+def _clear_instrument_cache():
+    """resolve_security_id/search_instruments share a process-wide TTL cache
+    (see src/brokers/indmoney.py) so results from one test don't leak into
+    the next via a shared "equity"/"fno" cache key."""
+    from src.brokers import indmoney as indmoney_module
+    indmoney_module._instrument_cache.clear()
+    yield
+    indmoney_module._instrument_cache.clear()
+
+
 # ---------------------------------------------------------------------------
 # OrderRequest.to_indstocks_payload
 # ---------------------------------------------------------------------------
@@ -191,12 +202,117 @@ class TestResolveSecurityId:
 
     @pytest.mark.anyio
     async def test_caches_instrument_master(self):
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()  # isolate from other tests/process cache
         b = _broker()
         mock_get = AsyncMock(return_value=[{"TRADING_SYMBOL": "TCS", "SECURITY_ID": "1"}])
         with patch.object(b, "get_instruments", mock_get):
             await b.resolve_security_id("TCS")
             await b.resolve_security_id("TCS")
-        assert mock_get.call_count == 1  # second call served from cache
+        assert mock_get.call_count == 1  # second call served from the process-wide cache
+        indmoney_module._instrument_cache.clear()
+
+    @pytest.mark.anyio
+    async def test_cache_shared_across_instances(self):
+        # The cache is module-level (not per-INDmoneyBroker instance) since a
+        # fresh adapter is constructed on every request via get_broker_adapter.
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b1 = _broker()
+        mock_get = AsyncMock(return_value=[{"TRADING_SYMBOL": "TCS", "SECURITY_ID": "1"}])
+        with patch.object(b1, "get_instruments", mock_get):
+            await b1.resolve_security_id("TCS")
+        b2 = _broker()  # a brand-new instance, as get_broker_adapter would create
+        with patch.object(b2, "get_instruments", AsyncMock(side_effect=AssertionError("should not refetch"))):
+            assert await b2.resolve_security_id("TCS") == "1"
+        indmoney_module._instrument_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# search_instruments (broker) / search_symbols (execution service)
+# ---------------------------------------------------------------------------
+
+class TestSearchInstruments:
+
+    @pytest.mark.anyio
+    async def test_prefix_matches_rank_first(self):
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "IRELIANCEX", "INSTRUMENT_NAME": "Fake Contains Match", "SECURITY_ID": "9"},
+            {"EXCH": "NSE", "TRADING_SYMBOL": "RELIANCE", "INSTRUMENT_NAME": "Reliance Industries", "SECURITY_ID": "2885"},
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            results = await b.search_instruments("RELIANCE")
+        assert [r["symbol"] for r in results] == ["RELIANCE", "IRELIANCEX"]
+        assert "security_id" not in results[0]  # never leak the id to the client
+        indmoney_module._instrument_cache.clear()
+
+    @pytest.mark.anyio
+    async def test_case_insensitive_and_limit(self):
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": f"SYM{i}TEST", "SECURITY_ID": str(i)} for i in range(20)]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            results = await b.search_instruments("test", limit=5)
+        assert len(results) == 5
+        indmoney_module._instrument_cache.clear()
+
+    @pytest.mark.anyio
+    async def test_empty_query_returns_nothing(self):
+        b = _broker()
+        assert await b.search_instruments("") == []
+
+    @pytest.mark.anyio
+    async def test_no_duplicate_symbols(self):
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "1"},
+            {"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "1"},  # dup row
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            results = await b.search_instruments("TCS")
+        assert len(results) == 1
+        indmoney_module._instrument_cache.clear()
+
+
+class TestSearchSymbols:
+
+    @pytest.mark.anyio
+    async def test_merges_equity_and_fno_when_no_segment(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+
+        async def fake_search(query, source="equity", limit=15):
+            if source == "equity":
+                return [{"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "segment": ""}]
+            return [{"symbol": "NIFTY24200CE", "name": "NIFTY", "exchange": "NSE", "segment": ""}]
+
+        adapter.search_instruments = fake_search
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            results = await svc.search_symbols("ni")
+        segments = {r["segment"] for r in results}
+        assert "EQUITY" in segments or "DERIVATIVE" in segments
+        assert len(results) == 2
+
+    @pytest.mark.anyio
+    async def test_segment_hint_restricts_to_one_source(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        called_sources = []
+
+        async def fake_search(query, source="equity", limit=15):
+            called_sources.append(source)
+            return []
+
+        adapter.search_instruments = fake_search
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            await svc.search_symbols("nifty", segment="DERIVATIVE")
+        assert called_sources == ["fno"]
 
 
 # ---------------------------------------------------------------------------

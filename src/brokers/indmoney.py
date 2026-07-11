@@ -10,6 +10,7 @@ import csv
 import io
 import logging
 import os
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -21,6 +22,14 @@ logger = logging.getLogger(__name__)
 
 INDSTOCKS_BASE = "https://api.indstocks.com"
 _TOKEN_ENV = "INDSTOCKS_TOKEN"
+
+# Module-level (process-wide) instrument cache, keyed by source. A fresh
+# INDmoneyBroker() is constructed per request (see get_broker_adapter), so an
+# instance-level cache would re-download the ~MB-sized instrument CSV on every
+# keystroke of a symbol search. This is shared across all instances/requests
+# and refreshed once per _INSTRUMENT_CACHE_TTL_SECONDS.
+_INSTRUMENT_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours — instrument masters rarely change intraday
+_instrument_cache: dict[str, tuple[float, list[dict]]] = {}
 
 
 class INDmoneyBroker(BrokerAdapter):
@@ -369,30 +378,33 @@ class INDmoneyBroker(BrokerAdapter):
             logger.error("INDmoneyBroker.place_order failed: %s", exc)
             return {"status": "error", "message": str(exc)}
 
+    async def _cached_instruments(self, source: str) -> list[dict]:
+        """Return the instrument-master rows for ``source``, normalized to
+        UPPER_SNAKE_CASE keys (matching the documented CSV schema), from the
+        process-wide TTL cache — refetching only when stale or missing."""
+        now = time.time()
+        cached = _instrument_cache.get(source)
+        if cached is not None and (now - cached[0]) < _INSTRUMENT_CACHE_TTL_SECONDS:
+            return cached[1]
+        rows = await self.get_instruments(source)
+        normalized = [{str(k).strip().upper(): v for k, v in row.items()} for row in rows]
+        _instrument_cache[source] = (now, normalized)
+        return normalized
+
     async def resolve_security_id(self, symbol: str, source: str = "equity") -> str | None:
         """Resolve a trading symbol to its INDstocks ``security_id``.
 
         Uses the instrument-master CSV (``GET /market/instruments`` via
         ``get_instruments``). Per the documented schema the CSV headers are
         UPPER_SNAKE_CASE — ``SECURITY_ID`` and ``TRADING_SYMBOL`` (with
-        ``SYMBOL_NAME``/``CUSTOM_SYMBOL`` as secondary matches). Headers are
-        normalized to uppercase before matching so a future header-casing change
-        does not silently break resolution. The parsed master is cached
-        in-process per source since it rarely changes intraday.
-        Returns None if the symbol is not found.
+        ``SYMBOL_NAME``/``CUSTOM_SYMBOL`` as secondary matches). Returns None
+        if the symbol is not found.
         """
         if not symbol:
             return None
         target = symbol.strip().upper()
-        cache = getattr(self, "_instrument_cache", None)
-        if cache is None:
-            cache = self._instrument_cache = {}
-        rows = cache.get(source)
-        if rows is None:
-            rows = await self.get_instruments(source)
-            cache[source] = rows
-        for row in rows:
-            row_up = {str(k).strip().upper(): v for k, v in row.items()}
+        rows = await self._cached_instruments(source)
+        for row_up in rows:
             sym = str(
                 row_up.get("TRADING_SYMBOL")
                 or row_up.get("SYMBOL_NAME")
@@ -403,6 +415,39 @@ class INDmoneyBroker(BrokerAdapter):
                 sec_id = row_up.get("SECURITY_ID")
                 return str(sec_id) if sec_id else None
         return None
+
+    async def search_instruments(self, query: str, source: str = "equity", limit: int = 15) -> list[dict]:
+        """Search the instrument master for symbols matching ``query`` — powers
+        the /trade page's autocomplete and the Telegram /search command.
+
+        Match order: symbols starting with the query rank before symbols that
+        merely contain it, so typing "REL" surfaces RELIANCE before a ticker
+        that happens to contain "REL" mid-string. security_id is intentionally
+        NOT included — callers only need it to render a picker; the id is
+        re-resolved server-side at order time via resolve_security_id.
+        """
+        target = query.strip().upper()
+        if not target:
+            return []
+        rows = await self._cached_instruments(source)
+
+        starts, contains = [], []
+        seen = set()
+        for row in rows:
+            sym = str(row.get("TRADING_SYMBOL") or row.get("SYMBOL_NAME") or "").strip().upper()
+            if not sym or sym in seen:
+                continue
+            if target not in sym:
+                continue
+            seen.add(sym)
+            name = str(row.get("INSTRUMENT_NAME") or row.get("SYMBOL_NAME") or sym).strip()
+            exch = str(row.get("EXCH") or "NSE").strip().upper()
+            entry = {"symbol": sym, "name": name, "exchange": exch, "segment": row.get("SEGMENT", "")}
+            (starts if sym.startswith(target) else contains).append(entry)
+
+        starts.sort(key=lambda e: len(e["symbol"]))
+        contains.sort(key=lambda e: len(e["symbol"]))
+        return (starts + contains)[:limit]
 
     async def get_quote(self, symbols: list[str]) -> list[Quote]:
         """Fetch full quotes. symbols format: 'SEGMENT_TOKEN' e.g. 'NSE_2885'."""

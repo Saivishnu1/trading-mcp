@@ -5,40 +5,128 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Place Order</title>
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px;
-         max-width: 480px; margin-inline: auto; background: #f6f7f9; color: #111; }
-  @media (prefers-color-scheme: dark) { body { background: #14151a; color: #eee; } input, select { background:#1e2029; color:#eee; border-color:#333; } .card{background:#1c1e26;} }
-  h1 { font-size: 1.3rem; margin: 0 0 12px; }
-  .card { background:#fff; border:1px solid #e2e5ea; border-radius:12px; padding:16px; margin-bottom:14px; }
-  label { display:block; font-size:.8rem; font-weight:600; margin:10px 0 4px; opacity:.85; }
-  input, select { width:100%; padding:12px; font-size:1rem; border:1px solid #ccd0d6; border-radius:8px; }
-  .row { display:flex; gap:10px; }
-  .row > * { flex:1; }
-  .side { display:flex; gap:10px; margin-top:6px; }
-  .side button { flex:1; padding:14px; font-size:1rem; font-weight:700; border:2px solid transparent; border-radius:8px; cursor:pointer; }
-  .buy  { background:#e7f7ec; color:#0a7f3f; } .buy.active  { border-color:#0a7f3f; }
-  .sell { background:#fdecec; color:#c0392b; } .sell.active { border-color:#c0392b; }
-  .primary { width:100%; padding:14px; font-size:1.05rem; font-weight:700; color:#fff; background:#2d6cdf; border:none; border-radius:8px; cursor:pointer; margin-top:14px; }
-  .primary:disabled { opacity:.5; }
-  #limitWrap { display:none; }
-  .msg { padding:12px; border-radius:8px; margin-top:12px; font-size:.95rem; white-space:pre-wrap; display:none; }
-  .msg.err { background:#fdecec; color:#c0392b; display:block; }
-  .msg.ok  { background:#e7f7ec; color:#0a7f3f; display:block; }
-  .summary { font-size:1rem; line-height:1.7; }
-  .hint { font-size:.75rem; opacity:.65; margin-top:4px; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f8; --card: #ffffff; --border: #e3e6eb; --text: #14161a; --muted: #6b7280;
+    --accent: #2d6cdf; --accent-ink: #ffffff;
+    --buy: #0a8f4f; --buy-bg: #e7f8ee; --sell: #d1392a; --sell-bg: #fdecea;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0f13; --card: #191b22; --border: #2a2d38; --text: #eef0f4; --muted: #9aa1af;
+      --accent: #5b8dff; --accent-ink: #0e0f13;
+      --buy: #35d17e; --buy-bg: #10281c; --sell: #ff6b5e; --sell-bg: #2c1512;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0; padding: 20px 16px 40px; max-width: 460px; margin-inline: auto;
+    background: var(--bg); color: var(--text);
+  }
+  h1 { font-size: 1.25rem; font-weight: 700; margin: 4px 0 18px; letter-spacing: -0.01em; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  label {
+    display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); margin: 14px 0 6px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input, select {
+    width: 100%; padding: 12px 14px; font-size: 1rem; font-family: inherit;
+    border: 1.5px solid var(--border); border-radius: 10px; background: var(--card);
+    color: var(--text); transition: border-color .15s;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
+
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; min-width: 0; }
+
+  /* Symbol search + autocomplete */
+  .symbol-wrap { position: relative; }
+  #symbol { text-transform: uppercase; font-weight: 600; letter-spacing: .01em; }
+  .symbol-status { position: absolute; right: 12px; top: 50%; transform: translateY(calc(-50% + 17px)); font-size: .78rem; pointer-events: none; }
+  .symbol-status.ok { color: var(--buy); } .symbol-status.pending { color: var(--muted); }
+  #dropdown {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); max-height: 260px; overflow-y: auto; display: none;
+  }
+  #dropdown.open { display: block; }
+  .dd-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); }
+  .dd-item:last-child { border-bottom: none; }
+  .dd-item:hover, .dd-item.active { background: var(--bg); }
+  .dd-tag { font-size: .95rem; }
+  .dd-main { flex: 1; min-width: 0; }
+  .dd-sym { font-weight: 700; font-size: .92rem; }
+  .dd-name { font-size: .76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-exch { font-size: .68rem; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
+  .dd-empty { padding: 14px; font-size: .85rem; color: var(--muted); text-align: center; }
+
+  .side { display: flex; gap: 10px; margin-top: 6px; }
+  .side button {
+    flex: 1; padding: 13px; font-size: .95rem; font-weight: 700; letter-spacing: .02em;
+    border: 1.5px solid var(--border); border-radius: 10px; cursor: pointer;
+    background: var(--card); color: var(--muted); transition: all .12s;
+  }
+  .side button.buy.active  { background: var(--buy-bg);  color: var(--buy);  border-color: var(--buy); }
+  .side button.sell.active { background: var(--sell-bg); color: var(--sell); border-color: var(--sell); }
+
+  .primary {
+    width: 100%; padding: 15px; font-size: 1rem; font-weight: 700; letter-spacing: .01em;
+    color: var(--accent-ink); background: var(--accent); border: none; border-radius: 11px;
+    cursor: pointer; margin-top: 16px; transition: opacity .12s, transform .05s;
+  }
+  .primary:active { transform: scale(.98); }
+  .primary:disabled { opacity: .45; cursor: default; }
+  .secondary {
+    width: 100%; padding: 13px; font-size: .9rem; font-weight: 600; margin-top: 8px;
+    background: transparent; color: var(--muted); border: 1.5px solid var(--border);
+    border-radius: 11px; cursor: pointer;
+  }
+
+  #limitWrap { display: none; }
+
+  .msg {
+    padding: 12px 14px; border-radius: 10px; margin-top: 12px; font-size: .88rem;
+    line-height: 1.5; white-space: pre-wrap; display: none;
+  }
+  .msg.err { background: var(--sell-bg); color: var(--sell); display: block; }
+  .msg.ok  { background: var(--buy-bg);  color: var(--buy);  display: block; }
+
+  .summary-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .summary-side { font-size: .78rem; font-weight: 800; letter-spacing: .04em; padding: 3px 8px; border-radius: 6px; }
+  .summary-side.BUY  { background: var(--buy-bg);  color: var(--buy); }
+  .summary-side.SELL { background: var(--sell-bg); color: var(--sell); }
+  .summary-sym { font-size: 1.15rem; font-weight: 800; }
+  .summary-name { font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
+  .summary-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: .9rem; }
+  .summary-grid dt { color: var(--muted); }
+  .summary-grid dd { margin: 0; font-weight: 600; }
+
+  .hint { font-size: .74rem; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  .hint.warn { color: var(--sell); }
 </style>
 </head>
 <body>
-<h1>Place Order</h1>
+<h1>📲 Place Order</h1>
 
 <div class="card" id="formCard">
   <label>PIN</label>
-  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="trade PIN">
+  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
 
   <label>Symbol</label>
-  <input id="symbol" type="text" autocapitalize="characters" autocomplete="off" placeholder="RELIANCE / NIFTY24200CE">
+  <div class="symbol-wrap">
+    <input id="symbol" type="text" autocomplete="off" placeholder="Search RELIANCE, NIFTY 24200 CE…">
+    <span class="symbol-status" id="symbolStatus"></span>
+    <div id="dropdown"></div>
+  </div>
 
   <div class="side">
     <button type="button" class="buy active" data-side="BUY" onclick="setSide('BUY')">BUY</button>
@@ -88,22 +176,118 @@
 </div>
 
 <div class="card" id="confirmCard" style="display:none;">
-  <div class="summary" id="summary"></div>
+  <div class="summary-head">
+    <span class="summary-side" id="sumSide"></span>
+    <span class="summary-sym" id="sumSym"></span>
+  </div>
+  <div class="summary-name" id="sumName"></div>
+  <dl class="summary-grid" id="sumGrid"></dl>
   <button class="primary" id="placeBtn" onclick="place()">✅ Confirm & place order</button>
-  <button class="primary" style="background:#888;margin-top:8px;" onclick="back()">← Back</button>
+  <button class="secondary" onclick="back()">← Back</button>
   <div class="msg" id="confirmMsg"></div>
 </div>
 
 <script>
 let side = "BUY";
+let selected = null;   // {symbol, name, exchange, segment} once chosen from the dropdown
+let ddItems = [];
+let ddActive = -1;
+let searchAbort = null;
+let searchDebounce = null;
+
 function setSide(s){ side=s;
   document.querySelectorAll(".side button").forEach(b=>b.classList.toggle("active", b.dataset.side===s)); }
 function toggleLimit(){ document.getElementById("limitWrap").style.display =
   document.getElementById("orderType").value==="LIMIT" ? "block":"none"; }
 
+function currentPin(){ return document.getElementById("pin").value; }
+
+function setSymbolStatus(kind, text){
+  const el = document.getElementById("symbolStatus");
+  el.className = "symbol-status " + kind;
+  el.textContent = text;
+}
+
+function closeDropdown(){
+  document.getElementById("dropdown").classList.remove("open");
+  ddItems = []; ddActive = -1;
+}
+
+function renderDropdown(results){
+  const dd = document.getElementById("dropdown");
+  ddItems = results; ddActive = -1;
+  if(!results.length){
+    dd.innerHTML = '<div class="dd-empty">No matching symbols</div>';
+    dd.classList.add("open");
+    return;
+  }
+  dd.innerHTML = results.map((r,i) => `
+    <div class="dd-item" data-i="${i}" onmousedown="pickSymbol(${i})">
+      <span class="dd-tag">${r.segment==="DERIVATIVE"?"📈":"📊"}</span>
+      <div class="dd-main">
+        <div class="dd-sym">${r.symbol}</div>
+        <div class="dd-name">${r.name||""}</div>
+      </div>
+      <span class="dd-exch">${r.exchange}</span>
+    </div>`).join("");
+  dd.classList.add("open");
+}
+
+function pickSymbol(i){
+  const r = ddItems[i];
+  if(!r) return;
+  selected = r;
+  document.getElementById("symbol").value = r.symbol;
+  document.getElementById("exchange").value = r.exchange === "BSE" ? "BSE" : "NSE";
+  setSymbolStatus("ok", "✓ " + r.exchange);
+  closeDropdown();
+}
+
+async function onSymbolInput(){
+  const q = document.getElementById("symbol").value.trim();
+  selected = null;
+  setSymbolStatus("", "");
+  if(searchDebounce) clearTimeout(searchDebounce);
+  if(q.length < 2){ closeDropdown(); return; }
+  searchDebounce = setTimeout(() => runSearch(q), 200);
+}
+
+async function runSearch(q){
+  const pin = currentPin();
+  if(!pin){ setSymbolStatus("pending", "enter PIN first"); return; }
+  if(searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+  try{
+    const url = "/trade/symbols?q=" + encodeURIComponent(q) + "&pin=" + encodeURIComponent(pin);
+    const r = await fetch(url, { signal: searchAbort.signal });
+    const d = await r.json();
+    if(!r.ok){ closeDropdown(); return; }
+    renderDropdown(d.results || []);
+  }catch(e){ /* aborted or network hiccup — ignore, user is still typing */ }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const input = document.getElementById("symbol");
+  input.addEventListener("input", onSymbolInput);
+  input.addEventListener("keydown", (e) => {
+    const dd = document.getElementById("dropdown");
+    if(!dd.classList.contains("open")) return;
+    if(e.key === "ArrowDown"){ e.preventDefault(); ddActive = Math.min(ddActive+1, ddItems.length-1); highlightActive(); }
+    else if(e.key === "ArrowUp"){ e.preventDefault(); ddActive = Math.max(ddActive-1, 0); highlightActive(); }
+    else if(e.key === "Enter"){ e.preventDefault(); if(ddActive>=0) pickSymbol(ddActive); }
+    else if(e.key === "Escape"){ closeDropdown(); }
+  });
+  input.addEventListener("blur", () => setTimeout(closeDropdown, 150));
+  input.addEventListener("focus", () => { if(ddItems.length) document.getElementById("dropdown").classList.add("open"); });
+});
+
+function highlightActive(){
+  document.querySelectorAll(".dd-item").forEach((el,i) => el.classList.toggle("active", i===ddActive));
+}
+
 function payload(){
   return {
-    pin: document.getElementById("pin").value,
+    pin: currentPin(),
     symbol: document.getElementById("symbol").value.trim().toUpperCase(),
     side: side,
     quantity: parseInt(document.getElementById("qty").value,10),
@@ -122,13 +306,28 @@ async function preview(){
     const r=await fetch("/trade/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())});
     const d=await r.json();
     if(!r.ok){ show("formMsg","err", d.error || ("Error "+r.status)); return; }
-    document.getElementById("summary").innerHTML = d.summary_html;
+    renderSummary(d);
     window._order = payload();
     document.getElementById("formCard").style.display="none";
     document.getElementById("confirmCard").style.display="block";
   }catch(e){ show("formMsg","err", String(e)); }
   finally{ btn.disabled=false; }
 }
+
+function renderSummary(d){
+  const o = window._order || payload();
+  document.getElementById("sumSide").textContent = o.side;
+  document.getElementById("sumSide").className = "summary-side " + o.side;
+  document.getElementById("sumSym").textContent = o.symbol;
+  document.getElementById("sumName").textContent = selected && selected.name ? selected.name : "";
+  const priceLine = o.order_type === "MARKET" ? "Market (auto-LIMIT @ live price)" : ("Limit @ ₹" + o.limit_price);
+  document.getElementById("sumGrid").innerHTML = `
+    <dt>Quantity</dt><dd>${o.quantity}</dd>
+    <dt>Price</dt><dd>${priceLine}</dd>
+    <dt>Product</dt><dd>${o.product}</dd>
+    <dt>Exchange</dt><dd>${o.exchange}</dd>`;
+}
+
 function back(){ document.getElementById("confirmCard").style.display="none";
   document.getElementById("formCard").style.display="block"; show("confirmMsg","",""); }
 

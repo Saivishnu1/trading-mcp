@@ -14,10 +14,10 @@ from unittest.mock import AsyncMock, patch
 from src.server import _app
 
 
-async def _call(path, method="GET", body=b"", headers=None):
+async def _call(path, method="GET", body=b"", headers=None, query_string=b""):
     scope = {
         "type": "http", "method": method, "path": path,
-        "query_string": b"", "headers": headers or [(b"host", b"testserver")],
+        "query_string": query_string, "headers": headers or [(b"host", b"testserver")],
         "scheme": "http",
     }
     chunks = [body]
@@ -140,3 +140,51 @@ async def test_place_unknown_symbol_returns_400():
     assert status == 400
     assert "not found" in json.loads(body)["error"]
     sub.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# /trade/symbols — autocomplete search
+# ---------------------------------------------------------------------------
+
+def _qs(**kw):
+    return "&".join(f"{k}={v}" for k, v in kw.items()).encode()
+
+
+@pytest.mark.anyio
+async def test_symbols_rejects_bad_pin():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.search_symbols", AsyncMock()) as search:
+        status, body = await _call("/trade/symbols", query_string=_qs(q="reliance", pin="0000"))
+    assert status == 403
+    search.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_symbols_short_query_returns_empty_without_calling_service():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.search_symbols", AsyncMock()) as search:
+        status, body = await _call("/trade/symbols", query_string=_qs(q="r", pin="1234"))
+    assert status == 200
+    assert json.loads(body)["results"] == []
+    search.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_symbols_valid_query_returns_results():
+    results = [{"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "segment": "EQUITY"}]
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.search_symbols", AsyncMock(return_value=results)) as search:
+        status, body = await _call("/trade/symbols", query_string=_qs(q="reliance", pin="1234"))
+    assert status == 200
+    data = json.loads(body)
+    assert data["results"] == results
+    search.assert_awaited_once()
+    assert search.call_args.args[0] == "reliance"
+
+
+@pytest.mark.anyio
+async def test_symbols_disabled_when_pin_unset():
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("TRADE_PIN", None)
+        status, _ = await _call("/trade/symbols", query_string=_qs(q="reliance", pin=""))
+    assert status == 403

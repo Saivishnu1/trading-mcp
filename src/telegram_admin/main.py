@@ -24,6 +24,7 @@ from src.telegram_admin.handlers import (
     order_confirm_callback,
     positions_command,
     orders_command,
+    search_command,
 )
 from src.telegram_admin.conversation import env_conversation_handler
 
@@ -50,6 +51,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(order_confirm_callback, pattern="^order_confirm:"))
     application.add_handler(CommandHandler("positions", positions_command))
     application.add_handler(CommandHandler("orders", orders_command))
+    application.add_handler(CommandHandler("search", search_command))
 
     # Add other administrative command handlers
     application.add_handler(CommandHandler("start", start_command))

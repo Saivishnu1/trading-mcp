@@ -854,6 +854,26 @@ async def _app(scope, receive, send):
             await _send_html(send, 200, _TRADE_TEMPLATE)
             return
 
+        if path == "/trade/symbols" and method == "GET":
+            qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+            pin = (qs.get("pin", [""])[0]).strip()
+            query = (qs.get("q", [""])[0]).strip()
+            segment = (qs.get("segment", [""])[0]).strip() or None
+            if not _trade_pin_ok(pin):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            if len(query) < 2:
+                await _send_json(send, 200, {"results": []})
+                return
+            from src.execution.service import search_symbols
+            try:
+                results = await search_symbols(query, segment=segment)
+            except Exception as exc:
+                await _send_json(send, 502, {"error": f"symbol search failed: {exc}"})
+                return
+            await _send_json(send, 200, {"results": results})
+            return
+
         if path == "/trade/preview" and method == "POST":
             raw = await _read_body(receive)
             try:

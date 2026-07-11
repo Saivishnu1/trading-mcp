@@ -6,6 +6,7 @@ from src.telegram_admin.handlers import (
     status_command,
     buy_command,
     order_confirm_callback,
+    search_command,
 )
 
 ADMIN_ID = 1344481918
@@ -157,3 +158,50 @@ async def test_order_confirm_no_cancels_without_placing():
     sub.assert_not_awaited()
     assert "pending_order" not in context.user_data
     query.message.edit_text.assert_awaited()  # "Order cancelled."
+
+
+# ---------------------------------------------------------------------------
+# /search — symbol lookup before /buy or /sell
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_search_command_too_short_shows_usage():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["r"]
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.search_symbols", AsyncMock()) as search:
+        await search_command(update, context)
+
+    search.assert_not_awaited()
+    assert "Usage" in message.reply_text.call_args[0][0]
+
+
+@pytest.mark.anyio
+async def test_search_command_lists_matches():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["reliance"]
+
+    results = [{"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "segment": "EQUITY"}]
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.search_symbols", AsyncMock(return_value=results)):
+        await search_command(update, context)
+
+    reply = message.reply_text.call_args[0][0]
+    assert "RELIANCE" in reply
+    assert "Reliance Industries" in reply
+
+
+@pytest.mark.anyio
+async def test_search_command_no_matches():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["notasymbol"]
+
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.search_symbols", AsyncMock(return_value=[])):
+        await search_command(update, context)
+
+    assert "No symbols found" in message.reply_text.call_args[0][0]

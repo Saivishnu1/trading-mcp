@@ -29,6 +29,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         msg = (
             "✅ Zerodha MCP Admin Bot\n\n"
             "📈 Trading:\n\n"
+            "/search TEXT - Find the exact tradable symbol (do this first!)\n"
             "/buy SYM QTY [MARKET|LIMIT price] - Place a buy order (confirmed)\n"
             "/sell SYM QTY [MARKET|LIMIT price] - Place a sell order (confirmed)\n"
             "/positions   - Show open positions\n"
@@ -641,3 +642,32 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as exc:
         logger.error("Error in orders_command: %s", exc, exc_info=True)
         await update.message.reply_text(f"❌ Error fetching orders: {exc}")
+
+
+@admin_only
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/search TEXT — look up exact tradable symbols before /buy or /sell.
+
+    Solves "what's the exact symbol name" — /buy and /sell need an exact
+    trading symbol, so this lets you type a partial name (e.g. "reliance" or
+    "nifty 24200") and see the real symbols to copy into the order command.
+    """
+    try:
+        query = " ".join(context.args or []).strip()
+        if len(query) < 2:
+            await update.message.reply_text("Usage: /search TEXT (at least 2 characters)\ne.g. /search reliance")
+            return
+        from src.execution.service import search_symbols
+        results = await search_symbols(query)
+        if not results:
+            await update.message.reply_text(f"No symbols found matching '{query}'.")
+            return
+        lines = [f"🔎 *Symbols matching '{query}'*"]
+        for r in results:
+            tag = "📈" if r["segment"] == "DERIVATIVE" else "📊"
+            lines.append(f"{tag} `{r['symbol']}`  —  {r['name']}  ({r['exchange']})")
+        lines.append("\nTap-copy a symbol, then /buy SYMBOL QTY or /sell SYMBOL QTY.")
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as exc:
+        logger.error("Error in search_command: %s", exc, exc_info=True)
+        await update.message.reply_text(f"❌ Error searching symbols: {exc}")
