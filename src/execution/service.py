@@ -100,4 +100,25 @@ async def submit_order(
     except Exception as exc:  # pragma: no cover — defensive
         logger.error("order placed but audit log failed: %s", exc)
 
+    if (
+        result.get("status") == "ok"
+        and req.trailing_sl_points is not None
+        and req.sl_trigger_price is not None
+        and result.get("order_id")
+    ):
+        # INDstocks has no native trailing-SL — start the client-side ratchet
+        # (see src/execution/trailing_sl.py) now that the smart order exists.
+        from .trailing_sl import start_trailing_sl
+
+        start_trailing_sl(
+            result["order_id"],
+            exchange=req.exchange,
+            security_id=req.security_id,
+            side=req.transaction_type,
+            trail_points=req.trailing_sl_points,
+            initial_sl_trigger=req.sl_trigger_price,
+            initial_sl_limit=req.sl_limit_price or req.sl_trigger_price,
+            broker_name=broker,
+        )
+
     return result

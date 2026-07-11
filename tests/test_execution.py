@@ -86,6 +86,43 @@ class TestOrderRequestPayload:
         )
         assert "symbol" not in req.to_indstocks_payload()
 
+    def test_is_smart_order_false_without_legs(self):
+        from src.brokers.models import OrderRequest
+        req = OrderRequest(security_id="1", exchange="NSE", segment="EQUITY",
+                            transaction_type="BUY", quantity=1)
+        assert not req.is_smart_order
+
+    def test_is_smart_order_true_with_sl(self):
+        from src.brokers.models import OrderRequest
+        req = OrderRequest(security_id="1", exchange="NSE", segment="EQUITY",
+                            transaction_type="BUY", quantity=1, sl_trigger_price=2820.0)
+        assert req.is_smart_order
+
+    def test_smart_order_payload_includes_sl_and_target_legs(self):
+        from src.brokers.models import OrderRequest
+        req = OrderRequest(
+            security_id="2885", exchange="NSE", segment="EQUITY",
+            transaction_type="BUY", quantity=1, order_type="LIMIT", limit_price=2870.0,
+            sl_trigger_price=2820.0, sl_limit_price=2810.0,
+            tgt_trigger_price=2950.0, tgt_limit_price=2950.0,
+        )
+        p = req.to_indstocks_smart_order_payload()
+        assert p["sl_trigger_price"] == 2820.0
+        assert p["sl_limit_price"] == 2810.0
+        assert p["tgt_trigger_price"] == 2950.0
+        assert p["tgt_limit_price"] == 2950.0
+        assert p["limit_price"] == 2870.0
+        assert "trailing_sl_points" not in p  # never sent to INDstocks — client-side only
+
+    def test_smart_order_payload_omits_unset_legs(self):
+        from src.brokers.models import OrderRequest
+        req = OrderRequest(security_id="1", exchange="NSE", segment="EQUITY",
+                            transaction_type="BUY", quantity=1, sl_trigger_price=2820.0)
+        p = req.to_indstocks_smart_order_payload()
+        assert "sl_trigger_price" in p
+        assert "tgt_trigger_price" not in p
+        assert "sl_limit_price" not in p
+
 
 # ---------------------------------------------------------------------------
 # INDmoneyBroker.place_order
@@ -162,6 +199,107 @@ class TestPlaceOrder:
             result = await b.place_order(self._req())
         assert result["status"] == "error"
         assert "timeout" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# INDmoneyBroker smart orders (SL/target legs)
+# ---------------------------------------------------------------------------
+
+class TestSmartOrder:
+
+    def _smart_req(self):
+        from src.brokers.models import OrderRequest
+        return OrderRequest(
+            security_id="2885", exchange="NSE", segment="EQUITY",
+            transaction_type="BUY", quantity=1, order_type="MARKET",
+            product="INTRADAY", symbol="RELIANCE",
+            sl_trigger_price=2820.0, sl_limit_price=2810.0,
+            tgt_trigger_price=2950.0, tgt_limit_price=2950.0,
+        )
+
+    @pytest.mark.anyio
+    async def test_place_order_routes_smart_orders_to_smart_endpoint(self):
+        b = _broker()
+        resp = _make_httpx_response(200, {
+            "status": "success",
+            "data": {"order_data": [{
+                "order_id": "DRV-1", "order_status": "CREATED",
+                "child_order_details": {"order_id": "GTT-1", "order_status": "CREATED"},
+            }]},
+        })
+        client_mock = MagicMock()
+        client_mock.post = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            result = await b.place_order(self._smart_req())
+        assert result["status"] == "ok"
+        assert result["order_id"] == "DRV-1"
+        assert result["child_order_id"] == "GTT-1"
+        args, kwargs = client_mock.post.call_args
+        assert args[0].endswith("/smart/order")
+        assert kwargs["json"]["sl_trigger_price"] == 2820.0
+        assert kwargs["json"]["tgt_trigger_price"] == 2950.0
+
+    @pytest.mark.anyio
+    async def test_plain_order_does_not_hit_smart_endpoint(self):
+        b = _broker()
+        resp = _make_httpx_response(200, {"status": "success", "data": {"order_id": "X", "order_status": "O"}})
+        client_mock = MagicMock()
+        client_mock.post = AsyncMock(return_value=resp)
+        from src.brokers.models import OrderRequest
+        plain_req = OrderRequest(security_id="1", exchange="NSE", segment="EQUITY",
+                                  transaction_type="BUY", quantity=1)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            await b.place_order(plain_req)
+        args, _ = client_mock.post.call_args
+        assert args[0].endswith("/order")
+        assert not args[0].endswith("/smart/order")
+
+    @pytest.mark.anyio
+    async def test_smart_order_rejection(self):
+        b = _broker()
+        resp = _make_httpx_response(400, {"status": "error", "message": "invalid trigger"})
+        client_mock = MagicMock()
+        client_mock.post = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            result = await b.place_order(self._smart_req())
+        assert result["status"] == "error"
+        assert result["order_id"] is None
+
+    @pytest.mark.anyio
+    async def test_modify_smart_order_success(self):
+        b = _broker()
+        resp = _make_httpx_response(200, {"status": "success", "data": {}})
+        client_mock = MagicMock()
+        client_mock.post = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            result = await b.modify_smart_order("GTT-1", sl_trigger_price=2830.0, sl_limit_price=2825.0)
+        assert result["status"] == "ok"
+        args, kwargs = client_mock.post.call_args
+        assert args[0].endswith("/smart/order/modify")
+        assert kwargs["json"]["order_id"] == "GTT-1"
+        assert kwargs["json"]["sl_trigger_price"] == 2830.0
+
+    @pytest.mark.anyio
+    async def test_modify_smart_order_no_token(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("INDSTOCKS_TOKEN", None)
+            b = INDmoneyBroker()
+        result = await b.modify_smart_order("GTT-1", sl_trigger_price=2830.0)
+        assert result["status"] == "error"
+
+    @pytest.mark.anyio
+    async def test_cancel_smart_order_success(self):
+        b = _broker()
+        resp = _make_httpx_response(200, {"status": "success", "data": {}})
+        client_mock = MagicMock()
+        client_mock.post = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            result = await b.cancel_smart_order("GTT-1")
+        assert result["status"] == "ok"
+        args, kwargs = client_mock.post.call_args
+        assert args[0].endswith("/smart/order/cancel")
+        assert kwargs["json"]["order_id"] == "GTT-1"
 
 
 # ---------------------------------------------------------------------------
@@ -478,3 +616,54 @@ class TestSubmitOrder:
              patch.object(svc._repo, "save_order", AsyncMock(side_effect=Exception("db down"))):
             result = await svc.submit_order(self._req(), source="web", user_id=None)
         assert result["status"] == "ok"  # logging failure did not break the order
+
+    def _smart_req_with_trail(self):
+        from src.brokers.models import OrderRequest
+        return OrderRequest(
+            security_id="2885", exchange="NSE", segment="EQUITY",
+            transaction_type="BUY", quantity=1, symbol="RELIANCE",
+            sl_trigger_price=2820.0, sl_limit_price=2810.0,
+            trailing_sl_points=5.0,
+        )
+
+    @pytest.mark.anyio
+    async def test_submit_order_starts_trailing_sl_when_requested(self):
+        import src.execution.service as svc
+        placed = {"status": "ok", "order_id": "GTT-1", "order_status": "CREATED", "body": {}}
+        adapter = MagicMock()
+        adapter.place_order = AsyncMock(return_value=placed)
+        start_mock = MagicMock()
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc._repo, "save_order", AsyncMock(return_value=None)), \
+             patch("src.execution.trailing_sl.start_trailing_sl", start_mock):
+            await svc.submit_order(self._smart_req_with_trail(), source="telegram", user_id="u1")
+        start_mock.assert_called_once()
+        _, kwargs = start_mock.call_args
+        assert kwargs["trail_points"] == 5.0
+        assert kwargs["initial_sl_trigger"] == 2820.0
+
+    @pytest.mark.anyio
+    async def test_submit_order_does_not_start_trailing_sl_without_trail_points(self):
+        import src.execution.service as svc
+        placed = {"status": "ok", "order_id": "GTT-1", "body": {}}
+        adapter = MagicMock()
+        adapter.place_order = AsyncMock(return_value=placed)
+        start_mock = MagicMock()
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc._repo, "save_order", AsyncMock(return_value=None)), \
+             patch("src.execution.trailing_sl.start_trailing_sl", start_mock):
+            await svc.submit_order(self._req(), source="telegram", user_id="u1")
+        start_mock.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_submit_order_does_not_start_trailing_sl_on_rejected_order(self):
+        import src.execution.service as svc
+        placed = {"status": "error", "message": "rejected"}
+        adapter = MagicMock()
+        adapter.place_order = AsyncMock(return_value=placed)
+        start_mock = MagicMock()
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc._repo, "save_order", AsyncMock(return_value=None)), \
+             patch("src.execution.trailing_sl.start_trailing_sl", start_mock):
+            await svc.submit_order(self._smart_req_with_trail(), source="telegram", user_id="u1")
+        start_mock.assert_not_called()

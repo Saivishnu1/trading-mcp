@@ -677,13 +677,17 @@ async def order_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         result = await submit_order(req, source="telegram", user_id=user_id)
 
         if result.get("status") == "ok":
-            await query.message.reply_text(
-                f"✅ Order placed\n"
-                f"• {req.transaction_type} {req.symbol} x{req.quantity}\n"
-                f"• Order ID: `{result.get('order_id')}`\n"
+            lines = [
+                "✅ Order placed",
+                f"• {req.transaction_type} {req.symbol} x{req.quantity}",
+                f"• Order ID: `{result.get('order_id')}`",
                 f"• Status: {result.get('order_status') or 'submitted'}",
-                parse_mode="Markdown",
-            )
+            ]
+            if result.get("child_order_id"):
+                lines.append(f"• SL/Target leg: `{result['child_order_id']}` ({result.get('child_order_status') or 'pending'})")
+            if req.trailing_sl_points is not None:
+                lines.append(f"• Trailing SL active: {req.trailing_sl_points:g} points (bot-managed)")
+            await query.message.reply_text("\n".join(lines), parse_mode="Markdown")
         else:
             detail = result.get("message") or result.get("body") or result.get("order_status") or "unknown error"
             await query.message.reply_text(f"❌ Order rejected: {detail}")

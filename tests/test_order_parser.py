@@ -64,6 +64,60 @@ class TestParseOrderArgs:
         assert isinstance(parse_order_args(["RELIANCE", "1", "WAT"], "BUY"), ParseError)
 
 
+class TestSlTargetTrail:
+
+    def test_sl_only_defaults_limit_to_trigger(self):
+        r = _ok(["RELIANCE", "1", "SL", "2820"])
+        assert r.sl_trigger_price == 2820.0
+        assert r.sl_limit_price == 2820.0
+        assert r.tgt_trigger_price is None
+        assert r.is_smart_order
+
+    def test_sl_with_explicit_limit(self):
+        r = _ok(["RELIANCE", "1", "SL", "2820", "2810"])
+        assert r.sl_trigger_price == 2820.0
+        assert r.sl_limit_price == 2810.0
+
+    def test_target_only(self):
+        r = _ok(["RELIANCE", "1", "TARGET", "2950"])
+        assert r.tgt_trigger_price == 2950.0
+        assert r.tgt_limit_price == 2950.0
+        assert r.is_smart_order
+
+    def test_sl_and_target_together(self):
+        r = _ok(["RELIANCE", "1", "LIMIT", "2870", "SL", "2820", "TARGET", "2950"])
+        assert r.limit_price == 2870.0
+        assert r.sl_trigger_price == 2820.0
+        assert r.tgt_trigger_price == 2950.0
+
+    def test_trail_with_sl(self):
+        r = _ok(["RELIANCE", "1", "SL", "2820", "TRAIL", "5"])
+        assert r.trailing_sl_points == 5.0
+        assert r.sl_trigger_price == 2820.0
+
+    def test_trail_without_sl_is_error(self):
+        assert isinstance(parse_order_args(["RELIANCE", "1", "TRAIL", "5"], "BUY"), ParseError)
+
+    def test_no_legs_not_smart_order(self):
+        r = _ok(["RELIANCE", "1"])
+        assert not r.is_smart_order
+
+    def test_sl_requires_price(self):
+        assert isinstance(parse_order_args(["RELIANCE", "1", "SL"], "BUY"), ParseError)
+
+    def test_sl_bad_price(self):
+        assert isinstance(parse_order_args(["RELIANCE", "1", "SL", "abc"], "BUY"), ParseError)
+
+    def test_target_requires_price(self):
+        assert isinstance(parse_order_args(["RELIANCE", "1", "TARGET"], "BUY"), ParseError)
+
+    def test_trail_requires_value(self):
+        assert isinstance(parse_order_args(["RELIANCE", "1", "SL", "2820", "TRAIL"], "BUY"), ParseError)
+
+    def test_trail_bad_value(self):
+        assert isinstance(parse_order_args(["RELIANCE", "1", "SL", "2820", "TRAIL", "abc"], "BUY"), ParseError)
+
+
 class TestDerivativeDetection:
 
     def test_equity_ending_in_ce_pe_stays_equity(self):

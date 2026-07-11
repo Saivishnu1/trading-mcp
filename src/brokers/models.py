@@ -81,6 +81,14 @@ class OrderRequest:
       - validity:         "DAY" | "IOC"
 
     ``symbol`` is display-only (shown in confirm summaries); the API keys on ``security_id``.
+
+    SL/target fields route this order through INDstocks' Smart Order (GTT-style)
+    endpoint instead of the plain order endpoint — see ``is_smart_order``/
+    ``to_indstocks_smart_order_payload``. INDstocks has no native trailing-SL field
+    (confirmed absent from api-docs.indstocks.com/smart_orders/); trailing SL is
+    synthesized client-side (see src/execution/trailing_sl.py) by repeatedly calling
+    ``/smart/order/modify`` as price moves favorably — it is never sent as a single
+    order field.
     """
 
     security_id: str
@@ -94,9 +102,22 @@ class OrderRequest:
     validity: str = "DAY"
     is_amo: bool = False
     symbol: str = ""  # display only, not sent to the API
+    sl_trigger_price: float | None = None
+    sl_limit_price: float | None = None
+    tgt_trigger_price: float | None = None
+    tgt_limit_price: float | None = None
+    trailing_sl_points: float | None = None  # client-side only, never sent to INDstocks
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    @property
+    def is_smart_order(self) -> bool:
+        """True if any SL/target leg is set, requiring /smart/order instead of /order."""
+        return any(
+            v is not None
+            for v in (self.sl_trigger_price, self.sl_limit_price, self.tgt_trigger_price, self.tgt_limit_price)
+        )
 
     def to_indstocks_payload(self) -> dict:
         """Map to the exact INDstocks ``POST /order`` request body.
@@ -117,6 +138,36 @@ class OrderRequest:
         }
         if self.order_type.upper() == "LIMIT":
             payload["limit_price"] = float(self.limit_price)
+        return payload
+
+    def to_indstocks_smart_order_payload(self) -> dict:
+        """Map to the exact INDstocks ``POST /smart/order`` request body.
+
+        Per api-docs.indstocks.com/smart_orders/: SL and target are sibling legs
+        of one GTT-style order (``sl_trigger_price``/``sl_limit_price``,
+        ``tgt_trigger_price``/``tgt_limit_price``), not separate OCO orders.
+        """
+        payload: dict = {
+            "txn_type": self.transaction_type.upper(),
+            "exchange": self.exchange.upper(),
+            "segment": self.segment.upper(),
+            "product": self.product.upper(),
+            "order_type": self.order_type.upper(),
+            "validity": self.validity.upper(),
+            "security_id": str(self.security_id),
+            "qty": int(self.quantity),
+            "algo_id": _INDSTOCKS_ALGO_ID.get(self.exchange.upper(), "99999"),
+        }
+        if self.order_type.upper() == "LIMIT":
+            payload["limit_price"] = float(self.limit_price)
+        if self.sl_trigger_price is not None:
+            payload["sl_trigger_price"] = float(self.sl_trigger_price)
+        if self.sl_limit_price is not None:
+            payload["sl_limit_price"] = float(self.sl_limit_price)
+        if self.tgt_trigger_price is not None:
+            payload["tgt_trigger_price"] = float(self.tgt_trigger_price)
+        if self.tgt_limit_price is not None:
+            payload["tgt_limit_price"] = float(self.tgt_limit_price)
         return payload
 
 

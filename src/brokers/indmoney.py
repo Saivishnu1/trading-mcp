@@ -341,15 +341,21 @@ class INDmoneyBroker(BrokerAdapter):
             return []
 
     async def place_order(self, req: OrderRequest) -> dict:
-        """Place an order via INDstocks ``POST /order``.
+        """Place an order via INDstocks.
 
-        Contract: api-docs.indstocks.com/normal_orders/ — auth is the same
-        ``Authorization`` header as every read call. INDstocks has no pure MARKET
-        order (it converts MARKET → LIMIT at the live price server-side).
-        Returns a uniform dict; never raises.
+        Plain orders go to ``POST /order`` (api-docs.indstocks.com/normal_orders/).
+        Orders carrying an SL and/or target leg (``req.is_smart_order``) go to
+        ``POST /smart/order`` (api-docs.indstocks.com/smart_orders/) instead — a
+        GTT-style order whose SL/target legs are sibling fields on one request,
+        not separate OCO orders. Auth is the same ``Authorization`` header as
+        every read call. INDstocks has no pure MARKET order (it converts
+        MARKET → LIMIT at the live price server-side). Returns a uniform dict;
+        never raises.
         """
         if not self._token:
             return {"status": "error", "message": "not_configured"}
+        if req.is_smart_order:
+            return await self._place_smart_order(req)
         payload = req.to_indstocks_payload()
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -377,6 +383,106 @@ class INDmoneyBroker(BrokerAdapter):
                 }
         except Exception as exc:
             logger.error("INDmoneyBroker.place_order failed: %s", exc)
+            return {"status": "error", "message": str(exc)}
+
+    async def _place_smart_order(self, req: OrderRequest) -> dict:
+        """POST /smart/order — SL/target-leg (GTT-style) order placement.
+
+        Response shape differs from the plain /order endpoint:
+        ``data.order_data`` is a list of order dicts, each optionally carrying
+        a ``child_order_details`` sub-order (the GTT leg). We surface the
+        parent order_id/order_status plus the child (SL/target) leg's id.
+        """
+        payload = req.to_indstocks_smart_order_payload()
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{INDSTOCKS_BASE}/smart/order",
+                    headers=self._headers(),
+                    json=payload,
+                )
+                try:
+                    body = r.json()
+                except Exception:
+                    body = r.text
+                ok = (
+                    200 <= r.status_code < 300
+                    and isinstance(body, dict)
+                    and body.get("status") == "success"
+                )
+                order_data = []
+                if isinstance(body, dict):
+                    data = body.get("data", {})
+                    if isinstance(data, dict):
+                        order_data = data.get("order_data") or []
+                first = order_data[0] if order_data and isinstance(order_data[0], dict) else {}
+                child = first.get("child_order_details") if isinstance(first, dict) else None
+                return {
+                    "status": "ok" if ok else "error",
+                    "status_code": r.status_code,
+                    "order_id": first.get("order_id"),
+                    "order_status": first.get("order_status"),
+                    "child_order_id": child.get("order_id") if isinstance(child, dict) else None,
+                    "child_order_status": child.get("order_status") if isinstance(child, dict) else None,
+                    "body": body,
+                }
+        except Exception as exc:
+            logger.error("INDmoneyBroker._place_smart_order failed: %s", exc)
+            return {"status": "error", "message": str(exc)}
+
+    async def modify_smart_order(self, order_id: str, **fields) -> dict:
+        """POST /smart/order/modify — adjust an existing smart order's SL/target
+        legs (e.g. ratcheting a trailing SL's sl_trigger_price/sl_limit_price
+        as price moves favorably). ``fields`` are passed through verbatim
+        (order_id plus whichever of sl_trigger_price/sl_limit_price/
+        tgt_trigger_price/tgt_limit_price are being changed)."""
+        if not self._token:
+            return {"status": "error", "message": "not_configured"}
+        payload = {"order_id": order_id, **fields}
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{INDSTOCKS_BASE}/smart/order/modify",
+                    headers=self._headers(),
+                    json=payload,
+                )
+                try:
+                    body = r.json()
+                except Exception:
+                    body = r.text
+                ok = (
+                    200 <= r.status_code < 300
+                    and isinstance(body, dict)
+                    and body.get("status") == "success"
+                )
+                return {"status": "ok" if ok else "error", "status_code": r.status_code, "body": body}
+        except Exception as exc:
+            logger.error("INDmoneyBroker.modify_smart_order failed: %s", exc)
+            return {"status": "error", "message": str(exc)}
+
+    async def cancel_smart_order(self, order_id: str) -> dict:
+        """POST /smart/order/cancel — cancel a pending smart (GTT-style) order."""
+        if not self._token:
+            return {"status": "error", "message": "not_configured"}
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.post(
+                    f"{INDSTOCKS_BASE}/smart/order/cancel",
+                    headers=self._headers(),
+                    json={"order_id": order_id},
+                )
+                try:
+                    body = r.json()
+                except Exception:
+                    body = r.text
+                ok = (
+                    200 <= r.status_code < 300
+                    and isinstance(body, dict)
+                    and body.get("status") == "success"
+                )
+                return {"status": "ok" if ok else "error", "status_code": r.status_code, "body": body}
+        except Exception as exc:
+            logger.error("INDmoneyBroker.cancel_smart_order failed: %s", exc)
             return {"status": "error", "message": str(exc)}
 
     async def _cached_instruments(self, source: str) -> list[dict]:
