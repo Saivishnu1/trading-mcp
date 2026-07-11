@@ -141,6 +141,59 @@ async def test_market_awareness_disabled_features():
 
 
 @pytest.mark.anyio
+async def test_market_awareness_sensex_uses_bse_options_source():
+    """Priority B9 (2026-07-11) — verify get_market_awareness("SENSEX") already
+    works end-to-end through OptionsAwarenessEngine's BSE branch (which has its
+    own live-fetch-with-cache-fallback, unlike dashboard/service.py's older
+    generic-error path) rather than needing a brand new BSE-specific tool."""
+    mock_chart_engine = MagicMock()
+    mock_chart_engine.analyze = AsyncMock(return_value={
+        "data_source": "yahoo",
+        "trend": {"direction": "uptrend", "strength": "moderate"},
+        "indicators": {"adx": 22.0, "rsi": 58.0},
+        "levels": {},
+    })
+
+    mock_options_engine = MagicMock()
+    mock_options_engine.analyze = MagicMock(return_value={
+        "spot": 81200.0,
+        "pcr": 1.05,
+        "pcr_interpretation": "neutral",
+        "max_pain": 81000.0,
+        "walls": {"call_wall": 81500.0, "put_wall": 80800.0},
+        "iv": {"atm_iv": 12.0, "iv_skew": 0.2},
+        "oi_levels": {"supports": [80800.0], "resistances": [81500.0]},
+        "observations": [],
+    })
+
+    mock_global_pulse = MagicMock(return_value={})
+    mock_vix = MagicMock(return_value={})
+    mock_calendar = MagicMock(return_value={
+        "expiries": {"sensex": "2026-07-08"},
+        "days_to_expiry": {"sensex": 1},
+    })
+    mock_regime = MagicMock(return_value={})
+
+    with patch("src.market_awareness.aggregator.ChartEngine", return_value=mock_chart_engine), \
+         patch("src.market_awareness.aggregator.OptionsAwarenessEngine", return_value=mock_options_engine), \
+         patch("src.market_awareness.aggregator.get_global_pulse", mock_global_pulse), \
+         patch("src.market_awareness.aggregator.get_india_vix", mock_vix), \
+         patch("src.market_awareness.aggregator.get_market_calendar", mock_calendar), \
+         patch("src.market_awareness.engine.detect_market_regime", mock_regime):
+
+        engine = MarketAwarenessEngine()
+        res = await engine.analyze("SENSEX")
+
+        assert res["symbol"] == "SENSEX"
+        assert res["data_sources"]["options"] == "BSE"
+        assert res["options"]["pcr"] == 1.05
+        assert res["options"]["max_pain"] == 81000.0
+        assert res["options"]["call_wall"] == 81500.0
+        assert res["options"]["put_wall"] == 80800.0
+        assert "options" not in res["missing_data"]
+
+
+@pytest.mark.anyio
 async def test_market_awareness_partial_failure():
     # Chart engine succeeds
     mock_chart_engine = MagicMock()

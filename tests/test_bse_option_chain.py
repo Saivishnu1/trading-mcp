@@ -347,8 +347,12 @@ class TestBSEOptionMetadata:
         result = tools["get_capabilities"].fn()
 
         assert result["data"]["capabilities"]["bse_index_options"] is True
-        assert result["data"]["data_lag"]["get_sensex_option_chain"] == "5-15 min"
-        assert result["data"]["data_lag"]["get_bankex_option_chain"] == "5-15 min"
+        # Priority B9 (2026-07-11): BSE's own API is less reliable than NSE's —
+        # the lag string now says so explicitly rather than implying parity.
+        assert result["data"]["data_lag"]["get_sensex_option_chain"].startswith("5-15 min")
+        assert "BSE" in result["data"]["data_lag"]["get_sensex_option_chain"]
+        assert result["data"]["data_lag"]["get_bankex_option_chain"].startswith("5-15 min")
+        assert "BSE" in result["data"]["data_lag"]["get_bankex_option_chain"]
 
     def test_tool_health_lists_new_bse_tools(self):
         tools = self._meta_mcp()
@@ -356,6 +360,6 @@ class TestBSEOptionMetadata:
         detail = result["data"]["tools"]
 
         assert detail["get_sensex_option_chain"]["status"] == "healthy"
-        assert detail["get_sensex_option_chain"]["data_lag"] == "5-15 min"
+        assert detail["get_sensex_option_chain"]["data_lag"].startswith("5-15 min")
         assert detail["get_bankex_option_chain"]["status"] == "healthy"
-        assert detail["get_bankex_option_chain"]["data_lag"] == "5-15 min"
+        assert detail["get_bankex_option_chain"]["data_lag"].startswith("5-15 min")

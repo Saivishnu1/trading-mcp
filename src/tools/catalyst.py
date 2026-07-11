@@ -3,6 +3,7 @@ from src import meta as _meta
 
 from src.market.symbols import normalize_symbol_extended as _norm
 from src.catalyst.earnings import get_earnings_calendar as _get_earnings_calendar
+from src.catalyst.news import check_move_news_correlation as _check_move_news_correlation
 
 
 def register(mcp: FastMCP) -> None:
@@ -49,3 +50,43 @@ def register(mcp: FastMCP) -> None:
             **_norm_kw,
         ))
         return result
+
+    @mcp.tool()
+    def check_move_news_correlation(symbol: str, threshold_pct: float = 3.0) -> dict:
+        """When a position's underlying has moved more than threshold_pct
+        intraday, surface the top 1-2 relevant headlines alongside the move
+        (Priority B11, 2026-07-11) — avoids a manual web search to explain a
+        large move (e.g. Iran ceasefire status, Qatar LNG halt, OPEC+ output
+        changes) that only made sense after checking outside sources.
+
+        Move % is last_price vs. previous_close. No news fetch happens
+        unless the move actually exceeds threshold_pct.
+
+        Caveat: yfinance's news feed is NSE/global-equity-oriented and has
+        thin coverage for MCX commodity futures tickers — this works well
+        for NIFTY/SENSEX/equity positions, less so for MCX symbols.
+
+        Args:
+            symbol: NSE symbol, index alias, or exchange-prefixed form.
+            threshold_pct: minimum |move %| to trigger a news fetch (default 3.0).
+        """
+        sym, corrected, fmt = _norm(symbol, "check_move_news_correlation")
+        if not symbol.strip():
+            return _meta.make_symbol_error(symbol, "check_move_news_correlation")
+        _norm_kw: dict = dict(
+            symbol_corrected=corrected,
+            symbol_original=symbol if corrected else None,
+            symbol_normalized=sym if corrected else None,
+            symbol_format_applied=fmt if corrected else None,
+        )
+        data = _check_move_news_correlation(sym, threshold_pct)
+        m = _meta.build_meta(
+            type_=_meta.TYPE_FACT,
+            validation_status=_meta.VALIDATION_VERIFIED,
+            data_quality=_meta.DQ_INVALID if "error" in data else _meta.DQ_VALID,
+            source="yfinance",
+            account_type="MARKET_DATA_ONLY",
+            limitations=["yfinance news coverage is thin for MCX commodity futures tickers."],
+            **_norm_kw,
+        )
+        return _meta.wrap(data, m)

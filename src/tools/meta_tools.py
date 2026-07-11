@@ -44,8 +44,11 @@ _DATA_LAG: dict[str, str] = {
     "get_india_vix": "15 min",
     "get_nifty_option_chain": "5-15 min",
     "get_banknifty_option_chain": "5-15 min",
-    "get_sensex_option_chain": "5-15 min",
-    "get_bankex_option_chain": "5-15 min",
+    # BSE's own API is less consistently available than NSE's — retries +
+    # cache-fallback exist (BSEOptionsService), but expect more transient
+    # failures during live hours than the NSE equivalents above.
+    "get_sensex_option_chain": "5-15 min, occasional transient BSE API failures",
+    "get_bankex_option_chain": "5-15 min, occasional transient BSE API failures",
     "get_equity_option_chain": "5-15 min",
     "calculate_pcr": "5-15 min",
     "get_oi_analysis": "5-15 min",
@@ -57,6 +60,13 @@ _DATA_LAG: dict[str, str] = {
     "get_global_pulse": "15 min",
     "get_upcoming_events": "static",
     "get_market_calendar": "real-time",
+    "check_benchmark_divergence": "15 min (cached), benchmark side only — MCX side is caller-supplied",
+    "get_all_open_positions": "5-15 min, MCX rows pass through broker data as-is (no MCX quote/analytics support)",
+    "get_trade_cost_estimate": "real-time, directional estimate not exact reconciliation",
+    "get_net_pnl_today": "real-time, directional estimate not exact reconciliation",
+    "get_strike_attempts": "real-time (journal-derived, no external fetch)",
+    "check_move_news_correlation": "15-30 min, thin coverage for MCX commodity tickers",
+    "project_carry_cost": "static (linear approximation, not a live Greeks feed)",
 }
 
 # Deprecated tools: still callable but emit a deprecation notice

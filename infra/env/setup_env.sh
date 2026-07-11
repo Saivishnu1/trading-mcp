@@ -79,6 +79,7 @@ CUR_ZPASS=$(load_existing "ZERODHA_PASSWORD")
 CUR_TOTP=$(load_existing "ZERODHA_TOTP_SECRET")
 CUR_GEMINI=$(load_existing "GEMINI_API_KEY")
 CUR_OPENAI=$(load_existing "OPENAI_API_KEY")
+CUR_OILPRICEAPI=$(load_existing "OILPRICEAPI_KEY")
 CUR_TURSO_URL=$(load_existing "TURSO_DATABASE_URL")
 CUR_TURSO_TOKEN=$(load_existing "TURSO_AUTH_TOKEN")
 CUR_REDIS=$(load_existing "REDIS_URL")
@@ -125,6 +126,13 @@ prompt_plain   GEMINI_API_KEY  "Gemini API key"  "${CUR_GEMINI}"
 prompt_plain   OPENAI_API_KEY  "OpenAI API key"  "${CUR_OPENAI}"
 echo ""
 
+echo "--- Commodity Benchmark API (optional) ---"
+echo "  Used by check_benchmark_divergence (MCX vs. WTI/Henry Hub). Free tier"
+echo "  signup: https://www.oilpriceapi.com — leave blank to use their limited"
+echo "  keyless demo mode instead."
+prompt_plain   OILPRICEAPI_KEY  "OilPriceAPI key (blank to skip)"  "${CUR_OILPRICEAPI}"
+echo ""
+
 echo "--- Turso ---"
 prompt_plain   TURSO_DATABASE_URL  "TURSO_DATABASE_URL"  "${CUR_TURSO_URL}"
 prompt_secret  TURSO_AUTH_TOKEN    "TURSO_AUTH_TOKEN"    "${CUR_TURSO_TOKEN}"
@@ -164,6 +172,7 @@ DB_ECHO=0
 JWT_SECRET=${JWT_SECRET}
 GEMINI_API_KEY=${GEMINI_API_KEY}
 OPENAI_API_KEY=${OPENAI_API_KEY}
+OILPRICEAPI_KEY=${OILPRICEAPI_KEY}
 ZERODHA_USER_ID=${ZERODHA_USER_ID}
 ZERODHA_PASSWORD=${ZERODHA_PASSWORD}
 ZERODHA_TOTP_SECRET=${ZERODHA_TOTP_SECRET}

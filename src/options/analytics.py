@@ -270,3 +270,52 @@ def check_pinning_risk(
         "distance_points": round(distance_points, 2),
         "distance_pct": round(distance_pct, 3) if distance_pct is not None else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-day carry cost projection (Priority B12, 2026-07-11)
+# ---------------------------------------------------------------------------
+
+def project_carry_cost(premium: float, dte: int, days_held: int) -> dict:
+    """Rough time-value cost of holding an option position for *days_held*
+    more calendar days at its current time-to-expiry, with no price
+    movement in the underlying.
+
+    No options-pricing (Black-Scholes/Greeks) model exists in this codebase
+    — building one is out of scope for this projection. Uses a simple
+    linear time-decay approximation instead: an option's *entire* extrinsic
+    value must reach zero by expiry, and decay accelerates as DTE shrinks
+    (not linear in real markets, but this deliberately errs toward
+    OVER-estimating near-term decay, which is the safer direction for a
+    hold-or-close warning — better to overstate the cost of holding than
+    understate it).
+
+    Approximation: daily_decay = premium / dte (today's DTE, not re-computed
+    per day), decay_for_period = daily_decay * min(days_held, dte) — capped
+    at dte since an option can't decay past zero extrinsic value.
+
+    Returns {"estimated_decay_cost", "decay_pct_of_premium", "note"}.
+    `note` is factual, not predictive — describes the projection, not a
+    recommendation to hold or close.
+    """
+    if premium <= 0 or dte <= 0 or days_held <= 0:
+        return {
+            "estimated_decay_cost": 0.0,
+            "decay_pct_of_premium": 0.0,
+            "note": "No projection — position has zero or negative premium/DTE, or days_held is zero.",
+        }
+
+    effective_days = min(days_held, dte)
+    daily_decay = premium / dte
+    estimated_decay_cost = round(daily_decay * effective_days, 2)
+    decay_pct = round(estimated_decay_cost / premium * 100, 1)
+
+    return {
+        "estimated_decay_cost": estimated_decay_cost,
+        "decay_pct_of_premium": decay_pct,
+        "note": (
+            f"Holding {effective_days} more day(s) at the current decay rate costs "
+            f"approximately ₹{estimated_decay_cost:.2f} in time value "
+            f"({decay_pct:.1f}% of current premium) even with no price movement."
+        ),
+    }

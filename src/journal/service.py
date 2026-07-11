@@ -1,4 +1,5 @@
 import json
+import re
 import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -178,6 +179,11 @@ def log_trade(
         if rr is None and stoploss is not None and target is not None:
             rr = _auto_risk_reward(direction, entry_price, stoploss, target)
 
+        # Priority B4 (2026-07-11) — computed BEFORE inserting the new trade,
+        # since detect_reentry_pattern counts existing same-strike trades and
+        # treats this one as "+1" itself. Observational only — never blocks.
+        reentry_warning = detect_reentry_pattern(symbol)
+
         now = _now_utc()
         entry_d = entry_date if entry_date is not None else _today()
         entry_t = entry_time if entry_time is not None else now
@@ -219,7 +225,161 @@ def log_trade(
             conn.commit()
 
         row = conn.execute("SELECT * FROM trades WHERE id = ?", (trade_id,)).fetchone()
-        return _row_to_dict(row)
+        result = _row_to_dict(row)
+        if reentry_warning is not None:
+            result["REENTRY_WARNING"] = reentry_warning
+        return result
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Re-entry pattern detection + strike-level attempt tally (Priorities B4/B5,
+# 2026-07-11) — observational only, per the task's explicit "no auto-reject"
+# scope. Grouping key is (underlying, strike, option_type) parsed from the
+# free-text symbol column — there's no separate strike/option_type column in
+# this SQLite schema (trades.symbol carries the full option identifier).
+# ---------------------------------------------------------------------------
+
+_LOOSE_OPTION_RE = re.compile(
+    r"^([A-Z]+)\D*?(\d+(?:\.\d+)?)\s*(CE|PE)$"
+)
+
+
+def _parse_option_symbol(symbol: str) -> tuple[str, float, str] | None:
+    """Best-effort (underlying, strike, option_type) extraction. Reuses the
+    Zerodha tradingsymbol parser (src/monitor/symbol_resolver.py) for the
+    exact NFO format real synced trades carry, with a permissive fallback
+    for other input shapes (e.g. "NIFTY 24200 CE" from manual log_trade
+    calls). Returns None for anything unparseable — callers must skip those
+    rows from strike-level grouping rather than guess."""
+    from src.monitor.symbol_resolver import _parse_zerodha_tradingsymbol
+
+    parsed = _parse_zerodha_tradingsymbol(symbol)
+    if parsed:
+        return parsed["symbol"], parsed["strike"], parsed["option_type"]
+
+    m = _LOOSE_OPTION_RE.match(symbol.upper().strip().replace(" ", ""))
+    if m:
+        underlying, strike, opt = m.groups()
+        return underlying, float(strike), opt
+    return None
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _todays_trades() -> list[dict]:
+    """All of today's trades for the current user, any status — the shared
+    fetch both detect_reentry_pattern and get_strike_attempts build on."""
+    params: list = []
+    uf = _user_filter(params)
+    params.append(_today())
+    conn = _db._get_connection()
+    rows = conn.execute(
+        f"SELECT * FROM trades WHERE {uf} AND entry_date = ? ORDER BY created_at ASC",
+        params,
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
+def detect_reentry_pattern(
+    new_trade_symbol: str, window_minutes: int = 120,
+) -> str | None:
+    """Observational-only re-entry warning for log_trade — never blocks or
+    rejects. Returns a REENTRY_WARNING string, or None when no pattern is
+    detected (including when new_trade_symbol doesn't parse as an option).
+
+    Fires when either:
+      - this is the 3rd+ entry into the same underlying+strike+option_type
+        within the last `window_minutes`, or
+      - the most recent entry on that exact strike closed at a loss within
+        the last 30 minutes (a loss-recovery re-entry, regardless of count).
+    """
+    parsed = _parse_option_symbol(new_trade_symbol)
+    if parsed is None:
+        return None
+    underlying, strike, opt = parsed
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=window_minutes)
+
+    same_strike = [
+        t for t in _todays_trades()
+        if _parse_option_symbol(t["symbol"]) == parsed
+    ]
+    recent = [t for t in same_strike if (_parse_dt(t.get("entry_time")) or cutoff) >= cutoff]
+
+    label = f"{underlying} {strike:g} {opt}"
+    warnings: list[str] = []
+
+    count_including_new = len(recent) + 1
+    if count_including_new >= 3:
+        warnings.append(
+            f"{count_including_new}th entry into {label} in the last {window_minutes} minutes."
+        )
+
+    most_recent_closed = max(
+        (t for t in same_strike if t.get("status") == "CLOSED"),
+        key=lambda t: _parse_dt(t.get("exit_time")) or datetime.min.replace(tzinfo=timezone.utc),
+        default=None,
+    )
+    if most_recent_closed is not None:
+        exit_dt = _parse_dt(most_recent_closed.get("exit_time"))
+        pnl = most_recent_closed.get("pnl")
+        if exit_dt is not None and pnl is not None and pnl < 0 and (now - exit_dt) <= timedelta(minutes=30):
+            minutes_ago = int((now - exit_dt).total_seconds() // 60)
+            warnings.append(
+                f"Most recent entry on {label} closed at -₹{abs(pnl):.2f} "
+                f"{minutes_ago} minutes ago."
+            )
+
+    if not warnings:
+        return None
+    return "REENTRY_WARNING: " + " ".join(warnings)
+
+
+def get_strike_attempts(underlying: str | None = None) -> dict:
+    """Today's strike-level attempt tally — read-only aggregation over
+    today's trades, grouped by (underlying, strike, option_type), regardless
+    of whether the trader re-entered every time (Priority B5). Optionally
+    filtered to one underlying (e.g. "NIFTY")."""
+    try:
+        groups: dict[tuple[str, float, str], list[dict]] = {}
+        for t in _todays_trades():
+            parsed = _parse_option_symbol(t["symbol"])
+            if parsed is None:
+                continue
+            if underlying and parsed[0] != underlying.upper().strip():
+                continue
+            groups.setdefault(parsed, []).append(t)
+
+        strikes = []
+        for (u, strike, opt), trades in groups.items():
+            closed = [t for t in trades if t.get("status") == "CLOSED"]
+            wins = [t for t in closed if (t.get("pnl") or 0) > 0]
+            losses = [t for t in closed if (t.get("pnl") or 0) <= 0]
+            net_pnl = round(sum(t["pnl"] for t in closed if t.get("pnl") is not None), 2)
+            strikes.append({
+                "underlying": u,
+                "strike": strike,
+                "option_type": opt,
+                "attempts": len(trades),
+                "wins": len(wins),
+                "losses": len(losses),
+                "net_pnl": net_pnl,
+                "summary": f"{u} {strike:g} {opt}: tested {len(trades)} times today, "
+                           f"{len(wins)} wins / {len(losses)} losses, net {net_pnl:+.2f}.",
+            })
+
+        strikes.sort(key=lambda s: s["attempts"], reverse=True)
+        return {"date": _today(), "underlying": underlying.upper().strip() if underlying else None, "strikes": strikes}
     except Exception as exc:
         return {"error": str(exc)}
 

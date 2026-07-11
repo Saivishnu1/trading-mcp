@@ -58,9 +58,20 @@ class MarketMonitor:
 
         return min(base, premium_interval)
 
+    # Priority B7 (2026-07-11) — MCX trades until 23:30 IST, past NSE's
+    # 15:30 close and past is_market_open()'s window, which is exactly why
+    # a commodity position could sit open and unprotected with the main
+    # loop already idle. check_mcx_session_close_risk runs independently of
+    # is_market_open() so it still fires in that gap.
+    MCX_CLOSE = time(23, 30)
+
     def is_market_open(self) -> bool:
         now = datetime.now(self.IST).time()
         return self.MARKET_OPEN <= now <= self.MARKET_CLOSE
+
+    def is_mcx_session_active(self) -> bool:
+        now = datetime.now(self.IST).time()
+        return self.MARKET_OPEN <= now <= self.MCX_CLOSE
 
     async def _get_vix(self) -> float:
         try:
@@ -386,6 +397,7 @@ class MarketMonitor:
 
         market_data = await self._get_market_intelligence_data()
         alerts, wall_streak_updates = await self.market_intelligence.run_all_checks(market_data, session_state, settings)
+        dedup_updates: dict = {}
 
         for alert in alerts:
             # Raw wall-touch events (Priority 1, 2026-07-10) are logged for
@@ -406,6 +418,28 @@ class MarketMonitor:
             if self.conditions.is_alert_on_cooldown(last_sent, cooldown_seconds):
                 continue
 
+            # Priority B3 (2026-07-11) — near-duplicate re-fire guard beyond
+            # the coarser cooldown above: only allow a re-fire if the value
+            # has moved meaningfully from what was last actually FIRED (not
+            # the session-open reference the underlying check compares
+            # against), or enough time has passed regardless of delta.
+            dedup_key = alert.get("dedup_key")
+            if dedup_key is not None:
+                last_fired_value = session_state.get(dedup_key)
+                minutes_since_last_fire = (
+                    (datetime.now(last_sent.tzinfo) - last_sent).total_seconds() / 60
+                    if last_sent is not None else None
+                )
+                if not self.conditions.check_dedup_gate(
+                    current_value=alert["value"],
+                    last_fired_value=last_fired_value,
+                    minutes_since_last_fire=minutes_since_last_fire,
+                    min_delta=settings.get(f"{alert['type']}_dedup_min_delta", 0.05),
+                    min_minutes=settings.get(f"{alert['type']}_dedup_min_minutes", 30),
+                ):
+                    continue
+                dedup_updates[dedup_key] = alert["value"]
+
             delivered = await self.alerter.send_macro_alert(user, alert["type"], alert["message"])
             await self.repo.save_alert(user["id"], {
                 "alert_type": alert["type"],
@@ -425,7 +459,62 @@ class MarketMonitor:
             "last_nifty_spot": market_data.get("nifty_spot") or session_state.get("last_nifty_spot"),
             "last_sensex_spot": market_data.get("sensex_spot") or session_state.get("last_sensex_spot"),
             **wall_streak_updates,
+            **dedup_updates,
         })
+
+    async def check_mcx_session_close_risk(self, user: dict) -> None:
+        """Priority B7 (2026-07-11) — proactively push a Telegram alert when
+        an MCX position is open and untracked (no MCX symbol resolution
+        exists yet, see docs/research/mcx_scope_20260711.md, so every MCX
+        position is genuinely unmonitored by this platform's trailing-SL
+        system today) and MCX's close is within the hour. Runs regardless
+        of is_market_open() — the whole point is catching the gap after NSE
+        closes but before MCX does, when the main loop's checks have
+        already gone idle.
+
+        Reads INDmoney's raw positions directly (not the monitor's tracked
+        positions, which never contain MCX rows) since that's this
+        platform's real, working position-data source for MCX trades.
+        """
+        from src.brokers.indmoney import INDmoneyBroker
+
+        try:
+            ind = INDmoneyBroker()
+            if not await ind.is_authenticated():
+                return
+            positions = await ind.get_positions()
+        except Exception as exc:
+            logger.debug("check_mcx_session_close_risk: could not fetch INDmoney positions: %s", exc)
+            return
+
+        settings = await self.repo.get_user_settings(user["id"])
+        cooldown_seconds = settings.get("cooldown_session_close_risk", 3600)
+        now_naive = datetime.now(self.IST).replace(tzinfo=None)
+        for pos in positions:
+            if pos.quantity == 0:
+                continue
+            triggered, note = self.conditions.check_session_close_risk(
+                exchange=pos.exchange,
+                has_sl_or_target=False,  # every MCX position is untracked today — see docstring
+                now=now_naive,
+                exchange_close_time=self.MCX_CLOSE,
+            )
+            if not triggered:
+                continue
+
+            last_sent = await self.repo.get_last_alert_time(user["id"], "session_close_risk", pos.symbol)
+            if self.conditions.is_alert_on_cooldown(last_sent, cooldown_seconds):
+                continue
+
+            message = f"{pos.symbol}: {note}"
+            delivered = await self.alerter.send_macro_alert(user, "session_close_risk", message)
+            await self.repo.save_alert(user["id"], {
+                "alert_type": "session_close_risk",
+                "symbol": pos.symbol,
+                "message": message,
+                "severity": "high",
+                "delivered": delivered,
+            })
 
     async def run(self) -> None:
         await self.bootstrap.ensure_default_user()
@@ -465,6 +554,14 @@ class MarketMonitor:
                     await self.tracker.check_positions(user, vix)
                     await self.check_market_conditions(user)
                     await self.repo.save_heartbeat(user["id"], "last_market_check")
+
+                # Priority B7 (2026-07-11) — deliberately OUTSIDE the
+                # is_market_open() gate above: MCX trades until 23:30 IST,
+                # so this must keep firing after NSE's 15:30 close, which is
+                # exactly the window where a commodity position previously
+                # went unmonitored.
+                if self.is_mcx_session_active():
+                    await self.check_mcx_session_close_risk(user)
 
             positions = await self.repo.get_active_positions(users[0]["id"]) if users else []
             min_dte = min((p.get("dte", 7) for p in positions), default=7)

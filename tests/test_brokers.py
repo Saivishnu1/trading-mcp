@@ -7,6 +7,8 @@ No real network calls — all HTTP and broker interactions are mocked.
 from __future__ import annotations
 
 import os
+from datetime import datetime
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -618,7 +620,187 @@ class TestUnifiedTools:
             MockI.return_value.is_authenticated = AsyncMock(return_value=False)
             result = await _unified("get_orders", "all")
         assert "data" in result
-        assert result["data"]["total"] == 0
+
+
+class TestGetAllOpenPositions:
+    """Priority B6 (2026-07-11) — unified positions+holdings across
+    Zerodha + INDmoney, all segments including MCX passthrough."""
+
+    def _tools(self):
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+        from src.tools import brokers as brokers_tools
+        mcp = _FastMCP("test")
+        brokers_tools.register(mcp)
+        return {t.name: t for t in mcp._tool_manager.list_tools()}
+
+    @pytest.mark.anyio
+    async def test_combines_positions_and_holdings_across_brokers(self):
+        from src.brokers.models import Position, Holding
+
+        z_position = Position("NIFTY24200CE", "NSE", "NRML", 50, 100.0, 120.0, 1000.0, "zerodha")
+        i_holding = Holding("TCS", "NSE", 5, 3000.0, 3200.0, 1000.0, 6.67, "indmoney")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.tools.brokers._sl_target_status_by_symbol", AsyncMock(return_value={})):
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockZ.return_value.get_positions = AsyncMock(return_value=[z_position])
+            MockZ.return_value.get_holdings = AsyncMock(return_value=[])
+            MockI.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockI.return_value.get_positions = AsyncMock(return_value=[])
+            MockI.return_value.get_holdings = AsyncMock(return_value=[i_holding])
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        symbols = {p["symbol"] for p in result["data"]["positions"]}
+        assert symbols == {"NIFTY24200CE", "TCS"}
+        assert result["data"]["total"] == 2
+
+    @pytest.mark.anyio
+    async def test_nse_position_gets_1530_close_time(self):
+        from src.brokers.models import Position
+
+        z_position = Position("INFY", "NSE", "CNC", 10, 1500.0, 1550.0, 500.0, "zerodha")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.tools.brokers._sl_target_status_by_symbol", AsyncMock(return_value={})):
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockZ.return_value.get_positions = AsyncMock(return_value=[z_position])
+            MockZ.return_value.get_holdings = AsyncMock(return_value=[])
+            MockI.return_value.is_authenticated = AsyncMock(return_value=False)
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        entry = result["data"]["positions"][0]
+        assert entry["exchange"] == "NSE"
+        assert entry["session_close_time"] == "15:30"
+
+    @pytest.mark.anyio
+    async def test_mcx_position_gets_2330_close_time_passthrough(self):
+        """No MCX symbol/quote support exists in this platform yet (see
+        docs/research/mcx_scope_20260711.md) — but if the broker API ever
+        surfaces an MCX row, it must pass through with the correct
+        extended-hours close time, not silently default to NSE's 15:30."""
+        from src.brokers.models import Position
+
+        mcx_position = Position("NATGASMINI25JULFUT", "MCX", "NRML", 1, 285.0, 290.0, 500.0, "zerodha")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.tools.brokers._sl_target_status_by_symbol", AsyncMock(return_value={})):
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockZ.return_value.get_positions = AsyncMock(return_value=[mcx_position])
+            MockZ.return_value.get_holdings = AsyncMock(return_value=[])
+            MockI.return_value.is_authenticated = AsyncMock(return_value=False)
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        entry = result["data"]["positions"][0]
+        assert entry["exchange"] == "MCX"
+        assert entry["session_close_time"] == "23:30"
+
+    @pytest.mark.anyio
+    async def test_entry_fields_mapped_correctly(self):
+        from src.brokers.models import Position
+
+        z_position = Position("INFY", "NSE", "CNC", 10, 1500.0, 1550.0, 500.0, "zerodha")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.tools.brokers._sl_target_status_by_symbol", AsyncMock(return_value={})):
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockZ.return_value.get_positions = AsyncMock(return_value=[z_position])
+            MockZ.return_value.get_holdings = AsyncMock(return_value=[])
+            MockI.return_value.is_authenticated = AsyncMock(return_value=False)
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        entry = result["data"]["positions"][0]
+        assert entry["entry_price"] == 1500.0
+        assert entry["current_price"] == 1550.0
+        assert entry["unrealized_pnl"] == 500.0
+        assert entry["quantity"] == 10
+        assert entry["broker"] == "zerodha"
+
+    @pytest.mark.anyio
+    async def test_sl_target_status_best_effort_never_fails_tool(self):
+        """Monitor DB unavailable (e.g. no live Postgres in this dev env) —
+        the tool must still succeed with sl_status/target_status "unknown"."""
+        from src.brokers.models import Position
+
+        z_position = Position("INFY", "NSE", "CNC", 10, 1500.0, 1550.0, 500.0, "zerodha")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.monitor.repository.MonitorRepository") as MockRepo:
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockZ.return_value.get_positions = AsyncMock(return_value=[z_position])
+            MockZ.return_value.get_holdings = AsyncMock(return_value=[])
+            MockI.return_value.is_authenticated = AsyncMock(return_value=False)
+            MockRepo.return_value.get_active_users = AsyncMock(side_effect=RuntimeError("no DB"))
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        entry = result["data"]["positions"][0]
+        assert entry["sl_status"] == "unknown"
+        assert entry["target_status"] == "unknown"
+        assert "error" not in result["data"]
+        assert result["data"]["total"] == 1
+
+    @pytest.mark.anyio
+    async def test_session_close_risk_flagged_for_untracked_mcx_position_near_close(self):
+        """Priority B7 (2026-07-11) — every MCX position is genuinely
+        untracked by this monitor's SL system today (no MCX symbol
+        resolution exists), so sl_status stays "unknown" and the flag must
+        fire when close is imminent."""
+        from src.brokers.models import Position
+
+        mcx_position = Position("NATGASMINI25JULFUT", "MCX", "NRML", 1, 285.0, 290.0, 500.0, "indmoney")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.tools.brokers._sl_target_status_by_symbol", AsyncMock(return_value={})), \
+             patch("src.tools.brokers.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 7, 11, 23, 0)
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=False)
+            MockI.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockI.return_value.get_positions = AsyncMock(return_value=[mcx_position])
+            MockI.return_value.get_holdings = AsyncMock(return_value=[])
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        entry = result["data"]["positions"][0]
+        assert entry["SESSION_CLOSE_RISK"] is not None
+        assert "30 minutes" in entry["SESSION_CLOSE_RISK"]
+
+    @pytest.mark.anyio
+    async def test_session_close_risk_none_when_not_near_close(self):
+        from src.brokers.models import Position
+
+        mcx_position = Position("NATGASMINI25JULFUT", "MCX", "NRML", 1, 285.0, 290.0, 500.0, "indmoney")
+
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI, \
+             patch("src.tools.brokers._sl_target_status_by_symbol", AsyncMock(return_value={})), \
+             patch("src.tools.brokers.datetime") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 7, 11, 12, 0)
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=False)
+            MockI.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockI.return_value.get_positions = AsyncMock(return_value=[mcx_position])
+            MockI.return_value.get_holdings = AsyncMock(return_value=[])
+
+            tools = self._tools()
+            result = await tools["get_all_open_positions"].fn()
+
+        entry = result["data"]["positions"][0]
+        assert entry["SESSION_CLOSE_RISK"] is None
 
     @pytest.mark.anyio
     async def test_indmoney_not_configured_when_no_token(self):

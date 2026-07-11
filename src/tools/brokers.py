@@ -8,7 +8,9 @@ MCP tools for unified multi-broker portfolio access:
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, time as _time
 
+import pytz
 from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
@@ -18,6 +20,9 @@ from src.brokers.factory import (
 )
 from src.brokers.indmoney import INDmoneyBroker
 from src.brokers.zerodha import ZerodhaBroker
+from src.monitor.conditions import MarketConditions
+
+_IST = pytz.timezone("Asia/Kolkata")
 
 
 def _broker_meta(zerodha_connected: bool = False) -> dict:
@@ -99,6 +104,49 @@ async def _unified(method_name: str, broker: str) -> dict:
     return _meta.wrap(payload, m)
 
 
+# Priority B6 (2026-07-11) — exchange -> session-close time, for
+# get_all_open_positions. NSE/BSE close at 15:30 IST; MCX trades until 23:30
+# IST, past when attention typically shifts away (see also Priority B7's
+# session-close risk check, src/monitor/conditions.py::check_session_close_risk).
+_SESSION_CLOSE_TIMES = {
+    "NSE": "15:30",
+    "BSE": "15:30",
+    "MCX": "23:30",
+}
+
+
+async def _sl_target_status_by_symbol(broker_name: str) -> dict[str, dict]:
+    """Best-effort (symbol -> {sl_status, target_status}) lookup from the
+    monitor's own tracked positions/peaks — NOT required for every row, and
+    never fails the whole tool if the monitor DB is unavailable (e.g. no
+    live Postgres connection in this environment). Matches on symbol only
+    (MonitorPosition doesn't share a broker-position identity key with the
+    Position dataclass) — a best-effort join, not exact reconciliation."""
+    try:
+        from src.monitor.repository import MonitorRepository
+        repo = MonitorRepository()
+        users = await repo.get_active_users()
+        if not users:
+            return {}
+        user_id = users[0]["id"]
+        positions = await repo.get_active_positions(user_id)
+
+        status: dict[str, dict] = {}
+        for pos in positions:
+            if pos.get("broker") != broker_name:
+                continue
+            peak = await repo.get_peak(pos["id"])
+            trailing_sl = peak.get("trailing_sl") if peak else None
+            status[pos["symbol"]] = {
+                "sl_status": f"trailing_sl={trailing_sl}" if trailing_sl is not None else "not_set",
+                "target_status": "monitor_tracked",
+            }
+        return status
+    except Exception:
+        # Monitor DB unavailable — degrade gracefully, never fail the tool.
+        return {}
+
+
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
@@ -157,6 +205,82 @@ def register(mcp: FastMCP) -> None:
         status = await _get_broker_status()
         m = _broker_meta(zerodha_connected=bool(status.get("zerodha", {}).get("authenticated")))
         return _meta.wrap(status, m)
+
+    @mcp.tool()
+    async def get_all_open_positions() -> dict:
+        """Unified open-position view across Zerodha + INDmoney, all segments,
+        in one call (Priority B6, 2026-07-11).
+
+        Aggregates get_unified_positions (index F&O, equity F&O) and
+        get_unified_holdings (equity CNC) into a single flat list, adding
+        per-entry exchange and session_close_time ("15:30" for NSE/BSE,
+        "23:30" for MCX) so extended-hours positions (commodities) are
+        visibly distinct from ones that close at the regular NSE bell —
+        the gap that let a gas position go unmonitored into MCX's close
+        while attention had shifted elsewhere. MCX rows pass through
+        whatever the broker API returns for `exchange` as-is; there is no
+        dedicated MCX symbol/quote support in this platform yet (see
+        docs/research/mcx_scope_20260711.md).
+
+        sl_status/target_status are best-effort, from this platform's own
+        position monitor where a match exists — not populated for every row.
+        """
+        positions_resp, holdings_resp = await asyncio.gather(
+            _unified("get_positions", "all"),
+            _unified("get_holdings", "all"),
+        )
+
+        sl_target_by_symbol = {}
+        for broker_name in ("zerodha", "indmoney"):
+            sl_target_by_symbol.update(await _sl_target_status_by_symbol(broker_name))
+
+        conditions = MarketConditions()
+        now_ist = datetime.now(_IST).replace(tzinfo=None)
+
+        combined: list[dict] = []
+        for entry in positions_resp["data"]["combined"] + holdings_resp["data"]["combined"]:
+            symbol = entry.get("symbol", "")
+            exchange = (entry.get("exchange") or "NSE").upper()
+            sl_target = sl_target_by_symbol.get(symbol, {})
+            sl_status = sl_target.get("sl_status", "unknown")
+
+            # Priority B7 (2026-07-11) — MCX positions are never tracked by
+            # this monitor's trailing-SL system (no MCX symbol resolution
+            # exists yet, see docs/research/mcx_scope_20260711.md), so
+            # sl_status is genuinely "no SL" for every MCX row today, not a
+            # placeholder. Flag proactively when close is within the hour.
+            has_sl = sl_status not in ("unknown", "not_set")
+            triggered, session_close_note = conditions.check_session_close_risk(
+                exchange=exchange,
+                has_sl_or_target=has_sl,
+                now=now_ist,
+                exchange_close_time=_time(23, 30),
+            )
+
+            combined.append({
+                "symbol": symbol,
+                "broker": entry.get("broker"),
+                "entry_price": entry.get("avg_price"),
+                "current_price": entry.get("current_price"),
+                "quantity": entry.get("quantity"),
+                "unrealized_pnl": entry.get("pnl"),
+                "exchange": exchange,
+                "session_close_time": _SESSION_CLOSE_TIMES.get(exchange, "15:30"),
+                "sl_status": sl_status,
+                "target_status": sl_target.get("target_status", "unknown"),
+                "SESSION_CLOSE_RISK": session_close_note if triggered else None,
+            })
+
+        payload = {
+            "positions": combined,
+            "total": len(combined),
+            "brokers": {
+                "positions": positions_resp["data"]["brokers"],
+                "holdings": holdings_resp["data"]["brokers"],
+            },
+        }
+        zerodha_connected = positions_resp["meta"]["zerodha_connected"] or holdings_resp["meta"]["zerodha_connected"]
+        return _meta.wrap(payload, _broker_meta(zerodha_connected=zerodha_connected))
 
     @mcp.tool()
     async def get_indmoney_trades(order_id: str = "", segment: str = "") -> dict:

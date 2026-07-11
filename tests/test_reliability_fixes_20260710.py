@@ -427,3 +427,95 @@ class TestGetTradeCostEstimate:
 
         assert result["data"]["estimated_stt_charges"] is not None
         assert result["data"]["estimated_total_cost"] > result["data"]["estimated_brokerage"]
+
+
+def _ind_trade(price=100.0, qty=50):
+    return {"order_id": "T1", "symbol": "NIFTY24200CE", "quantity": qty, "price": price, "created_at": "", "segment": "DERIVATIVE"}
+
+
+class TestGetNetPnlToday:
+    """Priority B10 (2026-07-11) — gross realized P&L minus estimated costs,
+    labeled distinctly so gross proceeds can't be mistaken for net profit
+    (the exact confusion the task describes: ₹13,179 gross read as net
+    profit when actual net after charges was ~₹1,319)."""
+
+    def _tools(self):
+        from src.tools import costs
+
+        mcp = _FastMCP("test")
+        costs.register(mcp)
+        return {t.name: t for t in mcp._tool_manager.list_tools()}
+
+    @pytest.mark.anyio
+    async def test_net_pnl_subtracts_estimated_costs_from_gross(self):
+        tools = self._tools()
+        with patch("src.tools.costs.INDmoneyBroker") as MockInd:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_raw_funds = AsyncMock(return_value={
+                "body": {"data": {"realized_pnl": 13179.0}},
+            })
+            MockInd.return_value.get_trades = AsyncMock(return_value=[_ind_trade()] * 30)
+
+            result = await tools["get_net_pnl_today"].fn()
+
+        data = result["data"]
+        assert data["gross_realized_pnl"] == 13179.0
+        assert data["net_pnl_estimate"] == data["gross_realized_pnl"] - data["estimated_total_cost"]
+        assert data["net_pnl_estimate"] < data["gross_realized_pnl"]
+
+    @pytest.mark.anyio
+    async def test_gross_and_net_are_distinctly_labeled_fields(self):
+        """The exact confusion the task describes must be structurally
+        impossible — gross and net are different, clearly-named keys."""
+        tools = self._tools()
+        with patch("src.tools.costs.INDmoneyBroker") as MockInd:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_raw_funds = AsyncMock(return_value={
+                "body": {"data": {"realized_pnl": 1000.0}},
+            })
+            MockInd.return_value.get_trades = AsyncMock(return_value=[])
+
+            result = await tools["get_net_pnl_today"].fn()
+
+        assert "gross_realized_pnl" in result["data"]
+        assert "net_pnl_estimate" in result["data"]
+        assert result["data"]["gross_realized_pnl"] != result["data"].get("estimated_total_cost")
+
+    @pytest.mark.anyio
+    async def test_zero_trades_yields_zero_cost_net_equals_gross(self):
+        tools = self._tools()
+        with patch("src.tools.costs.INDmoneyBroker") as MockInd:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_raw_funds = AsyncMock(return_value={
+                "body": {"data": {"realized_pnl": 500.0}},
+            })
+            MockInd.return_value.get_trades = AsyncMock(return_value=[])
+
+            result = await tools["get_net_pnl_today"].fn()
+
+        assert result["data"]["estimated_total_cost"] == 0.0
+        assert result["data"]["net_pnl_estimate"] == 500.0
+
+    @pytest.mark.anyio
+    async def test_unauthenticated_never_raises(self):
+        tools = self._tools()
+        with patch("src.tools.costs.INDmoneyBroker") as MockInd:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=False)
+
+            result = await tools["get_net_pnl_today"].fn()
+
+        assert "error" in result["data"]
+        assert result["meta"]["data_quality"] == _meta.DQ_INVALID
+
+    @pytest.mark.anyio
+    async def test_missing_funds_data_defaults_to_zero_gross(self):
+        tools = self._tools()
+        with patch("src.tools.costs.INDmoneyBroker") as MockInd:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_raw_funds = AsyncMock(return_value={})
+            MockInd.return_value.get_trades = AsyncMock(return_value=[])
+
+            result = await tools["get_net_pnl_today"].fn()
+
+        assert result["data"]["gross_realized_pnl"] == 0.0
+        assert "error" not in result["data"]

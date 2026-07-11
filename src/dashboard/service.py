@@ -31,7 +31,7 @@ from src.intelligence.risk import get_market_risk_score
 from src.intelligence.vix import get_india_vix
 from src.intelligence.global_pulse import get_global_pulse
 from src.options import analytics
-from src.options.bse_service import get_bse_options_service
+from src.options.bse_service import BSEOptionsError, get_bse_options_service
 from src.options.service import get_options_service
 from src.technical import indicators
 from src.tools.analysis import _build_market_structure
@@ -40,6 +40,17 @@ from src.tools.technicals import _load_closes_with_source
 logger = logging.getLogger(__name__)
 
 _BSE_INDICES = {"SENSEX", "BANKEX"}
+
+# Priority B9 (2026-07-11) — one accurate note per real BSE failure mode,
+# instead of collapsing all of them into "market closed or data not yet
+# loaded" (see BSEOptionsService's BSE_* codes in src/options/bse_service.py).
+_BSE_ERROR_NOTES = {
+    "BSE_HTTP_ERROR": "BSE API request failed (transient network/HTTP error) — retry shortly.",
+    "BSE_REQUEST_FAILED": "Could not reach the BSE API after retries — likely a transient outage.",
+    "BSE_MALFORMED_PAYLOAD": "BSE API returned an unexpected response shape — likely a temporary API change or glitch.",
+    "BSE_EMPTY_UNDERLYINGS": "BSE returned no underlying instruments — try again during market hours.",
+    "BSE_UNDERLYING_NOT_FOUND": "This symbol was not found in BSE's underlying list.",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +127,14 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
                 "note": pinning_note,
             },
         }, spot
+    except BSEOptionsError as exc:
+        # Priority B9 (2026-07-11) — surface the real BSE failure mode instead
+        # of collapsing every distinct error (timeout, malformed payload, no
+        # data, unknown underlying) into the same generic "market closed"
+        # note, which made transient/fixable BSE issues look categorically
+        # broken during live market hours.
+        logger.warning("_options_section BSE fetch failed for %s: %s (%s)", symbol, exc.code, exc.message)
+        return {**_UNAVAIL, "note": _BSE_ERROR_NOTES.get(exc.code, exc.message), "error": exc.code}, None
     except Exception as exc:
         logger.warning("_options_section failed for %s: %s", symbol, exc)
         return {**_UNAVAIL, "error": str(exc)}, None

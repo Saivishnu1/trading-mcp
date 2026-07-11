@@ -3,7 +3,7 @@ checks each one against trailing-SL / profit-milestone conditions."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, time
 
 import pytz
 
@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 # or a same-day-expiry position gets bucketed one DTE too high right when
 # the tightest 0-DTE trailing-SL should apply.
 _IST = pytz.timezone("Asia/Kolkata")
+
+# Priority B7 (2026-07-11) — MCX closes at 23:30 IST, well past NSE's 15:30
+# and past when attention typically shifts away. See
+# MarketConditions.check_session_close_risk.
+_MCX_CLOSE_TIME = time(23, 30)
 
 
 def _raw_option_items(broker_name: str, raw: dict) -> list[dict]:

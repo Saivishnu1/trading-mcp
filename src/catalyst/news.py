@@ -184,3 +184,55 @@ def get_symbol_news(symbol: str, count: int = 10) -> dict:
     with _LOCK:
         _CACHE[cache_key] = (result, time.monotonic())
     return result
+
+
+# ---------------------------------------------------------------------------
+# Move-news correlation (Priority B11, 2026-07-11)
+# ---------------------------------------------------------------------------
+
+def check_move_news_correlation(symbol: str, threshold_pct: float = 3.0) -> dict:
+    """When *symbol*'s intraday move exceeds threshold_pct, surface the top
+    headlines so a large move doesn't require a manual web search to explain
+    (the exact gap hit repeatedly in one session — Iran ceasefire status,
+    Qatar LNG halt, OPEC+ output changes only found by hand).
+
+    Move % is last_price vs. previous_close (the same reference convention
+    already used by check_index_move in src/monitor/conditions.py and
+    scheduler.py's EOD summary, not a strict "since today's open" figure).
+
+    Returns {"symbol", "change_pct", "triggered", "headlines"} — headlines
+    is empty when not triggered (no news fetch is made in that case, since
+    it's the whole point of gating on the threshold).
+
+    Caveat: yfinance's .news feed is NSE/global-equity-oriented and has
+    known-thin coverage for MCX futures tickers — this works well for
+    NIFTY/SENSEX/equity positions but may return empty/sparse results for
+    MCX commodity symbols.
+    """
+    try:
+        from src.market import get_market
+        quote = get_market().get_quote(symbol)
+        last_price = quote.get("last_price")
+        previous_close = quote.get("previous_close")
+    except Exception as exc:
+        logger.debug("check_move_news_correlation quote fetch failed for %s: %s", symbol, exc)
+        return {"symbol": symbol.upper(), "error": str(exc)}
+
+    if not last_price or not previous_close:
+        return {"symbol": symbol.upper(), "error": "no_quote_data"}
+
+    change_pct = round((last_price - previous_close) / previous_close * 100, 2)
+    triggered = abs(change_pct) >= threshold_pct
+
+    result = {
+        "symbol": symbol.upper(),
+        "change_pct": change_pct,
+        "triggered": triggered,
+        "headlines": [],
+    }
+    if not triggered:
+        return result
+
+    news = get_symbol_news(symbol, count=5)
+    result["headlines"] = news.get("headlines", [])[:2]
+    return result

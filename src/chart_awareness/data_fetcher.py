@@ -7,7 +7,10 @@ Source hierarchy per symbol type:
     2. Yahoo Finance using BSE Yahoo ticker
 
   NSE indices (NIFTY/BANKNIFTY/…) and NSE stocks:
-    1. Zerodha historical API (authenticated)
+    1. Zerodha historical candles — NOT CURRENTLY AVAILABLE, see _fetch_zerodha.
+       Kept as the nominal first tier (cheap to slot in a real implementation
+       later) but always returns [] today, so INDmoney is the true first tier
+       in practice.
     2. INDmoney with NSE scrip code (authenticated, chunked for >365-day ranges)
     3. Yahoo Finance (always available)
 
@@ -175,31 +178,26 @@ def _is_bse_symbol(symbol: str) -> bool:
 # ---------------------------------------------------------------------------
 
 async def _fetch_zerodha(symbol: str, interval: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch via Zerodha JugaadClient historical API."""
-    try:
-        from src.broker import get_broker
-        broker = get_broker()
-        if not broker:
-            return []
-        zd_sym = _to_zerodha_symbol(symbol)
-        zd_interval = _ZERODHA_INTERVAL.get(interval, "day")
-        candles = broker.historical_data(zd_sym, from_date, to_date, zd_interval)
-        if not candles:
-            return []
-        return [
-            {
-                "datetime": str(c.get("date", "")),
-                "open": float(c.get("open", 0) or 0),
-                "high": float(c.get("high", 0) or 0),
-                "low": float(c.get("low", 0) or 0),
-                "close": float(c.get("close", 0) or 0),
-                "volume": int(c.get("volume", 0) or 0),
-            }
-            for c in candles
-        ]
-    except Exception as exc:
-        logger.debug("Zerodha historical fetch failed for %s: %s", symbol, exc)
-        return []
+    """Nominal first tier — always returns [] today; not a real fetch yet.
+
+    Historical candles require either a paid Kite Connect subscription
+    (kiteconnect's real historical_data() endpoint) or reverse-engineering
+    kite.zerodha.com's undocumented internal charting API — neither is in
+    place. ZerodhaWebClient (the enctoken-scraping client this repo
+    actually uses) has no chart/candle endpoint at all: it authenticates
+    against Kite's web-app API for orders/positions/margins only. Rather
+    than silently falling through an AttributeError (the previous
+    behavior — get_broker() has never had a historical_data() method),
+    this now logs explicitly so the gap is visible, and INDmoney is the
+    real first tier in practice for NSE symbols.
+    """
+    logger.info(
+        "Zerodha historical candles unavailable for %s (%s) — no working "
+        "candle endpoint on the current broker client; falling through to "
+        "INDmoney/Yahoo.",
+        symbol, interval,
+    )
+    return []
 
 
 async def _fetch_indmoney_single_chunk(

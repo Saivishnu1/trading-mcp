@@ -324,6 +324,8 @@ try:
         # Priority 3 (2026-07-10) — max-pain pinning-risk alert threshold/cooldown.
         pinning_risk_threshold_pct: Mapped[float] = mapped_column(Float, server_default=text("0.5"))
         cooldown_pinning: Mapped[int]             = mapped_column(Integer, server_default=text("1800"))
+        # Priority B7 (2026-07-11) — MCX session-close risk alert cooldown.
+        cooldown_session_close_risk: Mapped[int]  = mapped_column(Integer, server_default=text("3600"))
         updated_at: Mapped[str]          = mapped_column(Text, nullable=False)
 
     class MonitorSessionState(Base):
@@ -353,6 +355,15 @@ try:
         put_wall_break_streak: Mapped[int]      = mapped_column(Integer, server_default=text("0"))
         call_wall_break_confirmed: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
         put_wall_break_confirmed: Mapped[bool]  = mapped_column(Boolean, server_default=text("false"))
+        # Priority B3 (2026-07-11) — the value actually FIRED for pcr_shift/
+        # wall-break alerts, distinct from open_pcr/open_call_wall/
+        # open_put_wall (the session-open reference the underlying threshold
+        # check compares against). Used to gate near-duplicate re-fires: a
+        # PCR shift from 1.21 to 1.22 both individually clearing the
+        # open-PCR threshold must not re-fire 15 minutes apart.
+        last_fired_pcr: Mapped[float | None]                    = mapped_column(Float)
+        last_fired_call_wall_break_spot: Mapped[float | None]   = mapped_column(Float)
+        last_fired_put_wall_break_spot: Mapped[float | None]    = mapped_column(Float)
         session_date: Mapped[str]    = mapped_column(Text, nullable=False)
         # Liveness fields — let get_monitor_status() answer "is it alive?"
         # without SSHing into the Oracle VM.

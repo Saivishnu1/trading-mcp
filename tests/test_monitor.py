@@ -219,6 +219,89 @@ class TestMarketConditions:
     def test_check_wall_rejection_false_while_streak_still_building(self):
         assert self.cond.check_wall_rejection(prev_streak=1, new_streak=2) is False
 
+    # -----------------------------------------------------------------
+    # Dedup gate (Priority B3, 2026-07-11) — near-duplicate re-fire guard
+    # -----------------------------------------------------------------
+
+    def test_check_dedup_gate_allows_first_fire_ever(self):
+        assert self.cond.check_dedup_gate(
+            current_value=1.2, last_fired_value=None, minutes_since_last_fire=None,
+            min_delta=0.05, min_minutes=30,
+        ) is True
+
+    def test_check_dedup_gate_blocks_near_identical_value_within_time_window(self):
+        # 1.21 -> 1.22 is a 0.01 delta (below 0.05) and only 15 min elapsed.
+        assert self.cond.check_dedup_gate(
+            current_value=1.22, last_fired_value=1.21, minutes_since_last_fire=15,
+            min_delta=0.05, min_minutes=30,
+        ) is False
+
+    def test_check_dedup_gate_allows_when_delta_exceeds_min_delta(self):
+        assert self.cond.check_dedup_gate(
+            current_value=1.30, last_fired_value=1.21, minutes_since_last_fire=5,
+            min_delta=0.05, min_minutes=30,
+        ) is True
+
+    def test_check_dedup_gate_allows_when_enough_time_has_passed_regardless_of_delta(self):
+        assert self.cond.check_dedup_gate(
+            current_value=1.22, last_fired_value=1.21, minutes_since_last_fire=31,
+            min_delta=0.05, min_minutes=30,
+        ) is True
+
+    def test_check_dedup_gate_blocks_at_exact_boundary_delta_and_time(self):
+        # Exactly at both thresholds — spec says "exceeds"/"more than", not >=.
+        # Uses a delta/threshold pair exact in binary floating point (0.5 is
+        # exact, unlike 0.05) to avoid float-imprecision false failures.
+        assert self.cond.check_dedup_gate(
+            current_value=1.5, last_fired_value=1.0, minutes_since_last_fire=30,
+            min_delta=0.5, min_minutes=30,
+        ) is False
+
+    # -----------------------------------------------------------------
+    # Session-close risk (Priority B7, 2026-07-11)
+    # -----------------------------------------------------------------
+
+    def test_check_session_close_risk_triggers_for_mcx_within_window(self):
+        now = datetime(2026, 7, 11, 23, 0)  # 30 min before 23:30 close
+        triggered, note = self.cond.check_session_close_risk(
+            exchange="MCX", has_sl_or_target=False, now=now,
+            exchange_close_time=time(23, 30), warn_minutes_before=60,
+        )
+        assert triggered is True
+        assert "30 minutes" in note
+
+    def test_check_session_close_risk_not_triggered_when_sl_or_target_set(self):
+        now = datetime(2026, 7, 11, 23, 0)
+        triggered, _ = self.cond.check_session_close_risk(
+            exchange="MCX", has_sl_or_target=True, now=now,
+            exchange_close_time=time(23, 30), warn_minutes_before=60,
+        )
+        assert triggered is False
+
+    def test_check_session_close_risk_not_triggered_outside_window(self):
+        now = datetime(2026, 7, 11, 20, 0)  # 3.5 hours before close
+        triggered, _ = self.cond.check_session_close_risk(
+            exchange="MCX", has_sl_or_target=False, now=now,
+            exchange_close_time=time(23, 30), warn_minutes_before=60,
+        )
+        assert triggered is False
+
+    def test_check_session_close_risk_not_triggered_after_close(self):
+        now = datetime(2026, 7, 11, 23, 45)  # past close
+        triggered, _ = self.cond.check_session_close_risk(
+            exchange="MCX", has_sl_or_target=False, now=now,
+            exchange_close_time=time(23, 30), warn_minutes_before=60,
+        )
+        assert triggered is False
+
+    def test_check_session_close_risk_ignores_non_mcx_exchange(self):
+        now = datetime(2026, 7, 11, 15, 0)  # 30 min before NSE close
+        triggered, _ = self.cond.check_session_close_risk(
+            exchange="NSE", has_sl_or_target=False, now=now,
+            exchange_close_time=time(15, 30), warn_minutes_before=60,
+        )
+        assert triggered is False
+
 
 # ---------------------------------------------------------------------------
 # Symbol resolver — pure parsing (no cache/broker I/O)
@@ -465,6 +548,111 @@ class TestAdaptivePolling:
     def test_is_market_open_boundaries(self):
         assert self.monitor.MARKET_OPEN.hour == 9 and self.monitor.MARKET_OPEN.minute == 15
         assert self.monitor.MARKET_CLOSE.hour == 15 and self.monitor.MARKET_CLOSE.minute == 30
+
+    def test_mcx_close_is_2330(self):
+        assert self.monitor.MCX_CLOSE.hour == 23 and self.monitor.MCX_CLOSE.minute == 30
+
+    def test_is_mcx_session_active_true_after_nse_close(self):
+        """Priority B7 (2026-07-11) — this must stay True after NSE's 15:30
+        close (unlike is_market_open()), since MCX trades until 23:30 and
+        that gap is exactly where a position previously went unmonitored."""
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 20, 0))
+            assert self.monitor.is_mcx_session_active() is True
+            assert self.monitor.is_market_open() is False
+
+    def test_is_mcx_session_active_false_after_mcx_close(self):
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 23, 45))
+            assert self.monitor.is_mcx_session_active() is False
+
+
+# ---------------------------------------------------------------------------
+# MCX session-close risk (Priority B7, 2026-07-11) — proactive Telegram push
+# for untracked MCX positions near MCX's 23:30 close, independent of
+# is_market_open() so it still fires after NSE closes.
+# ---------------------------------------------------------------------------
+
+class TestMcxSessionCloseRisk:
+    def setup_method(self):
+        with patch("src.monitor.scheduler.MonitorRepository"), \
+             patch("src.monitor.scheduler.MonitorBootstrap"), \
+             patch("src.monitor.scheduler.PositionTracker"):
+            self.monitor = MarketMonitor()
+        self.monitor.repo = AsyncMock()
+        self.monitor.repo.get_user_settings.return_value = {"cooldown_session_close_risk": 3600}
+        self.monitor.alerter = AsyncMock()
+
+    def _mcx_position(self, symbol="NATGASMINI25JULFUT", quantity=1):
+        from src.brokers.models import Position
+        return Position(symbol, "MCX", "NRML", quantity, 285.0, 290.0, 500.0, "indmoney")
+
+    @pytest.mark.anyio
+    async def test_fires_alert_for_untracked_mcx_position_near_close(self):
+        self.monitor.repo.get_last_alert_time.return_value = None
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        with patch("src.brokers.indmoney.INDmoneyBroker") as MockInd, \
+             patch("src.monitor.scheduler.datetime") as mock_dt:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_positions = AsyncMock(return_value=[self._mcx_position()])
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 23, 0))
+
+            await self.monitor.check_mcx_session_close_risk({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_awaited()
+        self.monitor.repo.save_alert.assert_awaited()
+        saved = self.monitor.repo.save_alert.call_args.args[1]
+        assert saved["alert_type"] == "session_close_risk"
+        assert "NATGASMINI25JULFUT" in saved["message"]
+
+    @pytest.mark.anyio
+    async def test_no_alert_when_not_near_close(self):
+        with patch("src.brokers.indmoney.INDmoneyBroker") as MockInd, \
+             patch("src.monitor.scheduler.datetime") as mock_dt:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_positions = AsyncMock(return_value=[self._mcx_position()])
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 12, 0))
+
+            await self.monitor.check_mcx_session_close_risk({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_no_alert_for_non_mcx_positions(self):
+        from src.brokers.models import Position
+        nse_position = Position("INFY", "NSE", "CNC", 10, 1500.0, 1550.0, 500.0, "indmoney")
+
+        with patch("src.brokers.indmoney.INDmoneyBroker") as MockInd, \
+             patch("src.monitor.scheduler.datetime") as mock_dt:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_positions = AsyncMock(return_value=[nse_position])
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 23, 0))
+
+            await self.monitor.check_mcx_session_close_risk({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_unauthenticated_indmoney_never_raises(self):
+        with patch("src.brokers.indmoney.INDmoneyBroker") as MockInd:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=False)
+            await self.monitor.check_mcx_session_close_risk({"id": "u1"})
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_cooldown_suppresses_duplicate_alert(self):
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+        with patch("src.brokers.indmoney.INDmoneyBroker") as MockInd, \
+             patch("src.monitor.scheduler.datetime") as mock_dt:
+            MockInd.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockInd.return_value.get_positions = AsyncMock(return_value=[self._mcx_position()])
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 23, 0))
+
+            await self.monitor.check_mcx_session_close_risk({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

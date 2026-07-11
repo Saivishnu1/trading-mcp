@@ -210,6 +210,10 @@ class MarketIntelligence:
                     "symbol": "NIFTY",
                     "message": f"Spot held beyond {wall_name} wall at {wall_level} for {new_streak} consecutive checks",
                     "cooldown_key": "cooldown_wall_break",
+                    # Priority B3 (2026-07-11) — dedup on spot's distance from
+                    # the wall at the moment of firing, not just cooldown.
+                    "dedup_key": f"last_fired_{wall_name}_wall_break_spot",
+                    "value": spot,
                 })
                 streak_updates[confirmed_key] = True
             elif was_confirmed and new_streak == 0:
@@ -262,6 +266,10 @@ class MarketIntelligence:
             "symbol": "NIFTY",
             "message": reason,
             "cooldown_key": "cooldown_pcr",
+            # Priority B3 (2026-07-11) — dedup key/value so the scheduler can
+            # gate on "differs from the last FIRED value", not just cooldown.
+            "dedup_key": "last_fired_pcr",
+            "value": current_pcr,
         }]
 
     async def run_all_checks(self, market_data: dict, session_state: dict, settings: dict) -> tuple[list[dict], dict]:

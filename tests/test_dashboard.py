@@ -8,9 +8,12 @@ Phase 22F: dashboard output is factual only — no signal/confidence/
 trade_setup/strategy fields. _build_summary reads market_structure from
 the analysis dict, not a raw regime/signal.
 """
+from unittest.mock import MagicMock
+
 import pytest
 
-from src.dashboard.service import _build_summary, build_dashboard
+from src.dashboard.service import _build_summary, _options_section, build_dashboard
+from src.options.bse_service import BSEOptionsError
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -273,6 +276,62 @@ class TestBuildDashboard:
         r = build_dashboard("NIFTY")
         assert "error" in r["technicals"]
         assert "market_structure" in r["analysis"]
+
+
+class TestOptionsSectionBSEErrorHandling:
+    """Priority B9 (2026-07-11) — _options_section must surface the real BSE
+    failure mode (timeout, malformed payload, etc.) instead of collapsing
+    everything into the same generic 'market closed or data not yet loaded'
+    note, which made transient/fixable BSE issues look categorically broken
+    during live market hours."""
+
+    def test_bse_http_error_surfaces_specific_note(self, monkeypatch):
+        svc = MagicMock()
+        svc.get_option_chain.side_effect = BSEOptionsError(
+            "BSE_HTTP_ERROR", "BSE API request failed.", {"status_code": 503},
+        )
+        monkeypatch.setattr("src.dashboard.service.get_bse_options_service", lambda: svc)
+        data, spot = _options_section("SENSEX")
+        assert data["error"] == "BSE_HTTP_ERROR"
+        assert "transient" in data["note"].lower() or "retry" in data["note"].lower()
+        assert data["note"] != "Option chain unavailable — market closed or data not yet loaded"
+        assert spot is None
+
+    def test_bse_malformed_payload_surfaces_specific_note(self, monkeypatch):
+        svc = MagicMock()
+        svc.get_option_chain.side_effect = BSEOptionsError(
+            "BSE_MALFORMED_PAYLOAD", "BSE API returned a non-object payload.", {},
+        )
+        monkeypatch.setattr("src.dashboard.service.get_bse_options_service", lambda: svc)
+        data, spot = _options_section("SENSEX")
+        assert data["error"] == "BSE_MALFORMED_PAYLOAD"
+        assert "unexpected" in data["note"].lower()
+
+    def test_unknown_bse_code_falls_back_to_exception_message(self, monkeypatch):
+        svc = MagicMock()
+        svc.get_option_chain.side_effect = BSEOptionsError(
+            "BSE_SOME_NEW_CODE", "A brand new failure mode.", {},
+        )
+        monkeypatch.setattr("src.dashboard.service.get_bse_options_service", lambda: svc)
+        data, spot = _options_section("SENSEX")
+        assert data["error"] == "BSE_SOME_NEW_CODE"
+        assert data["note"] == "A brand new failure mode."
+
+    def test_non_bse_exception_still_uses_generic_fallback(self, monkeypatch):
+        svc = MagicMock()
+        svc.get_option_chain.side_effect = RuntimeError("totally unrelated failure")
+        monkeypatch.setattr("src.dashboard.service.get_bse_options_service", lambda: svc)
+        data, spot = _options_section("SENSEX")
+        assert data["note"] == "Option chain unavailable — market closed or data not yet loaded"
+        assert data["error"] == "totally unrelated failure"
+
+    def test_successful_bse_fetch_unaffected(self, monkeypatch, chain_data):
+        svc = MagicMock()
+        svc.get_option_chain.return_value = chain_data
+        monkeypatch.setattr("src.dashboard.service.get_bse_options_service", lambda: svc)
+        data, spot = _options_section("SENSEX")
+        assert "error" not in data
+        assert data["pcr"] is not None
 
 
 class _raise_svc:

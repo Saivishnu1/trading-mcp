@@ -247,6 +247,25 @@ class TestOiWallBreak:
         assert len(confirmed_alerts) == 1
         assert session_state["call_wall_break_confirmed"] is True
 
+    def test_confirmed_wall_break_alert_carries_dedup_key_and_value(self):
+        """Priority B3 (2026-07-11) — the scheduler needs these to gate
+        near-duplicate re-fires against the last FIRED spot value."""
+        settings = {"wall_break_confirm_candles": 3}
+        session_state: dict = {}
+        confirmed = None
+        for spot in (24410, 24420, 24430):
+            alerts, streaks = self.mi.check_oi_walls(
+                spot=spot, prev_spot=24390, call_wall=24400, put_wall=24000,
+                session_state=session_state, settings=settings,
+            )
+            session_state.update(streaks)
+            for a in alerts:
+                if a["type"] == "oi_call_wall_break" and a.get("delivered") is not False:
+                    confirmed = a
+        assert confirmed is not None
+        assert confirmed["dedup_key"] == "last_fired_call_wall_break_spot"
+        assert confirmed["value"] == 24430
+
     def test_rejection_fires_on_touch_then_revert_before_confirmation(self):
         settings = {"wall_break_confirm_candles": 3}
         session_state: dict = {}
@@ -297,6 +316,13 @@ class TestPcrShiftCheck:
         alerts = self.mi.check_pcr_shift(current_pcr=1.5, open_pcr=1.0, settings=_settings())
         assert len(alerts) == 1
         assert alerts[0]["type"] == "pcr_shift"
+
+    def test_pcr_shift_alert_carries_dedup_key_and_value(self):
+        """Priority B3 (2026-07-11) — the scheduler needs these to gate
+        near-duplicate re-fires against the last FIRED value."""
+        alerts = self.mi.check_pcr_shift(current_pcr=1.5, open_pcr=1.0, settings=_settings())
+        assert alerts[0]["dedup_key"] == "last_fired_pcr"
+        assert alerts[0]["value"] == 1.5
 
     def test_pcr_no_shift_no_alert(self):
         alerts = self.mi.check_pcr_shift(current_pcr=1.1, open_pcr=1.0, settings=_settings())
@@ -460,6 +486,55 @@ class TestSchedulerCheckMarketConditions:
         saved_state = self.monitor.repo.save_session_state.call_args.args[1]
         assert saved_state["last_nifty_spot"] == 24500
         assert saved_state["last_sensex_spot"] == 80200
+
+    @pytest.mark.anyio
+    async def test_dedup_gate_suppresses_near_identical_pcr_refire_past_cooldown(self):
+        """Priority B3 (2026-07-11) — cooldown alone (900s default) would let
+        this refire since >900s have passed, but the value (1.32 -> 1.35,
+        delta 0.03) hasn't moved enough and <30 min have elapsed since the
+        last FIRED value — the dedup gate must suppress it."""
+        self.monitor.repo.get_user_settings.return_value = _settings(cooldown_pcr=900)
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": 1.0,
+            "last_fired_pcr": 1.32,
+        }
+        # Cooldown (900s = 15min) has cleared, but only 20 min have passed —
+        # still inside the 30-minute dedup window.
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=20)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {}, "vix": 0.0,
+            "nifty_spot": 24400, "sensex_spot": 80000,
+            "nifty_pcr": 1.35, "nifty_call_wall": None, "nifty_put_wall": None,
+        })
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
+        self.monitor.repo.save_alert.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_dedup_gate_allows_refire_when_value_moved_enough(self):
+        self.monitor.repo.get_user_settings.return_value = _settings(cooldown_pcr=900)
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": 1.0,
+            "last_fired_pcr": 1.32,
+        }
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=20)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {}, "vix": 0.0,
+            "nifty_spot": 24400, "sensex_spot": 80000,
+            # 1.32 -> 1.50 is a 0.18 delta, well past the 0.05 default min_delta.
+            "nifty_pcr": 1.50, "nifty_call_wall": None, "nifty_put_wall": None,
+        })
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_awaited()
+        saved_state = self.monitor.repo.save_session_state.call_args.args[1]
+        assert saved_state["last_fired_pcr"] == 1.50
 
 
 # ---------------------------------------------------------------------------

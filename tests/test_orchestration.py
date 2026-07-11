@@ -113,6 +113,55 @@ class TestGetCapabilitiesManifest:
         kite = result["data"]["companion_mcps"]["kite_mcp"]
         assert kite["status"] in ("available", "unavailable")
 
+    def test_all_new_2026_07_11_tools_are_listed_in_manifest(self):
+        """MCX/session-quality priorities added this pass — each must appear
+        somewhere in tool_capabilities so get_capabilities() reflects them."""
+        tools = _meta_mcp()
+        result = tools["get_capabilities"].fn()
+        all_listed_tools = {
+            tool for category in result["data"]["tool_capabilities"].values() for tool in category
+        }
+        expected = {
+            "get_all_open_positions",
+            "get_trade_cost_estimate",
+            "get_net_pnl_today",
+            "get_strike_attempts",
+            "check_benchmark_divergence",
+            "check_move_news_correlation",
+            "project_carry_cost",
+        }
+        missing = expected - all_listed_tools
+        assert not missing, f"tools missing from manifest: {missing}"
+
+    def test_new_tools_have_data_lag_entries(self):
+        """data_lag is filtered against the live tool registry passed to
+        get_capabilities(), so this needs the same full module set server.py
+        registers — not just meta_tools — for the new tools to show up."""
+        import importlib
+        mods = [
+            "auth", "portfolio", "market", "instruments", "options",
+            "technicals", "analysis", "dashboard", "trade_planner",
+            "strategy_builder", "trade_review", "intelligence",
+            "portfolio_intelligence", "catalyst", "journal",
+            "recommendations", "sizer", "meta_tools", "brokers", "chart",
+            "candles", "chart_patterns", "options_awareness",
+            "market_awareness", "charts", "monitor", "costs", "mcx",
+        ]
+        mcp = _FastMCP("test")
+        for m in mods:
+            mod = importlib.import_module(f"src.tools.{m}")
+            mod.register(mcp)
+        tools = {t.name: t for t in mcp._tool_manager.list_tools()}
+
+        result = tools["get_capabilities"].fn()
+        data_lag = result["data"]["data_lag"]
+        for tool_name in (
+            "get_all_open_positions", "get_trade_cost_estimate", "get_net_pnl_today",
+            "get_strike_attempts", "check_benchmark_divergence",
+            "check_move_news_correlation", "project_carry_cost",
+        ):
+            assert tool_name in data_lag, f"{tool_name} missing a data_lag entry"
+
 
 # ---------------------------------------------------------------------------
 # get_tool_health() — orchestration summary

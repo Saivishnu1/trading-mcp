@@ -382,6 +382,20 @@ class TestDataFetcher:
         assert source == "none"
         assert candles == []
 
+    @pytest.mark.anyio
+    async def test_fetch_zerodha_always_returns_empty_no_working_candle_endpoint(self):
+        """Regression test: _fetch_zerodha used to call get_broker().historical_data(),
+        a method that has never existed on ZerodhaWebClient/JugaadClient — the
+        AttributeError was silently swallowed, so this "tier" always fell through
+        without anyone noticing. It's now an explicit, documented no-op returning
+        [] unconditionally (no working Zerodha candle endpoint exists without a
+        paid Kite Connect subscription or reverse-engineering an undocumented
+        internal API) — this test pins that honest behavior so a future fix is a
+        deliberate change, not an accidental regression back to a silent swallow."""
+        from src.chart_awareness.data_fetcher import _fetch_zerodha
+        result = await _fetch_zerodha("INFY", "day", "2025-01-01", "2025-04-01")
+        assert result == []
+
 
 # ---------------------------------------------------------------------------
 # ChartEngine (integration with mocked fetch)

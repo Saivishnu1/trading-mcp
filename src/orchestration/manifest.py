@@ -42,6 +42,7 @@ MCP_MANIFEST: dict = {
             "get_unified_orders",
             "get_unified_funds",
             "get_broker_status",
+            "get_all_open_positions",
         ],
         "monitor": [
             "get_monitor_status",
@@ -60,6 +61,8 @@ MCP_MANIFEST: dict = {
             "review_open_trades",
             "sync_trades_from_zerodha",
             "get_trade_cost_estimate",
+            "get_net_pnl_today",
+            "get_strike_attempts",
         ],
         "trade_planning": [
             "create_trade_plan",
@@ -68,6 +71,14 @@ MCP_MANIFEST: dict = {
             "calculate_position_size",
             "calculate_atr",
             "size_options_trade",
+            "project_carry_cost",
+        ],
+        "commodities": [
+            "check_benchmark_divergence",
+        ],
+        "catalyst": [
+            "get_earnings_calendar",
+            "check_move_news_correlation",
         ],
         "market_data": [
             "get_market_calendar",
@@ -110,6 +121,12 @@ MCP_MANIFEST: dict = {
             "Cross-broker unified portfolio — Zerodha + INDmoney combined",
             "Global market pulse — crude, gold, DXY, S&P500",
             "Visual charts — candlestick PNG with overlays",
+            "Cross-broker unified open positions across all segments including MCX passthrough",
+            "MCX commodity benchmark divergence (crude/nat-gas only, vs WTI/Henry Hub) — benchmark side only, MCX price is caller-supplied",
+            "Cost-adjusted net P&L and directional brokerage/STT cost estimates",
+            "Re-entry pattern detection and strike-level attempt tally (observational only)",
+            "Move-news correlation for large intraday moves",
+            "Multi-day carry-cost (time-decay) projection",
         ],
         "does_not_handle": [
             "Raw stock price lookup → use Indmoney MCP:get_indian_stocks_details",
@@ -123,6 +140,7 @@ MCP_MANIFEST: dict = {
             "Greeks history → use Indmoney MCP:get_indian_stocks_greeks_history",
             "Order placement → use Kite MCP:place_order when available",
             "GTT orders → use Kite MCP:place_gtt_order when available",
+            "MCX symbol resolution, option chains, dashboards, quotes → NOT AVAILABLE from any source (no Kite Connect subscription, INDstocks has no MCX/commodity coverage — see docs/research/mcx_scope_20260711.md). Only check_benchmark_divergence's international-benchmark half works today.",
         ],
     },
 

@@ -13,6 +13,7 @@ from src.journal.service import (
     get_open_trades as _get_open_trades,
     get_trade_history as _get_trade_history,
     get_performance_analytics as _get_performance_analytics,
+    get_strike_attempts as _get_strike_attempts,
     sync_zerodha_orders as _sync_zerodha_orders,
 )
 from src import meta as _meta
@@ -189,6 +190,22 @@ def register(mcp: FastMCP) -> None:
             days=days,
             min_sample=min_sample,
         )
+        return _meta.wrap(data, _journal_meta(data))
+
+    @mcp.tool()
+    def get_strike_attempts(underlying: str | None = None) -> dict:
+        """Today's strike-level attempt tally — observational only (Priority B5).
+
+        Groups today's journal trades by (underlying, strike, option_type)
+        regardless of whether you re-entered every time, e.g. "NIFTY 24200
+        CE: tested 7 times today, 2 wins / 5 losses, net -₹X." Complements
+        log_trade's REENTRY_WARNING, which flags re-entries as they happen —
+        this is the running tally view across the whole session.
+
+        underlying: optional filter (e.g. 'NIFTY'); omit for all underlyings.
+        """
+        if not _require_user(): return _meta.wrap(_NOT_AUTHED, _journal_meta(_NOT_AUTHED))
+        data = _get_strike_attempts(underlying=underlying)
         return _meta.wrap(data, _journal_meta(data))
 
     @mcp.tool()

@@ -241,6 +241,9 @@ class MonitorRepository:
                     put_wall_break_streak=state.get("put_wall_break_streak", 0),
                     call_wall_break_confirmed=state.get("call_wall_break_confirmed", False),
                     put_wall_break_confirmed=state.get("put_wall_break_confirmed", False),
+                    last_fired_pcr=state.get("last_fired_pcr"),
+                    last_fired_call_wall_break_spot=state.get("last_fired_call_wall_break_spot"),
+                    last_fired_put_wall_break_spot=state.get("last_fired_put_wall_break_spot"),
                     session_date=state.get("session_date", _today_ist()),
                     last_morning_brief=state.get("last_morning_brief"),
                     last_eod_summary=state.get("last_eod_summary"),
@@ -261,6 +264,9 @@ class MonitorRepository:
                 row.put_wall_break_streak = state.get("put_wall_break_streak", row.put_wall_break_streak)
                 row.call_wall_break_confirmed = state.get("call_wall_break_confirmed", row.call_wall_break_confirmed)
                 row.put_wall_break_confirmed = state.get("put_wall_break_confirmed", row.put_wall_break_confirmed)
+                row.last_fired_pcr = state.get("last_fired_pcr", row.last_fired_pcr)
+                row.last_fired_call_wall_break_spot = state.get("last_fired_call_wall_break_spot", row.last_fired_call_wall_break_spot)
+                row.last_fired_put_wall_break_spot = state.get("last_fired_put_wall_break_spot", row.last_fired_put_wall_break_spot)
                 row.session_date = state.get("session_date", row.session_date)
                 row.last_morning_brief = state.get("last_morning_brief", row.last_morning_brief)
                 row.last_eod_summary = state.get("last_eod_summary", row.last_eod_summary)

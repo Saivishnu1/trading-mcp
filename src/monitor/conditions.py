@@ -5,7 +5,7 @@ never recommendations ("consider booking" etc. is explicitly out of scope).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 
 
 class MarketConditions:
@@ -94,3 +94,61 @@ class MarketConditions:
         if last_sent is None:
             return False
         return (datetime.now(last_sent.tzinfo) - last_sent).total_seconds() < cooldown_seconds
+
+    def check_dedup_gate(
+        self,
+        current_value: float,
+        last_fired_value: float | None,
+        minutes_since_last_fire: float | None,
+        min_delta: float,
+        min_minutes: float,
+    ) -> bool:
+        """Priority B3 (2026-07-11) — near-duplicate re-fire guard, distinct
+        from the coarser cooldown floor: only allow a re-fire if the value
+        has moved meaningfully from what was last actually fired (not the
+        session-open reference), OR enough time has passed regardless of
+        delta. Prevents e.g. PCR 1.21 -> 1.22 re-firing 15 minutes apart just
+        because both individually cleared the open-PCR threshold.
+
+        True (allowed to fire) when there is no prior fired value/time (first
+        fire ever), when the delta exceeds min_delta, OR when enough time has
+        passed since the last fire — matches the spec's explicit OR."""
+        if last_fired_value is None or minutes_since_last_fire is None:
+            return True
+        if abs(current_value - last_fired_value) > min_delta:
+            return True
+        return minutes_since_last_fire > min_minutes
+
+    def check_session_close_risk(
+        self,
+        exchange: str,
+        has_sl_or_target: bool,
+        now: datetime,
+        exchange_close_time: time,
+        warn_minutes_before: int = 60,
+    ) -> tuple[bool, str]:
+        """Priority B7 (2026-07-11) — flag an MCX (or any extended-hours
+        exchange) position that has no SL/target set and whose exchange is
+        closing within `warn_minutes_before` minutes. NSE/BSE close at
+        15:30 IST, well before attention typically shifts elsewhere; MCX
+        trades until 23:30 IST, past when a position can go unmonitored
+        into the close without anyone noticing.
+
+        `now`/`exchange_close_time` are both naive local (IST) values — the
+        caller is responsible for timezone conversion, matching this
+        module's existing observation-only, no-I/O style."""
+        if exchange.upper() != "MCX" or has_sl_or_target:
+            return False, ""
+
+        close_dt = datetime.combine(now.date(), exchange_close_time)
+        if now >= close_dt:
+            return False, ""
+
+        minutes_to_close = (close_dt - now).total_seconds() / 60
+        if minutes_to_close > warn_minutes_before:
+            return False, ""
+
+        return True, (
+            f"MCX position has no SL/target set and the exchange closes in "
+            f"{int(minutes_to_close)} minutes."
+        )
