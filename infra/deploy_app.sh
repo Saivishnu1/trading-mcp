@@ -14,6 +14,12 @@
 # migrated schema (see src/telegram_admin/service_manager.py, which already
 # restarts both for the same reason on manual /restart).
 #
+# telegram-admin is a third long-running process (src/telegram_admin/main.py,
+# a python-telegram-bot long-poll loop) that imports src/telegram_admin/*
+# directly — it was missing from this list, so bot command changes (/buy,
+# /sell, /search, etc.) silently kept running on stale code until someone
+# restarted it by hand (2026-07-11).
+#
 # Usage:
 #   bash infra/deploy_app.sh              # standard deploy from current branch
 #   bash infra/deploy_app.sh --no-pull    # skip git pull (deploy current working tree)
@@ -24,7 +30,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="/etc/zerodha-mcp/.env"
 SKIP_PULL=false
 SETUP_MODE=false
-RESTART_SERVICES=("zerodha-mcp" "zerodha-monitor")
+RESTART_SERVICES=("zerodha-mcp" "zerodha-monitor" "telegram-admin")
 
 for arg in "$@"; do
   case "${arg}" in

@@ -55,7 +55,13 @@ jobs:
             # only zerodha-mcp left the monitor running stale code
             # indefinitely (2026-07-11: found running code from the day
             # before while zerodha-mcp was on the latest deploy).
-            sudo systemctl restart zerodha-mcp zerodha-monitor
+            # telegram-admin is a third long-running process (PTB long-poll
+            # loop) that imports src/telegram_admin/* directly — it was
+            # missing from this restart list, so /buy /sell /search and any
+            # other bot command changes silently kept running the old code
+            # on the VM until someone restarted it by hand (2026-07-11).
+            sudo systemctl restart zerodha-mcp zerodha-monitor telegram-admin
 
             sudo systemctl is-active zerodha-mcp
             sudo systemctl is-active zerodha-monitor
+            sudo systemctl is-active telegram-admin
