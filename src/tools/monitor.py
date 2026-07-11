@@ -99,6 +99,26 @@ def register(mcp: FastMCP) -> None:
             broker_name = pos.get("broker", "unknown")
             positions_by_broker[broker_name] = positions_by_broker.get(broker_name, 0) + 1
 
+        # Piece B diagnostic (2026-07-11) — did the last check_market_conditions
+        # poll's NIFTY/SENSEX spot come from LivePriceCache (the WS feed) or
+        # the REST option-chain fallback, and how stale is that reading.
+        checked_at = (session_state or {}).get("live_price_checked_at")
+        age_seconds = None
+        if checked_at:
+            age_seconds = (datetime.now(timezone.utc) - datetime.fromisoformat(checked_at)).total_seconds()
+        live_price_cache = {
+            "checked_at": checked_at,
+            "age_seconds": age_seconds,
+            "nifty": {
+                "ltp": (session_state or {}).get("live_price_nifty_ltp"),
+                "cache_hit": bool((session_state or {}).get("live_price_nifty_cache_hit")),
+            },
+            "sensex": {
+                "ltp": (session_state or {}).get("live_price_sensex_ltp"),
+                "cache_hit": bool((session_state or {}).get("live_price_sensex_cache_hit")),
+            },
+        }
+
         data = {
             "user": user["name"],
             "running": last_heartbeat is not None,
@@ -108,6 +128,7 @@ def register(mcp: FastMCP) -> None:
             "positions_by_broker": positions_by_broker,
             "alert_count_today": len(alerts_today),
             "heartbeat": heartbeat,
+            "live_price_cache": live_price_cache,
         }
         return _meta.wrap(data, _meta.build_meta(
             type_=_meta.TYPE_FACT,

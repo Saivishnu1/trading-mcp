@@ -404,6 +404,15 @@ try:
         # to match every other date-ish field in this schema).
         last_morning_brief: Mapped[str | None] = mapped_column(Text)
         last_eod_summary: Mapped[str | None]   = mapped_column(Text)
+        # Piece B diagnostic (2026-07-11) — did the last check_market_conditions
+        # poll's NIFTY/SENSEX spot come from LivePriceCache (the WS feed) or
+        # the REST option-chain fallback? get_monitor_status() surfaces this
+        # so it's answerable without SSHing into the Oracle VM or grepping logs.
+        live_price_nifty_ltp: Mapped[float | None]        = mapped_column(Float)
+        live_price_nifty_cache_hit: Mapped[bool]          = mapped_column(Boolean, server_default=text("false"))
+        live_price_sensex_ltp: Mapped[float | None]       = mapped_column(Float)
+        live_price_sensex_cache_hit: Mapped[bool]         = mapped_column(Boolean, server_default=text("false"))
+        live_price_checked_at: Mapped[str | None]         = mapped_column(Text)
         updated_at: Mapped[str]      = mapped_column(Text, nullable=False)
 
     class MonitorInstrumentCache(Base):
