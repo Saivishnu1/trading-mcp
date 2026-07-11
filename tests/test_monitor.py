@@ -7,6 +7,7 @@ see src/db/base.py). No real broker, HTTP, or WhatsApp calls are made.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1324,3 +1325,87 @@ class TestGetMonitorStatusBrokerVisibility:
             result = await tools["get_monitor_status"].fn()
 
         assert result["data"]["positions_by_broker"] == {"zerodha": 1, "indmoney": 2}
+
+
+# ---------------------------------------------------------------------------
+# Piece B (2026-07-11) — check_market_conditions' spot price reads from
+# LivePriceCache first, REST option chain second. conditions.py/
+# market_intelligence.py are untouched; only _get_market_intelligence_data's
+# spot source changed.
+# ---------------------------------------------------------------------------
+
+class TestLivePriceWiring:
+    def setup_method(self):
+        with patch("src.monitor.scheduler.MonitorRepository"), \
+             patch("src.monitor.scheduler.MonitorBootstrap"), \
+             patch("src.monitor.scheduler.PositionTracker"):
+            self.monitor = MarketMonitor()
+
+    def _stub_chain(self, spot: float):
+        return {"records": {"underlyingValue": spot, "expiryDates": ["26-Jun-2026"]}}
+
+    @pytest.mark.anyio
+    async def test_uses_live_cache_spot_when_available(self):
+        self.monitor._get_option_chain = AsyncMock(return_value=self._stub_chain(24000.0))
+        self.monitor.live_prices.get = MagicMock(
+            side_effect=lambda sym: 24555.5 if sym == "NIFTY" else 80999.9
+        )
+        self.monitor._get_vix = AsyncMock(return_value=12.0)
+
+        with patch("src.intelligence.global_pulse.get_global_pulse", return_value={}), \
+             patch("src.options.analytics.calculate_pcr", return_value={"pcr_oi": 1.0}), \
+             patch("src.options.analytics.calculate_max_pain", return_value={"max_pain": 24000.0}), \
+             patch("src.options.analytics.identify_support_resistance_from_oi", return_value={}):
+            data = await self.monitor._get_market_intelligence_data()
+
+        assert data["nifty_spot"] == 24555.5
+        assert data["sensex_spot"] == 80999.9
+
+    @pytest.mark.anyio
+    async def test_falls_back_to_rest_spot_when_cache_empty(self):
+        self.monitor._get_option_chain = AsyncMock(return_value=self._stub_chain(24000.0))
+        self.monitor.live_prices.get = MagicMock(return_value=None)  # nothing subscribed yet
+        self.monitor._get_vix = AsyncMock(return_value=12.0)
+
+        with patch("src.intelligence.global_pulse.get_global_pulse", return_value={}), \
+             patch("src.options.analytics.calculate_pcr", return_value={"pcr_oi": 1.0}), \
+             patch("src.options.analytics.calculate_max_pain", return_value={"max_pain": 24000.0}), \
+             patch("src.options.analytics.identify_support_resistance_from_oi", return_value={}):
+            data = await self.monitor._get_market_intelligence_data()
+
+        assert data["nifty_spot"] == 24000.0
+        assert data["sensex_spot"] == 24000.0
+
+    @pytest.mark.anyio
+    async def test_run_refreshes_live_price_subscriptions_each_tick(self):
+        """run()'s loop must pass this tick's active-position symbols into
+        LivePriceCache, and never let a refresh failure break the loop.
+        Market-open/MCX/morning-brief/EOD branches are all forced off so
+        this only exercises the end-of-tick resubscribe step in isolation."""
+        self.monitor.bootstrap.ensure_default_user = AsyncMock()
+        self.monitor.repo.get_active_users = AsyncMock(return_value=[{"id": "u1"}])
+        self.monitor.repo.get_active_positions = AsyncMock(return_value=[
+            {"symbol": "BANKNIFTY", "dte": 2, "current_premium": 50},
+        ])
+        self.monitor.repo.save_heartbeat = AsyncMock()
+        # last_morning_brief/last_eod_summary already "today" so those
+        # network-heavy branches don't fire; is_market_open/is_mcx_session_active
+        # patched below so the market-conditions/MCX branches don't fire either.
+        today_str = datetime.now(self.monitor.IST).date().isoformat()
+        self.monitor.repo.get_session_state = AsyncMock(return_value={
+            "last_morning_brief": today_str, "last_eod_summary": today_str,
+        })
+        self.monitor.is_market_open = MagicMock(return_value=False)
+        self.monitor.is_mcx_session_active = MagicMock(return_value=False)
+        self.monitor.live_prices.refresh_subscriptions = AsyncMock(
+            side_effect=RuntimeError("WS resolver down")
+        )
+
+        async def _stop_after_one_tick(*a, **kw):
+            raise asyncio.CancelledError
+
+        with patch("asyncio.sleep", side_effect=_stop_after_one_tick):
+            with pytest.raises(asyncio.CancelledError):
+                await self.monitor.run()
+
+        self.monitor.live_prices.refresh_subscriptions.assert_awaited_once_with(["BANKNIFTY"])
