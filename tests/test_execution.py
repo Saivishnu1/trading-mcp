@@ -656,6 +656,21 @@ class TestSubmitOrder:
         start_mock.assert_not_called()
 
     @pytest.mark.anyio
+    async def test_repo_trailing_sl_methods_degrade_gracefully_without_db(self):
+        # sqlalchemy/asyncpg are Linux-only per CLAUDE.md — on Windows dev
+        # (this test's own environment) src.db.models raises ImportError, so
+        # every new persistence method must no-op/return empty rather than
+        # crash the trailing-SL loop that calls them.
+        from src.execution.repository import ExecutionRepository
+        repo = ExecutionRepository()
+        await repo.upsert_trailing_sl_state(
+            order_id="X1", exchange="NSE", security_id="1", side="BUY",
+            broker="indmoney", trail_points=5.0, sl_trigger_price=100.0, sl_limit_price=99.0,
+        )  # must not raise
+        await repo.deactivate_trailing_sl_state("X1")  # must not raise
+        assert await repo.list_active_trailing_sl_state() == []
+
+    @pytest.mark.anyio
     async def test_submit_order_does_not_start_trailing_sl_on_rejected_order(self):
         import src.execution.service as svc
         placed = {"status": "error", "message": "rejected"}

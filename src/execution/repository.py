@@ -96,6 +96,86 @@ class ExecutionRepository:
             logger.error("save_order failed: %s", exc)
             return None
 
+    async def upsert_trailing_sl_state(
+        self,
+        *,
+        order_id: str,
+        exchange: str,
+        security_id: str,
+        side: str,
+        broker: str,
+        trail_points: float,
+        sl_trigger_price: float,
+        sl_limit_price: float,
+    ) -> None:
+        """Insert or update the live SL snapshot for one trailing order.
+        Called on start AND on every successful ratchet — this is mutable
+        current-state, unlike the immutable OrderLog snapshot. No-op (never
+        raises) if the DB is unavailable, matching save_order()'s contract:
+        a persistence failure must not interrupt the trailing-SL loop."""
+        try:
+            from src.db.models import TrailingSlState
+        except ImportError:
+            return
+        try:
+            async with get_session() as session:
+                existing = await session.get(TrailingSlState, order_id)
+                if existing is None:
+                    session.add(TrailingSlState(
+                        order_id=order_id, exchange=exchange, security_id=security_id,
+                        side=side, broker=broker, trail_points=trail_points,
+                        sl_trigger_price=sl_trigger_price, sl_limit_price=sl_limit_price,
+                        active=True, updated_at=_now(),
+                    ))
+                else:
+                    existing.sl_trigger_price = sl_trigger_price
+                    existing.sl_limit_price = sl_limit_price
+                    existing.active = True
+                    existing.updated_at = _now()
+                await session.flush()
+        except RuntimeError as exc:
+            logger.warning("upsert_trailing_sl_state skipped: %s", exc)
+        except Exception as exc:
+            logger.error("upsert_trailing_sl_state failed: %s", exc)
+
+    async def deactivate_trailing_sl_state(self, order_id: str) -> None:
+        """Mark a trailing order inactive (SL cancelled/triggered/order closed).
+        No-op if the DB is unavailable or the row doesn't exist."""
+        try:
+            from src.db.models import TrailingSlState
+        except ImportError:
+            return
+        try:
+            async with get_session() as session:
+                existing = await session.get(TrailingSlState, order_id)
+                if existing is not None:
+                    existing.active = False
+                    existing.updated_at = _now()
+                    await session.flush()
+        except RuntimeError as exc:
+            logger.warning("deactivate_trailing_sl_state skipped: %s", exc)
+        except Exception as exc:
+            logger.error("deactivate_trailing_sl_state failed: %s", exc)
+
+    async def list_active_trailing_sl_state(self) -> list[dict]:
+        """Return every row still marked active — used on process startup to
+        rehydrate in-flight trailing-SL tasks. [] if the DB is unavailable."""
+        try:
+            from sqlalchemy import select
+            from src.db.models import TrailingSlState
+        except ImportError:
+            return []
+        try:
+            async with get_session() as session:
+                stmt = select(TrailingSlState).where(TrailingSlState.active.is_(True))
+                result = await session.execute(stmt)
+                return [_row_to_dict(r) for r in result.scalars().all()]
+        except RuntimeError:
+            return []
+        except Exception as exc:
+            logger.error("list_active_trailing_sl_state failed: %s", exc)
+            return []
+
     async def find_by_broker_order_id(self, broker_order_id: str) -> dict | None:
         """Look up the logged order (and its symbol/qty/side snapshot) that
         produced this broker_order_id — used to enrich a live WS order-update

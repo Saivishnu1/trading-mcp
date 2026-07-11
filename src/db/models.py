@@ -127,6 +127,33 @@ try:
         created_at: Mapped[str]        = mapped_column(Text, nullable=False)
 
     # -------------------------------------------------------------------------
+    # zerodha.trailing_sl_state — mutable current-SL snapshot for active
+    # trailing-SL orders (unlike orders/OrderLog above, this row IS updated in
+    # place on every ratchet — it's live state, not an immutable audit log).
+    # Lets a bot/monitor restart rehydrate in-flight trailing-SL tasks instead
+    # of silently losing them (see src/execution/trailing_sl.py).
+    # -------------------------------------------------------------------------
+
+    class TrailingSlState(Base):
+        __tablename__ = "trailing_sl_state"
+        __table_args__ = (
+            CheckConstraint("side IN ('BUY','SELL')", name="valid_trailing_sl_side"),
+            Index("ix_trailing_sl_state_active", "active"),
+            {"schema": "zerodha"},
+        )
+
+        order_id: Mapped[str]          = mapped_column(Text, primary_key=True)
+        exchange: Mapped[str]          = mapped_column(Text, nullable=False)
+        security_id: Mapped[str]       = mapped_column(Text, nullable=False)
+        side: Mapped[str]              = mapped_column(Text, nullable=False)
+        broker: Mapped[str]            = mapped_column(Text, nullable=False)
+        trail_points: Mapped[float]    = mapped_column(Float, nullable=False)
+        sl_trigger_price: Mapped[float] = mapped_column(Float, nullable=False)
+        sl_limit_price: Mapped[float]  = mapped_column(Float, nullable=False)
+        active: Mapped[bool]           = mapped_column(Boolean, nullable=False, server_default=text("true"))
+        updated_at: Mapped[str]        = mapped_column(Text, nullable=False)
+
+    # -------------------------------------------------------------------------
     # journal.recommendation_log
     # -------------------------------------------------------------------------
 

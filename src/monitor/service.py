@@ -16,6 +16,7 @@ import os
 import sys
 
 from src.execution.order_update_listener import run_order_update_listener
+from src.execution.trailing_sl import rehydrate_trailing_sl
 from src.monitor.scheduler import MarketMonitor
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -47,6 +48,15 @@ async def main() -> None:
     monitor = MarketMonitor()
     bot_token = os.environ.get("TELEGRAM_ADMIN_BOT_TOKEN", "")
     admin_id = os.environ.get("TELEGRAM_ADMIN_ID", "1344481918")
+
+    # Resume any trailing-SL orders that were still active when this process
+    # last stopped — must happen before the main loop starts so a restart
+    # never leaves a stop silently un-managed.
+    try:
+        await rehydrate_trailing_sl()
+    except Exception as exc:
+        logger.error("rehydrate_trailing_sl failed at startup: %s", exc)
+
     # Order-fill/rejection alerts run alongside the existing poll loop, not
     # instead of it — one persistent WS connection for the process lifetime.
     # A crash in one must not take down the other, hence return_exceptions.
