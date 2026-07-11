@@ -247,6 +247,11 @@ class MonitorRepository:
                     session_date=state.get("session_date", _today_ist()),
                     last_morning_brief=state.get("last_morning_brief"),
                     last_eod_summary=state.get("last_eod_summary"),
+                    live_price_nifty_ltp=state.get("live_price_nifty_ltp"),
+                    live_price_nifty_cache_hit=state.get("live_price_nifty_cache_hit", False),
+                    live_price_sensex_ltp=state.get("live_price_sensex_ltp"),
+                    live_price_sensex_cache_hit=state.get("live_price_sensex_cache_hit", False),
+                    live_price_checked_at=state.get("live_price_checked_at"),
                     updated_at=now,
                 ))
             else:
@@ -270,6 +275,11 @@ class MonitorRepository:
                 row.session_date = state.get("session_date", row.session_date)
                 row.last_morning_brief = state.get("last_morning_brief", row.last_morning_brief)
                 row.last_eod_summary = state.get("last_eod_summary", row.last_eod_summary)
+                row.live_price_nifty_ltp = state.get("live_price_nifty_ltp", row.live_price_nifty_ltp)
+                row.live_price_nifty_cache_hit = state.get("live_price_nifty_cache_hit", row.live_price_nifty_cache_hit)
+                row.live_price_sensex_ltp = state.get("live_price_sensex_ltp", row.live_price_sensex_ltp)
+                row.live_price_sensex_cache_hit = state.get("live_price_sensex_cache_hit", row.live_price_sensex_cache_hit)
+                row.live_price_checked_at = state.get("live_price_checked_at", row.live_price_checked_at)
                 row.updated_at = now
 
     async def save_heartbeat(self, user_id: str, field: str) -> None:

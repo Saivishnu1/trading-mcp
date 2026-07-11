@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 import pytz
 
@@ -346,7 +346,8 @@ class MarketMonitor:
                 # walls/max-pain below still need the full chain — there is
                 # no WS feed for OI, only LTP.
                 rest_spot = float(records.get("underlyingValue") or 0)
-                spot = self.live_prices.get("NIFTY") or rest_spot
+                cached_spot = self.live_prices.get("NIFTY")
+                spot = cached_spot or rest_spot
                 expiry = (records.get("expiryDates") or [None])[0]
                 pcr = calculate_pcr(chain, expiry)
                 levels = identify_support_resistance_from_oi(chain, expiry)
@@ -366,6 +367,7 @@ class MarketMonitor:
 
                 return {
                     "nifty_spot": spot,
+                    "nifty_spot_cache_hit": cached_spot is not None,
                     "nifty_pcr": pcr.get("pcr_oi"),
                     "nifty_call_wall": nearest_resistance.get("strike"),
                     "nifty_put_wall": nearest_support.get("strike"),
@@ -380,8 +382,9 @@ class MarketMonitor:
             try:
                 chain = await self._get_option_chain("SENSEX")
                 rest_spot = float(chain.get("records", {}).get("underlyingValue") or 0)
-                spot = self.live_prices.get("SENSEX") or rest_spot
-                return {"sensex_spot": spot}
+                cached_spot = self.live_prices.get("SENSEX")
+                spot = cached_spot or rest_spot
+                return {"sensex_spot": spot, "sensex_spot_cache_hit": cached_spot is not None}
             except Exception as exc:
                 logger.debug("_get_market_intelligence_data sensex chain error: %s", exc)
                 return {}
@@ -466,9 +469,17 @@ class MarketMonitor:
         # against the prior poll, not the session open — matches the
         # existing prev_spot convention in check_wall_break), plus this
         # poll's wall-break streak/confirmed state (Priority 1, 2026-07-10).
+        # Piece B diagnostic (2026-07-11) — did this check's spot come from
+        # LivePriceCache or the REST fallback? get_monitor_status() surfaces
+        # this so it's answerable without SSHing into the Oracle VM.
         await self.repo.save_session_state(user["id"], {
             "last_nifty_spot": market_data.get("nifty_spot") or session_state.get("last_nifty_spot"),
             "last_sensex_spot": market_data.get("sensex_spot") or session_state.get("last_sensex_spot"),
+            "live_price_nifty_ltp": market_data.get("nifty_spot") or None,
+            "live_price_nifty_cache_hit": bool(market_data.get("nifty_spot_cache_hit")),
+            "live_price_sensex_ltp": market_data.get("sensex_spot") or None,
+            "live_price_sensex_cache_hit": bool(market_data.get("sensex_spot_cache_hit")),
+            "live_price_checked_at": datetime.now(timezone.utc).isoformat(),
             **wall_streak_updates,
             **dedup_updates,
         })

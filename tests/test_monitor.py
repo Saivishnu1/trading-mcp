@@ -1327,6 +1327,72 @@ class TestGetMonitorStatusBrokerVisibility:
         assert result["data"]["positions_by_broker"] == {"zerodha": 1, "indmoney": 2}
 
 
+class TestGetMonitorStatusLivePriceCache:
+    """Piece B diagnostic — get_monitor_status() must surface whether the
+    last check_market_conditions poll's NIFTY/SENSEX spot came from
+    LivePriceCache or the REST fallback."""
+
+    async def _call(self, session_state: dict):
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+        from src.tools import monitor as monitor_tools
+
+        mcp = _FastMCP("test")
+        monitor_tools.register(mcp)
+        tools = {t.name: t for t in mcp._tool_manager.list_tools()}
+
+        mock_repo = AsyncMock()
+        mock_repo.get_active_users.return_value = [{"id": "u1", "name": "trader"}]
+        mock_repo.get_active_positions.return_value = []
+        mock_repo.get_peak.return_value = None
+        mock_repo.get_session_state.return_value = session_state
+        mock_repo.get_recent_alerts.return_value = []
+
+        with patch("src.tools.monitor.MonitorRepository", return_value=mock_repo):
+            return await tools["get_monitor_status"].fn()
+
+    @pytest.mark.anyio
+    async def test_reports_cache_hit_with_fresh_age(self):
+        checked_at = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+        result = await self._call({
+            "last_heartbeat": None,
+            "live_price_checked_at": checked_at,
+            "live_price_nifty_ltp": 24512.35,
+            "live_price_nifty_cache_hit": True,
+            "live_price_sensex_ltp": 80123.1,
+            "live_price_sensex_cache_hit": True,
+        })
+
+        lpc = result["data"]["live_price_cache"]
+        assert lpc["nifty"] == {"ltp": 24512.35, "cache_hit": True}
+        assert lpc["sensex"] == {"ltp": 80123.1, "cache_hit": True}
+        assert 4 <= lpc["age_seconds"] <= 6
+
+    @pytest.mark.anyio
+    async def test_reports_rest_fallback(self):
+        result = await self._call({
+            "last_heartbeat": None,
+            "live_price_checked_at": datetime.now(timezone.utc).isoformat(),
+            "live_price_nifty_ltp": 24000.0,
+            "live_price_nifty_cache_hit": False,
+            "live_price_sensex_ltp": 79000.0,
+            "live_price_sensex_cache_hit": False,
+        })
+
+        lpc = result["data"]["live_price_cache"]
+        assert lpc["nifty"]["cache_hit"] is False
+        assert lpc["sensex"]["cache_hit"] is False
+
+    @pytest.mark.anyio
+    async def test_never_checked_yields_none_age_and_ltp(self):
+        result = await self._call({"last_heartbeat": None})
+
+        lpc = result["data"]["live_price_cache"]
+        assert lpc["checked_at"] is None
+        assert lpc["age_seconds"] is None
+        assert lpc["nifty"] == {"ltp": None, "cache_hit": False}
+        assert lpc["sensex"] == {"ltp": None, "cache_hit": False}
+
+
 # ---------------------------------------------------------------------------
 # Piece B (2026-07-11) — check_market_conditions' spot price reads from
 # LivePriceCache first, REST option chain second. conditions.py/
@@ -1360,6 +1426,8 @@ class TestLivePriceWiring:
 
         assert data["nifty_spot"] == 24555.5
         assert data["sensex_spot"] == 80999.9
+        assert data["nifty_spot_cache_hit"] is True
+        assert data["sensex_spot_cache_hit"] is True
 
     @pytest.mark.anyio
     async def test_falls_back_to_rest_spot_when_cache_empty(self):
@@ -1375,6 +1443,8 @@ class TestLivePriceWiring:
 
         assert data["nifty_spot"] == 24000.0
         assert data["sensex_spot"] == 24000.0
+        assert data["nifty_spot_cache_hit"] is False
+        assert data["sensex_spot_cache_hit"] is False
 
     @pytest.mark.anyio
     async def test_run_refreshes_live_price_subscriptions_each_tick(self):
@@ -1409,3 +1479,32 @@ class TestLivePriceWiring:
                 await self.monitor.run()
 
         self.monitor.live_prices.refresh_subscriptions.assert_awaited_once_with(["BANKNIFTY"])
+
+    @pytest.mark.anyio
+    async def test_check_market_conditions_persists_live_price_diagnostic(self):
+        """check_market_conditions() must persist whether each spot came
+        from LivePriceCache or the REST fallback (Piece B diagnostic),
+        alongside the existing last_nifty_spot/last_sensex_spot fields."""
+        user = {"id": "u1", "name": "trader"}
+        self.monitor.repo.get_user_settings = AsyncMock(return_value={})
+        self.monitor.repo.get_session_state = AsyncMock(return_value={
+            "last_nifty_spot": 24000.0, "last_sensex_spot": 79000.0,
+        })
+        self.monitor.repo.save_session_state = AsyncMock()
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "nifty_spot": 24555.5, "nifty_spot_cache_hit": True,
+            "sensex_spot": 80999.9, "sensex_spot_cache_hit": False,
+            "nifty_pcr": 1.0, "nifty_call_wall": None, "nifty_put_wall": None,
+            "nifty_max_pain": None, "nifty_is_expiry_week": False,
+            "global_pulse": {}, "vix": 12.0,
+        })
+        self.monitor.market_intelligence.run_all_checks = AsyncMock(return_value=([], {}))
+
+        await self.monitor.check_market_conditions(user)
+
+        saved = self.monitor.repo.save_session_state.await_args.args[1]
+        assert saved["live_price_nifty_ltp"] == 24555.5
+        assert saved["live_price_nifty_cache_hit"] is True
+        assert saved["live_price_sensex_ltp"] == 80999.9
+        assert saved["live_price_sensex_cache_hit"] is False
+        assert "live_price_checked_at" in saved
