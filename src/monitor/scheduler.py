@@ -39,7 +39,22 @@ class MarketMonitor:
         self.conditions = MarketConditions()
         self.alerter = WhatsAppAlerter()
         self.market_intelligence = MarketIntelligence(self.conditions)
-        self.live_prices = LivePriceCache()
+        self.live_prices = LivePriceCache(on_tick=self._on_index_tick)
+        # Context _on_index_tick needs (it only gets symbol + ltp), refreshed
+        # every check_market_conditions() call from the poll loop. Empty
+        # until the first poll — a tick arriving before that is a no-op.
+        self._market_context: dict = {}
+        # Per-symbol locks so overlapping ticks for the same index can never
+        # race on session_state's read-modify-write (NIFTY and SENSEX write
+        # disjoint fields, so they don't need to share a lock).
+        self._index_tick_locks: dict[str, asyncio.Lock] = {}
+
+    def _index_lock(self, symbol: str) -> asyncio.Lock:
+        lock = self._index_tick_locks.get(symbol)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._index_tick_locks[symbol] = lock
+        return lock
 
     def get_poll_interval(self, min_dte: int, max_premium: float) -> int:
         # Piece C (2026-07-11) — the far-DTE tier was 900s (15 min), a real
@@ -409,16 +424,16 @@ class MarketMonitor:
         )
         return {**nifty_data, **sensex_data, **pulse_data, "vix": vix}
 
-    async def check_market_conditions(self, user: dict) -> None:
-        settings = await self.repo.get_user_settings(user["id"])
-        session_state = await self.repo.get_session_state(user["id"])
-        if not session_state:
-            return
-
-        market_data = await self._get_market_intelligence_data()
-        alerts, wall_streak_updates = await self.market_intelligence.run_all_checks(market_data, session_state, settings)
+    async def _process_alerts(
+        self, user: dict, settings: dict, session_state: dict, alerts: list[dict],
+    ) -> dict:
+        """Cooldown-gate, dedup-gate, send, and persist a list of alert
+        dicts. Returns dedup_updates (last-FIRED values to persist for
+        near-duplicate re-fire gating). Shared by the poll path
+        (check_market_conditions) and the tick-driven fast path
+        (_on_index_tick) so both follow identical rules — see
+        Priority B3 (2026-07-11) for why cooldown alone isn't enough."""
         dedup_updates: dict = {}
-
         for alert in alerts:
             # Raw wall-touch events (Priority 1, 2026-07-10) are logged for
             # backtesting/analysis but never pushed to Telegram — they carry
@@ -469,12 +484,28 @@ class MarketMonitor:
                 "delivered": delivered,
             })
             await self.repo.save_heartbeat(user["id"], "last_alert_sent")
+        return dedup_updates
+
+    async def check_market_conditions(self, user: dict) -> None:
+        settings = await self.repo.get_user_settings(user["id"])
+        session_state = await self.repo.get_session_state(user["id"])
+        if not session_state:
+            return
+
+        # Piece C (2026-07-11) — primes _on_index_tick's context so a WS
+        # tick arriving before the NEXT poll can still evaluate correctly.
+        self._market_context = {"user": user, "settings": settings}
+
+        market_data = await self._get_market_intelligence_data()
+        alerts, wall_hold_updates = await self.market_intelligence.run_all_checks(market_data, session_state, settings)
+        dedup_updates = await self._process_alerts(user, settings, session_state, alerts)
 
         # Persist the latest spot/PCR/VIX as the reference point for the NEXT
         # check_market_conditions call (index-move and wall-break diff
         # against the prior poll, not the session open — matches the
         # existing prev_spot convention in check_wall_break), plus this
-        # poll's wall-break streak/confirmed state (Priority 1, 2026-07-10).
+        # poll's wall-hold-since/confirmed state (Priority 1, 2026-07-10;
+        # time-based — Piece C, 2026-07-11).
         # Piece B diagnostic (2026-07-11) — did this check's spot come from
         # LivePriceCache or the REST fallback? get_monitor_status() surfaces
         # this so it's answerable without SSHing into the Oracle VM.
@@ -486,9 +517,61 @@ class MarketMonitor:
             "live_price_sensex_ltp": market_data.get("sensex_spot") or None,
             "live_price_sensex_cache_hit": bool(market_data.get("sensex_spot_cache_hit")),
             "live_price_checked_at": datetime.now(timezone.utc).isoformat(),
-            **wall_streak_updates,
+            **wall_hold_updates,
             **dedup_updates,
         })
+
+    async def _on_index_tick(self, symbol: str, ltp: float) -> None:
+        """Piece C (2026-07-11) — fired by LivePriceCache the instant NIFTY/
+        SENSEX ticks. Evaluates index-move and (NIFTY only) wall-hold-
+        duration against the last-known reference values, through the same
+        cooldown/dedup/delivery path as the poll loop (_process_alerts).
+
+        PCR/macro/pinning-risk stay poll-only — there is no WS feed for OI,
+        only spot, so those checks only get fresher/more-reliable data at
+        poll time; they don't get faster ticks. Wall LEVELS (open_call_wall/
+        open_put_wall) are the session-open reference, same as the poll
+        path uses — only the hold-duration clock and the spot comparison
+        are now continuous.
+        """
+        if symbol not in ("NIFTY", "SENSEX"):
+            return  # e.g. a position's underlying, subscribed via extra_symbols
+        ctx = self._market_context
+        if not ctx:
+            return  # not yet primed by a first check_market_conditions() poll
+        user = ctx["user"]
+        settings = ctx["settings"]
+
+        async with self._index_lock(symbol):
+            session_state = await self.repo.get_session_state(user["id"])
+            if not session_state:
+                return
+            now = datetime.now(timezone.utc)
+
+            updates: dict = {}
+            if symbol == "NIFTY":
+                prev_nifty = session_state.get("last_nifty_spot")
+                last_sensex = session_state.get("last_sensex_spot")
+                idx_alerts = self.market_intelligence.check_index_movement(
+                    ltp, prev_nifty, last_sensex or 0.0, last_sensex, settings,
+                )
+                call_wall = session_state.get("open_call_wall")
+                put_wall = session_state.get("open_put_wall")
+                wall_alerts, wall_updates = self.market_intelligence.check_oi_walls(
+                    ltp, prev_nifty, call_wall, put_wall, session_state, settings, now=now,
+                )
+                alerts = idx_alerts + wall_alerts
+                updates = {**wall_updates, "last_nifty_spot": ltp}
+            else:  # SENSEX
+                prev_sensex = session_state.get("last_sensex_spot")
+                last_nifty = session_state.get("last_nifty_spot")
+                alerts = self.market_intelligence.check_index_movement(
+                    last_nifty or 0.0, last_nifty, ltp, prev_sensex, settings,
+                )
+                updates = {"last_sensex_spot": ltp}
+
+            dedup_updates = await self._process_alerts(user, settings, session_state, alerts)
+            await self.repo.save_session_state(user["id"], {**updates, **dedup_updates})
 
     async def check_mcx_session_close_risk(self, user: dict) -> None:
         """Priority B7 (2026-07-11) — proactively push a Telegram alert when

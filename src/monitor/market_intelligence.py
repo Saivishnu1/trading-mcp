@@ -155,79 +155,89 @@ class MarketIntelligence:
         self, spot: float, prev_spot: float | None,
         call_wall: float | None, put_wall: float | None,
         session_state: dict | None = None, settings: dict | None = None,
+        now: "datetime | None" = None,
     ) -> tuple[list[dict], dict]:
-        """Hold-confirmation wall-break check (Priority 1 fix, 2026-07-10).
+        """Hold-confirmation wall-break check (Priority 1 fix, 2026-07-10;
+        time-based confirmation — Piece C, 2026-07-11).
 
         A single-poll cross used to fire oi_call_wall_break/oi_put_wall_break
         immediately, which re-fired on every whipsaw across the same level.
-        Now the raw touch only updates a per-wall streak counter in
-        session_state; the Telegram-bound alert fires only once the streak
-        holds for `wall_break_confirm_candles` consecutive polls, and a
-        symmetric oi_wall_rejection fires if spot reverts before that.
+        The raw touch only updates a per-wall "hold started at" timestamp in
+        session_state; the Telegram-bound alert fires only once the hold has
+        lasted `wall_break_confirm_seconds` continuously, and a symmetric
+        oi_wall_rejection fires if spot reverts before that. Time-based (not
+        poll-count-based) so this works correctly whether called once per
+        REST poll or once per live WS tick — see conditions.py's
+        update_wall_break_hold_since docstring for why a tick count doesn't.
 
-        Returns (alerts, streak_updates) — streak_updates is always returned
+        Returns (alerts, hold_updates) — hold_updates is always returned
         (even when empty) so callers persist it via save_session_state
-        regardless of whether an alert fired this poll.
+        regardless of whether an alert fired this call.
         """
+        from datetime import datetime as _datetime, timezone as _timezone
+
         session_state = session_state or {}
         settings = settings or {}
-        streak_updates: dict = {}
+        now = now or _datetime.now(_timezone.utc)
+        hold_updates: dict = {}
 
-        if not prev_spot or not call_wall or not put_wall:
-            return [], streak_updates
+        if not call_wall or not put_wall:
+            return [], hold_updates
 
-        confirm_candles = int(settings.get("wall_break_confirm_candles") or 3)
+        confirm_seconds = int(settings.get("wall_break_confirm_seconds") or 60)
         alerts: list[dict] = []
 
-        touched, touch_reason = self.conditions.check_wall_break(spot, prev_spot, call_wall, put_wall)
-        if touched:
-            alert_type = "oi_call_wall_break" if "call wall" in touch_reason else "oi_put_wall_break"
-            alerts.append({
-                "type": alert_type,
-                "severity": "low",
-                "symbol": "NIFTY",
-                "message": touch_reason,
-                "cooldown_key": "cooldown_wall_break",
-                "delivered": False,
-            })
+        if prev_spot:
+            touched, touch_reason = self.conditions.check_wall_break(spot, prev_spot, call_wall, put_wall)
+            if touched:
+                alert_type = "oi_call_wall_break" if "call wall" in touch_reason else "oi_put_wall_break"
+                alerts.append({
+                    "type": alert_type,
+                    "severity": "low",
+                    "symbol": "NIFTY",
+                    "message": touch_reason,
+                    "cooldown_key": "cooldown_wall_break",
+                    "delivered": False,
+                })
 
         for wall_name, wall_level, direction, hold_type, reject_type in (
             ("call", call_wall, "above", "oi_call_wall_break", "oi_wall_rejection"),
             ("put", put_wall, "below", "oi_put_wall_break", "oi_wall_rejection"),
         ):
-            streak_key = f"{wall_name}_wall_break_streak"
+            since_key = f"{wall_name}_wall_hold_since"
             confirmed_key = f"{wall_name}_wall_break_confirmed"
-            prev_streak = int(session_state.get(streak_key) or 0)
+            prev_since = session_state.get(since_key)
             was_confirmed = bool(session_state.get(confirmed_key) or False)
+            was_building = prev_since is not None
 
-            new_streak = self.conditions.update_wall_break_streak(spot, wall_level, prev_streak, direction)
-            streak_updates[streak_key] = new_streak
+            new_since = self.conditions.update_wall_break_hold_since(spot, wall_level, direction, prev_since, now)
+            hold_updates[since_key] = new_since
 
-            if self.conditions.check_wall_hold(new_streak, confirm_candles) and not was_confirmed:
+            if self.conditions.check_wall_hold_duration(new_since, now, confirm_seconds) and not was_confirmed:
                 alerts.append({
                     "type": hold_type,
                     "severity": "high",
                     "symbol": "NIFTY",
-                    "message": f"Spot held beyond {wall_name} wall at {wall_level} for {new_streak} consecutive checks",
+                    "message": f"Spot held beyond {wall_name} wall at {wall_level} for at least {confirm_seconds}s",
                     "cooldown_key": "cooldown_wall_break",
                     # Priority B3 (2026-07-11) — dedup on spot's distance from
                     # the wall at the moment of firing, not just cooldown.
                     "dedup_key": f"last_fired_{wall_name}_wall_break_spot",
                     "value": spot,
                 })
-                streak_updates[confirmed_key] = True
-            elif was_confirmed and new_streak == 0:
-                streak_updates[confirmed_key] = False
-            elif not was_confirmed and self.conditions.check_wall_rejection(prev_streak, new_streak):
+                hold_updates[confirmed_key] = True
+            elif was_confirmed and new_since is None:
+                hold_updates[confirmed_key] = False
+            elif not was_confirmed and self.conditions.check_wall_rejection_duration(was_building, new_since):
                 alerts.append({
                     "type": reject_type,
                     "severity": "medium",
                     "symbol": "NIFTY",
-                    "message": f"Spot broke {wall_name} wall at {wall_level} then reverted within {confirm_candles} checks",
+                    "message": f"Spot broke {wall_name} wall at {wall_level} then reverted within {confirm_seconds}s",
                     "cooldown_key": "cooldown_wall_break",
                 })
 
-        return alerts, streak_updates
+        return alerts, hold_updates
 
     def check_pinning_risk(
         self, spot: float | None, max_pain: float | None, is_expiry_week: bool, settings: dict,
@@ -278,10 +288,10 @@ class MarketIntelligence:
         nifty_call_wall, nifty_put_wall. Never raises — a broken sub-check
         is logged and skipped so one bad source can't take down the others.
 
-        Returns (alerts, wall_break_streak_updates) — the second element
-        holds call_wall_break_streak/put_wall_break_streak/*_confirmed
-        updates from check_oi_walls that the caller must persist via
-        save_session_state, independent of whether any alert fired."""
+        Returns (alerts, wall_hold_updates) — the second element holds
+        call_wall_hold_since/put_wall_hold_since/*_confirmed updates from
+        check_oi_walls that the caller must persist via save_session_state,
+        independent of whether any alert fired."""
 
         def _safe(fn, *args):
             try:

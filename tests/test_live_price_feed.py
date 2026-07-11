@@ -187,6 +187,61 @@ class TestStreamConsumption:
         assert cache._task is None
 
 
+class TestLivePriceCacheOnTick:
+    """Piece C (2026-07-11) — on_tick lets index-move/wall-hold checks fire
+    the instant a price ticks, instead of waiting for the next poll."""
+
+    @pytest.mark.anyio
+    async def test_on_tick_fires_for_matching_symbol(self):
+        from src.monitor.live_price_feed import LivePriceCache
+
+        ticks = []
+
+        async def on_tick(symbol, ltp):
+            ticks.append((symbol, ltp))
+
+        messages = [{"mode": "ltp", "instrument": "26000", "data": {"ltp": 24555.5}}]
+        cache = LivePriceCache(on_tick=on_tick)
+        with patch("src.monitor.live_price_feed.stream_prices",
+                   side_effect=lambda *a, **kw: _fake_stream(messages)):
+            await cache.refresh_subscriptions()
+            await cache._task
+
+        assert ("NIFTY", 24555.5) in ticks
+
+    @pytest.mark.anyio
+    async def test_on_tick_exception_does_not_kill_stream(self):
+        from src.monitor.live_price_feed import LivePriceCache
+
+        async def bad_on_tick(symbol, ltp):
+            raise RuntimeError("boom")
+
+        messages = [
+            {"mode": "ltp", "instrument": "26000", "data": {"ltp": 24500.0}},
+            {"mode": "ltp", "instrument": "26000", "data": {"ltp": 24510.0}},
+        ]
+        cache = LivePriceCache(on_tick=bad_on_tick)
+        with patch("src.monitor.live_price_feed.stream_prices",
+                   side_effect=lambda *a, **kw: _fake_stream(messages)):
+            await cache.refresh_subscriptions()
+            await cache._task
+
+        assert cache.get("NIFTY") == 24510.0
+
+    @pytest.mark.anyio
+    async def test_no_on_tick_configured_does_not_error(self):
+        from src.monitor.live_price_feed import LivePriceCache
+
+        messages = [{"mode": "ltp", "instrument": "26000", "data": {"ltp": 24500.0}}]
+        cache = LivePriceCache()  # on_tick=None by default
+        with patch("src.monitor.live_price_feed.stream_prices",
+                   side_effect=lambda *a, **kw: _fake_stream(messages)):
+            await cache.refresh_subscriptions()
+            await cache._task
+
+        assert cache.get("NIFTY") == 24500.0
+
+
 class TestPersistentConnectionSubscribeUnsubscribe:
     """Confirmed against api-docs.indstocks.com/Websockets/: subscribe/
     unsubscribe are messages on an already-open connection, not a

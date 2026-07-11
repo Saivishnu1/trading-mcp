@@ -63,6 +63,50 @@ class MarketConditions:
         rejection, it's just the confirmed break ending."""
         return prev_streak > 0 and new_streak == 0
 
+    # -----------------------------------------------------------------
+    # Piece C (2026-07-11) — time-based wall-hold confirmation.
+    #
+    # The streak primitives above count *poll ticks*, which only meant
+    # something fixed while polling was the only way spot got checked
+    # (confirm_candles=3 at a 300s poll -> a 15-minute hold requirement).
+    # Once wall-hold is evaluated on every live WS tick instead of once per
+    # poll, a tick count no longer corresponds to any fixed wall-clock
+    # duration — "3 consecutive checks" could mean 3 seconds or 3 hours
+    # depending on tick frequency. These duration-based primitives track
+    # *when* a hold started and confirm on elapsed time instead, so the
+    # same check works correctly whether called once per poll or once per
+    # tick. The streak primitives above are unused by new code but left in
+    # place — nothing else in this module needs to change to add this.
+    # -----------------------------------------------------------------
+
+    def update_wall_break_hold_since(
+        self, spot: float, wall: float, direction: str, held_since: str | None, now: datetime,
+    ) -> str | None:
+        """Return the ISO timestamp marking when spot FIRST crossed beyond
+        `wall` in the current ongoing hold, or None if spot is not beyond it
+        right now. If a hold is already in progress (held_since already
+        set), the original start time is preserved unchanged."""
+        beyond = spot >= wall if direction == "above" else spot <= wall
+        if not beyond:
+            return None
+        return held_since if held_since is not None else now.isoformat()
+
+    def check_wall_hold_duration(self, held_since: str | None, now: datetime, confirm_seconds: int) -> bool:
+        """True once spot has held beyond the wall continuously for at
+        least confirm_seconds — the time-based hold-confirmation gate."""
+        if held_since is None:
+            return False
+        since_dt = datetime.fromisoformat(held_since)
+        return (now - since_dt).total_seconds() >= confirm_seconds
+
+    def check_wall_rejection_duration(self, was_building: bool, held_since: str | None) -> bool:
+        """True exactly on the touch-then-fail transition: a hold was
+        building (was_building True, i.e. held_since was previously set) but
+        has now ended (held_since is None) without ever reaching
+        confirm_seconds. Callers must gate on "not already confirmed"
+        themselves, same as the streak-based check_wall_rejection."""
+        return was_building and held_since is None
+
     def check_index_move(self, index: str, current: float, reference: float, threshold_pct: float) -> tuple[bool, str]:
         """Percentage move of an index (NIFTY/SENSEX) since the last check,
         observed fact only — no direction implied beyond the arithmetic sign."""

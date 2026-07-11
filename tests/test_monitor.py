@@ -221,6 +221,63 @@ class TestMarketConditions:
         assert self.cond.check_wall_rejection(prev_streak=1, new_streak=2) is False
 
     # -----------------------------------------------------------------
+    # Time-based wall-hold confirmation (Piece C, 2026-07-11)
+    # -----------------------------------------------------------------
+
+    def test_update_wall_break_hold_since_starts_a_new_hold(self):
+        now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        result = self.cond.update_wall_break_hold_since(
+            spot=24410, wall=24400, direction="above", held_since=None, now=now,
+        )
+        assert result == now.isoformat()
+
+    def test_update_wall_break_hold_since_preserves_original_start(self):
+        now = datetime(2026, 7, 13, 10, 5, 0, tzinfo=timezone.utc)
+        original_start = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc).isoformat()
+        result = self.cond.update_wall_break_hold_since(
+            spot=24410, wall=24400, direction="above", held_since=original_start, now=now,
+        )
+        assert result == original_start
+
+    def test_update_wall_break_hold_since_clears_when_back_inside(self):
+        now = datetime(2026, 7, 13, 10, 5, 0, tzinfo=timezone.utc)
+        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc).isoformat()
+        result = self.cond.update_wall_break_hold_since(
+            spot=24390, wall=24400, direction="above", held_since=held_since, now=now,
+        )
+        assert result is None
+
+    def test_update_wall_break_hold_since_put_wall_direction(self):
+        now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        result = self.cond.update_wall_break_hold_since(
+            spot=23990, wall=24000, direction="below", held_since=None, now=now,
+        )
+        assert result == now.isoformat()
+
+    def test_check_wall_hold_duration_true_at_threshold(self):
+        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 13, 10, 1, 0, tzinfo=timezone.utc)  # 60s later
+        assert self.cond.check_wall_hold_duration(held_since.isoformat(), now, confirm_seconds=60) is True
+
+    def test_check_wall_hold_duration_false_before_threshold(self):
+        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 13, 10, 0, 30, tzinfo=timezone.utc)  # 30s later
+        assert self.cond.check_wall_hold_duration(held_since.isoformat(), now, confirm_seconds=60) is False
+
+    def test_check_wall_hold_duration_false_when_no_hold(self):
+        now = datetime(2026, 7, 13, 10, 1, 0, tzinfo=timezone.utc)
+        assert self.cond.check_wall_hold_duration(None, now, confirm_seconds=60) is False
+
+    def test_check_wall_rejection_duration_true_on_touch_then_fail(self):
+        assert self.cond.check_wall_rejection_duration(was_building=True, held_since=None) is True
+
+    def test_check_wall_rejection_duration_false_when_never_started(self):
+        assert self.cond.check_wall_rejection_duration(was_building=False, held_since=None) is False
+
+    def test_check_wall_rejection_duration_false_while_still_building(self):
+        assert self.cond.check_wall_rejection_duration(was_building=True, held_since="2026-07-13T10:00:00+00:00") is False
+
+    # -----------------------------------------------------------------
     # Dedup gate (Priority B3, 2026-07-11) — near-duplicate re-fire guard
     # -----------------------------------------------------------------
 
@@ -1625,3 +1682,133 @@ class TestLivePriceWiring:
         assert saved["live_price_sensex_ltp"] == 80999.9
         assert saved["live_price_sensex_cache_hit"] is False
         assert "live_price_checked_at" in saved
+
+
+# ---------------------------------------------------------------------------
+# Piece C (2026-07-11) — event-driven index-move/wall-hold checks, fired by
+# LivePriceCache.on_tick instead of waiting for the next poll.
+# ---------------------------------------------------------------------------
+
+class TestOnIndexTick:
+    def setup_method(self):
+        with patch("src.monitor.scheduler.MonitorRepository"), \
+             patch("src.monitor.scheduler.MonitorBootstrap"), \
+             patch("src.monitor.scheduler.PositionTracker"):
+            self.monitor = MarketMonitor()
+        self.monitor.repo = AsyncMock()
+        self.monitor.alerter = AsyncMock()
+        self.user = {"id": "u1", "name": "trader"}
+        self.settings = {
+            "nifty_move_threshold": 1.0, "sensex_move_threshold": 1.0,
+            "wall_break_confirm_seconds": 60, "cooldown_pcr": 900, "cooldown_wall_break": 1800,
+        }
+
+    def _prime(self):
+        self.monitor._market_context = {"user": self.user, "settings": self.settings}
+
+    @pytest.mark.anyio
+    async def test_no_op_when_context_not_primed(self):
+        self.monitor.repo.get_session_state = AsyncMock()
+        await self.monitor._on_index_tick("NIFTY", 24500.0)
+        self.monitor.repo.get_session_state.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_ignores_non_index_symbol(self):
+        self._prime()
+        self.monitor.repo.get_session_state = AsyncMock()
+        await self.monitor._on_index_tick("BANKNIFTY", 52000.0)
+        self.monitor.repo.get_session_state.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_nifty_tick_persists_new_spot(self):
+        self._prime()
+        self.monitor.repo.get_session_state = AsyncMock(return_value={
+            "last_nifty_spot": 24000.0, "last_sensex_spot": 79000.0,
+            "open_call_wall": None, "open_put_wall": None,
+        })
+        self.monitor.repo.get_last_alert_time = AsyncMock(return_value=None)
+        self.monitor.repo.save_session_state = AsyncMock()
+
+        await self.monitor._on_index_tick("NIFTY", 24010.0)  # <1% move, no alert
+
+        saved = self.monitor.repo.save_session_state.await_args.args[1]
+        assert saved["last_nifty_spot"] == 24010.0
+
+    @pytest.mark.anyio
+    async def test_nifty_tick_fires_index_move_alert_beyond_threshold(self):
+        self._prime()
+        self.monitor.repo.get_session_state = AsyncMock(return_value={
+            "last_nifty_spot": 24000.0, "last_sensex_spot": 79000.0,
+            "open_call_wall": None, "open_put_wall": None,
+        })
+        self.monitor.repo.get_last_alert_time = AsyncMock(return_value=None)
+        self.monitor.repo.save_session_state = AsyncMock()
+        self.monitor.repo.save_alert = AsyncMock()
+        self.monitor.repo.save_heartbeat = AsyncMock()
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        await self.monitor._on_index_tick("NIFTY", 24350.0)  # +1.46% move
+
+        self.monitor.alerter.send_macro_alert.assert_awaited_once()
+        alert_type = self.monitor.alerter.send_macro_alert.await_args.args[1]
+        assert alert_type == "index_move_nifty"
+
+    @pytest.mark.anyio
+    async def test_sensex_tick_does_not_touch_nifty_spot(self):
+        self._prime()
+        self.monitor.repo.get_session_state = AsyncMock(return_value={
+            "last_nifty_spot": 24000.0, "last_sensex_spot": 79000.0,
+            "open_call_wall": None, "open_put_wall": None,
+        })
+        self.monitor.repo.get_last_alert_time = AsyncMock(return_value=None)
+        self.monitor.repo.save_session_state = AsyncMock()
+
+        await self.monitor._on_index_tick("SENSEX", 79050.0)
+
+        saved = self.monitor.repo.save_session_state.await_args.args[1]
+        assert saved["last_sensex_spot"] == 79050.0
+        assert "last_nifty_spot" not in saved
+
+    @pytest.mark.anyio
+    async def test_nifty_wall_hold_confirms_after_duration_across_ticks(self):
+        self._prime()
+        # In-memory fake so get_session_state/save_session_state behave like
+        # a real row across the two ticks in this test.
+        state = {
+            "last_nifty_spot": 24390.0, "last_sensex_spot": 79000.0,
+            "open_call_wall": 24400.0, "open_put_wall": 24000.0,
+        }
+
+        async def fake_get(user_id):
+            return dict(state)
+
+        async def fake_save(user_id, updates):
+            state.update(updates)
+
+        self.monitor.repo.get_session_state = fake_get
+        self.monitor.repo.save_session_state = fake_save
+        self.monitor.repo.get_last_alert_time = AsyncMock(return_value=None)
+        self.monitor.repo.save_alert = AsyncMock()
+        self.monitor.repo.save_heartbeat = AsyncMock()
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        t0 = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = t0
+            await self.monitor._on_index_tick("NIFTY", 24410.0)  # first touch
+
+        confirmed_types = [
+            c.args[1] for c in self.monitor.alerter.send_macro_alert.await_args_list
+        ]
+        assert "oi_call_wall_break" not in confirmed_types  # not confirmed yet
+
+        t1 = t0 + timedelta(seconds=65)
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = t1
+            await self.monitor._on_index_tick("NIFTY", 24415.0)  # still beyond, 65s later
+
+        confirmed_types = [
+            c.args[1] for c in self.monitor.alerter.send_macro_alert.await_args_list
+        ]
+        assert "oi_call_wall_break" in confirmed_types
+        assert state["call_wall_break_confirmed"] is True

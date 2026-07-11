@@ -199,50 +199,64 @@ class TestIndexMovement:
 
 class TestOiWallBreak:
     """Priority 1 (2026-07-10): oi_call_wall_break/oi_put_wall_break now only
-    reach Telegram after wall_break_confirm_candles consecutive polls beyond
-    the wall — the raw touch is logged (delivered=False) but not alerted, and
-    a touch-then-revert fires oi_wall_rejection instead."""
+    reach Telegram after the hold has lasted wall_break_confirm_seconds
+    continuously — the raw touch is logged (delivered=False) but not
+    alerted, and a touch-then-revert fires oi_wall_rejection instead.
+
+    Time-based (not poll-count-based) since Piece C (2026-07-11) — see
+    conditions.py's update_wall_break_hold_since docstring for why a tick
+    count stopped meaning anything fixed once checks can fire on live WS
+    ticks instead of only once per poll."""
 
     def setup_method(self):
         self.mi = MarketIntelligence()
+        self.t0 = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
 
     def test_single_touch_logs_raw_event_but_does_not_confirm(self):
-        alerts, streaks = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=24400, put_wall=24000)
+        alerts, holds = self.mi.check_oi_walls(
+            spot=24410, prev_spot=24390, call_wall=24400, put_wall=24000, now=self.t0,
+        )
         raw = [a for a in alerts if a["type"] == "oi_call_wall_break"]
         assert len(raw) == 1
         assert raw[0]["delivered"] is False
-        assert streaks["call_wall_break_streak"] == 1
-        assert "call_wall_break_confirmed" not in streaks
+        assert holds["call_wall_hold_since"] == self.t0.isoformat()
+        assert "call_wall_break_confirmed" not in holds
 
     def test_put_wall_single_touch_logs_raw_event(self):
-        alerts, streaks = self.mi.check_oi_walls(spot=23990, prev_spot=24010, call_wall=24400, put_wall=24000)
+        alerts, holds = self.mi.check_oi_walls(
+            spot=23990, prev_spot=24010, call_wall=24400, put_wall=24000, now=self.t0,
+        )
         raw = [a for a in alerts if a["type"] == "oi_put_wall_break"]
         assert len(raw) == 1
         assert raw[0]["delivered"] is False
-        assert streaks["put_wall_break_streak"] == 1
+        assert holds["put_wall_hold_since"] == self.t0.isoformat()
 
-    def test_no_break_no_alert_streak_resets(self):
-        alerts, streaks = self.mi.check_oi_walls(spot=24300, prev_spot=24290, call_wall=24400, put_wall=24000)
+    def test_no_break_no_alert_hold_clears(self):
+        alerts, holds = self.mi.check_oi_walls(
+            spot=24300, prev_spot=24290, call_wall=24400, put_wall=24000, now=self.t0,
+        )
         assert alerts == []
-        assert streaks["call_wall_break_streak"] == 0
-        assert streaks["put_wall_break_streak"] == 0
+        assert holds["call_wall_hold_since"] is None
+        assert holds["put_wall_hold_since"] is None
 
     def test_missing_walls_yields_no_alert(self):
-        alerts, streaks = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=None, put_wall=None)
+        alerts, holds = self.mi.check_oi_walls(spot=24410, prev_spot=24390, call_wall=None, put_wall=None)
         assert alerts == []
-        assert streaks == {}
+        assert holds == {}
 
-    def test_confirmed_after_n_consecutive_holds(self):
-        settings = {"wall_break_confirm_candles": 3}
+    def test_confirmed_after_hold_duration_elapses(self):
+        settings = {"wall_break_confirm_seconds": 60}
         session_state: dict = {}
         confirmed_alerts = []
-        # Spot holds beyond the call wall for 3 consecutive polls.
-        for spot in (24410, 24420, 24430):
-            alerts, streaks = self.mi.check_oi_walls(
+        # Spot holds beyond the call wall continuously across polls at
+        # t=0, t=30s, t=65s -- confirmation must fire once >= 60s elapsed.
+        for offset, spot in ((0, 24410), (30, 24420), (65, 24430)):
+            now = self.t0 + timedelta(seconds=offset)
+            alerts, holds = self.mi.check_oi_walls(
                 spot=spot, prev_spot=24390, call_wall=24400, put_wall=24000,
-                session_state=session_state, settings=settings,
+                session_state=session_state, settings=settings, now=now,
             )
-            session_state.update(streaks)
+            session_state.update(holds)
             confirmed_alerts.extend(a for a in alerts if a["type"] == "oi_call_wall_break" and a.get("delivered") is not False)
         assert len(confirmed_alerts) == 1
         assert session_state["call_wall_break_confirmed"] is True
@@ -250,15 +264,16 @@ class TestOiWallBreak:
     def test_confirmed_wall_break_alert_carries_dedup_key_and_value(self):
         """Priority B3 (2026-07-11) — the scheduler needs these to gate
         near-duplicate re-fires against the last FIRED spot value."""
-        settings = {"wall_break_confirm_candles": 3}
+        settings = {"wall_break_confirm_seconds": 60}
         session_state: dict = {}
         confirmed = None
-        for spot in (24410, 24420, 24430):
-            alerts, streaks = self.mi.check_oi_walls(
+        for offset, spot in ((0, 24410), (30, 24420), (65, 24430)):
+            now = self.t0 + timedelta(seconds=offset)
+            alerts, holds = self.mi.check_oi_walls(
                 spot=spot, prev_spot=24390, call_wall=24400, put_wall=24000,
-                session_state=session_state, settings=settings,
+                session_state=session_state, settings=settings, now=now,
             )
-            session_state.update(streaks)
+            session_state.update(holds)
             for a in alerts:
                 if a["type"] == "oi_call_wall_break" and a.get("delivered") is not False:
                     confirmed = a
@@ -267,17 +282,17 @@ class TestOiWallBreak:
         assert confirmed["value"] == 24430
 
     def test_rejection_fires_on_touch_then_revert_before_confirmation(self):
-        settings = {"wall_break_confirm_candles": 3}
+        settings = {"wall_break_confirm_seconds": 60}
         session_state: dict = {}
-        # Poll 1: touch (streak -> 1). Poll 2: reverts back inside (streak -> 0).
-        alerts1, streaks1 = self.mi.check_oi_walls(
+        # t=0: touch (hold starts). t=10s: reverts back inside before 60s elapse.
+        alerts1, holds1 = self.mi.check_oi_walls(
             spot=24410, prev_spot=24390, call_wall=24400, put_wall=24000,
-            session_state=session_state, settings=settings,
+            session_state=session_state, settings=settings, now=self.t0,
         )
-        session_state.update(streaks1)
-        alerts2, streaks2 = self.mi.check_oi_walls(
+        session_state.update(holds1)
+        alerts2, holds2 = self.mi.check_oi_walls(
             spot=24380, prev_spot=24410, call_wall=24400, put_wall=24000,
-            session_state=session_state, settings=settings,
+            session_state=session_state, settings=settings, now=self.t0 + timedelta(seconds=10),
         )
         rejection = [a for a in alerts2 if a["type"] == "oi_wall_rejection"]
         assert len(rejection) == 1
@@ -287,20 +302,24 @@ class TestOiWallBreak:
         """Regression test for the reported failure: spot bounces across the
         NIFTY 24200 call wall multiple times before finally holding — this
         must yield exactly one hold-confirmed alert and rejection alerts for
-        the earlier bounces, not a fresh oi_call_wall_break every poll."""
-        settings = {"wall_break_confirm_candles": 3}
+        the earlier bounces, not a fresh oi_call_wall_break every check."""
+        settings = {"wall_break_confirm_seconds": 60}
         session_state: dict = {}
         confirmed = []
         rejections = []
-        # Bounce sequence: touch, revert, touch, revert, then hold for 3 polls.
-        spots = [24205, 24195, 24210, 24190, 24205, 24215, 24225]
+        # Bounce sequence: touch, revert, touch, revert, then hold >= 60s.
+        events = [
+            (0, 24205), (10, 24195), (20, 24210), (30, 24190),
+            (40, 24205), (105, 24215), (170, 24225),
+        ]
         prev = 24190
-        for spot in spots:
-            alerts, streaks = self.mi.check_oi_walls(
+        for offset, spot in events:
+            now = self.t0 + timedelta(seconds=offset)
+            alerts, holds = self.mi.check_oi_walls(
                 spot=spot, prev_spot=prev, call_wall=24200, put_wall=24000,
-                session_state=session_state, settings=settings,
+                session_state=session_state, settings=settings, now=now,
             )
-            session_state.update(streaks)
+            session_state.update(holds)
             confirmed.extend(a for a in alerts if a["type"] == "oi_call_wall_break" and a.get("delivered") is not False)
             rejections.extend(a for a in alerts if a["type"] == "oi_wall_rejection")
             prev = spot

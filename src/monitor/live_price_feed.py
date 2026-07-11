@@ -42,6 +42,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 
 from src.brokers.streaming import stream_prices
 from src.chart_awareness.instrument_resolver import get_resolver
@@ -80,9 +81,15 @@ _INDEX_WS_TOKENS: dict[str, str] = {
 
 class LivePriceCache:
     """Subscribes to stream_prices() for the active instrument set and
-    exposes a sync get() for poll-based checks to read instead of REST."""
+    exposes a sync get() for poll-based checks to read instead of REST.
 
-    def __init__(self) -> None:
+    Piece C (2026-07-11): an optional on_tick callback fires
+    (symbol, ltp) on every price update for a watched index, so a caller
+    can evaluate index-move / wall-hold conditions the instant a tick
+    arrives instead of only at the next poll. on_tick exceptions are
+    logged and never propagate — one bad check must not kill the stream."""
+
+    def __init__(self, on_tick: "Callable[[str, float], Awaitable[None]] | None" = None) -> None:
         self._prices: dict[str, tuple[float, float]] = {}  # instrument -> (ltp, monotonic_ts)
         # Exact bare-security-id/token -> "SEGMENT:id" map, rebuilt on every
         # subscription change. NB: if two different segments ever assign the
@@ -95,6 +102,7 @@ class LivePriceCache:
         self._task: asyncio.Task | None = None
         self._updates: asyncio.Queue | None = None
         self._resolver = get_resolver()
+        self._on_tick = on_tick
 
     async def _resolve_instrument(self, symbol: str) -> str | None:
         sym = symbol.upper()
@@ -199,9 +207,21 @@ class LivePriceCache:
                 if instrument is None:
                     continue
                 try:
-                    self._prices[instrument] = (float(ltp), time.monotonic())
+                    ltp_f = float(ltp)
                 except (TypeError, ValueError):
                     continue
+                self._prices[instrument] = (ltp_f, time.monotonic())
+
+                if self._on_tick is not None:
+                    symbols = [
+                        sym for sym, inst in self._symbol_to_instrument.items()
+                        if inst == instrument
+                    ]
+                    for sym in symbols:
+                        try:
+                            await self._on_tick(sym, ltp_f)
+                        except Exception as exc:
+                            logger.warning("LivePriceCache on_tick failed for %s: %s", sym, exc)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
