@@ -252,6 +252,8 @@ class MonitorRepository:
                     live_price_sensex_ltp=state.get("live_price_sensex_ltp"),
                     live_price_sensex_cache_hit=state.get("live_price_sensex_cache_hit", False),
                     live_price_checked_at=state.get("live_price_checked_at"),
+                    call_wall_hold_since=state.get("call_wall_hold_since"),
+                    put_wall_hold_since=state.get("put_wall_hold_since"),
                     updated_at=now,
                 ))
             else:
@@ -280,6 +282,8 @@ class MonitorRepository:
                 row.live_price_sensex_ltp = state.get("live_price_sensex_ltp", row.live_price_sensex_ltp)
                 row.live_price_sensex_cache_hit = state.get("live_price_sensex_cache_hit", row.live_price_sensex_cache_hit)
                 row.live_price_checked_at = state.get("live_price_checked_at", row.live_price_checked_at)
+                row.call_wall_hold_since = state.get("call_wall_hold_since", row.call_wall_hold_since)
+                row.put_wall_hold_since = state.get("put_wall_hold_since", row.put_wall_hold_since)
                 row.updated_at = now
 
     async def save_heartbeat(self, user_id: str, field: str) -> None:

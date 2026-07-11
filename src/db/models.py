@@ -353,6 +353,11 @@ try:
         cooldown_pinning: Mapped[int]             = mapped_column(Integer, server_default=text("1800"))
         # Priority B7 (2026-07-11) — MCX session-close risk alert cooldown.
         cooldown_session_close_risk: Mapped[int]  = mapped_column(Integer, server_default=text("3600"))
+        # Piece C (2026-07-11) — replaces wall_break_confirm_candles (a poll
+        # count, meaningless once wall-hold is checked on live WS ticks
+        # instead of only once per poll) with a genuine wall-clock duration.
+        # wall_break_confirm_candles is left in place, unused by new code.
+        wall_break_confirm_seconds: Mapped[int] = mapped_column(Integer, server_default=text("60"))
         updated_at: Mapped[str]          = mapped_column(Text, nullable=False)
 
     class MonitorSessionState(Base):
@@ -382,6 +387,13 @@ try:
         put_wall_break_streak: Mapped[int]      = mapped_column(Integer, server_default=text("0"))
         call_wall_break_confirmed: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
         put_wall_break_confirmed: Mapped[bool]  = mapped_column(Boolean, server_default=text("false"))
+        # Piece C (2026-07-11) — replaces the streak columns above (a poll
+        # count) with the ISO timestamp a continuous hold started, so
+        # confirmation can be based on elapsed wall-clock time instead —
+        # necessary once wall-hold is checked on live WS ticks, not just
+        # once per poll. Streak columns are left in place, unused by new code.
+        call_wall_hold_since: Mapped[str | None] = mapped_column(Text)
+        put_wall_hold_since: Mapped[str | None]  = mapped_column(Text)
         # Priority B3 (2026-07-11) — the value actually FIRED for pcr_shift/
         # wall-break alerts, distinct from open_pcr/open_call_wall/
         # open_put_wall (the session-open reference the underlying threshold
