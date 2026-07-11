@@ -27,6 +27,7 @@ ALLOWED_VARIABLES = [
     "DEFAULT_CALLMEBOT_API_KEY",
     "DEFAULT_TELEGRAM_BOT_TOKEN",
     "DEFAULT_TELEGRAM_CHAT_ID",
+    "OILPRICEAPI_KEY",
 ]
 
 # Global variables updated by reload_config
