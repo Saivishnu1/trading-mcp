@@ -34,6 +34,7 @@ jobs:
           username: ${{ secrets.OCI_USER }}
           key: ${{ secrets.OCI_SSH_KEY }}
           script: |
+            set -e
             cd ~/trading-mcp
 
             git fetch origin
@@ -41,7 +42,20 @@ jobs:
 
             ~/.local/bin/uv sync
 
+            # Migrate BEFORE restarting either service — never let a service
+            # start against a schema it doesn't match (2026-07-11: this step
+            # was previously missing entirely, leaving the DB 5 migrations
+            # behind deployed code with no error surfaced).
+            set -a && source /etc/zerodha-mcp/.env && set +a
+            ~/.local/bin/uv run alembic upgrade head
+
             sudo systemctl daemon-reload
-            sudo systemctl restart zerodha-mcp
+            # zerodha-monitor is a separate long-running process that reads
+            # the same DB schema and alert logic as zerodha-mcp — restarting
+            # only zerodha-mcp left the monitor running stale code
+            # indefinitely (2026-07-11: found running code from the day
+            # before while zerodha-mcp was on the latest deploy).
+            sudo systemctl restart zerodha-mcp zerodha-monitor
 
             sudo systemctl is-active zerodha-mcp
+            sudo systemctl is-active zerodha-monitor
