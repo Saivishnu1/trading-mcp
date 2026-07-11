@@ -96,6 +96,27 @@ class ExecutionRepository:
             logger.error("save_order failed: %s", exc)
             return None
 
+    async def find_by_broker_order_id(self, broker_order_id: str) -> dict | None:
+        """Look up the logged order (and its symbol/qty/side snapshot) that
+        produced this broker_order_id — used to enrich a live WS order-update
+        push with human-readable context. None if not found or DB down."""
+        try:
+            from sqlalchemy import select
+            from src.db.models import OrderLog
+        except ImportError:
+            return None
+        try:
+            async with get_session() as session:
+                stmt = select(OrderLog).where(OrderLog.broker_order_id == broker_order_id)
+                result = await session.execute(stmt)
+                row = result.scalars().first()
+                return _row_to_dict(row) if row is not None else None
+        except RuntimeError:
+            return None
+        except Exception as exc:
+            logger.error("find_by_broker_order_id failed: %s", exc)
+            return None
+
     async def recent_orders(self, user_id: str | None = None, limit: int = 20) -> list[dict]:
         """Return the most recent submitted orders (newest first). [] if DB down."""
         try:

@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 
+from src.execution.order_update_listener import run_order_update_listener
 from src.monitor.scheduler import MarketMonitor
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -44,7 +45,19 @@ def _acquire_singleton_lock():
 
 async def main() -> None:
     monitor = MarketMonitor()
-    await monitor.run()
+    bot_token = os.environ.get("TELEGRAM_ADMIN_BOT_TOKEN", "")
+    admin_id = os.environ.get("TELEGRAM_ADMIN_ID", "1344481918")
+    # Order-fill/rejection alerts run alongside the existing poll loop, not
+    # instead of it — one persistent WS connection for the process lifetime.
+    # A crash in one must not take down the other, hence return_exceptions.
+    results = await asyncio.gather(
+        monitor.run(),
+        run_order_update_listener(bot_token, admin_id),
+        return_exceptions=True,
+    )
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error("monitor.service task exited with an exception: %s", result)
 
 
 if __name__ == "__main__":
