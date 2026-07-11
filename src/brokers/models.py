@@ -108,6 +108,13 @@ class OrderRequest:
     tgt_limit_price: float | None = None
     trailing_sl_points: float | None = None  # client-side only, never sent to INDstocks
 
+    def __post_init__(self) -> None:
+        # INDstocks requires DAY validity for AMO orders (confirmed against
+        # their docs, 2026-07-12) — normalized here so every caller (web,
+        # Telegram, MCP) gets this for free instead of duplicating the rule.
+        if self.is_amo:
+            self.validity = "DAY"
+
     def to_dict(self) -> dict:
         return asdict(self)
 

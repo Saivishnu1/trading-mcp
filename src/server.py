@@ -926,6 +926,9 @@ async def _app(scope, receive, send):
             if err:
                 await _send_json(send, 400, {"error": err})
                 return
+            import asyncio
+            from src.market.calendar import is_market_session_open
+            session_open = await asyncio.get_running_loop().run_in_executor(None, is_market_session_open)
             price = ("at market (auto-LIMIT @ live price)" if req.order_type == "MARKET"
                      else f"LIMIT @ ₹{req.limit_price:g}")
             summary_html = (
@@ -933,6 +936,11 @@ async def _app(scope, receive, send):
                 f"Qty: <b>{req.quantity}</b><br>{price}<br>"
                 f"Product: {req.product} &nbsp;|&nbsp; {req.exchange} {req.segment}"
             )
+            if not session_open:
+                summary_html += (
+                    "<br><b>Market is closed</b> — this will be placed as an "
+                    "AMO (After Market Order), queued for the next session."
+                )
             await _send_json(send, 200, {"ok": True, "summary_html": summary_html})
             return
 
@@ -950,6 +958,25 @@ async def _app(scope, receive, send):
             if err:
                 await _send_json(send, 400, {"error": err})
                 return
+            import asyncio
+            from src.market.calendar import is_market_session_open
+            session_open = await asyncio.get_running_loop().run_in_executor(None, is_market_session_open)
+            if not session_open:
+                if req.is_smart_order:
+                    # AMO support for INDstocks' /smart/order (SL/target leg)
+                    # endpoint isn't confirmed against their docs — only the
+                    # plain /order endpoint's is_amo behavior is (2026-07-12).
+                    # Reject rather than guess at an unverified API contract;
+                    # today the web form never sets SL/target fields anyway,
+                    # so this only matters if that changes later.
+                    await _send_json(send, 400, {
+                        "error": "Market is closed. SL/target orders can't be placed "
+                                 "after hours (AMO support for that order type isn't "
+                                 "confirmed) — place a plain order to queue it as AMO, "
+                                 "or try again during market hours."})
+                    return
+                req.is_amo = True
+                req.validity = "DAY"
             from src.execution.service import submit_order, resolve_symbol
             # If the client already sent a security_id (user picked an exact
             # contract from the /trade/symbols dropdown), trust it — re-resolving
