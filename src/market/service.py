@@ -13,6 +13,7 @@ import io
 import logging
 import math
 import threading
+import time
 from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
@@ -142,16 +143,21 @@ def _serialize(obj: object) -> object:
 # ---------------------------------------------------------------------------
 
 _instruments: list[dict] = []
+_instruments_loaded_at: float = 0.0
 _instruments_lock = threading.Lock()
 _NSE_EQUITY_CSV = (
     "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 )
+# NSE's equity list (new listings/delistings/renames) changes at most a few
+# times a month, never intraday — a day-long TTL keeps search_instruments
+# self-refreshing across a long-lived process without re-fetching every call.
+_INSTRUMENTS_TTL_SECONDS = 24 * 60 * 60
 
 
 def _load_nse_instruments() -> list[dict]:
-    global _instruments
+    global _instruments, _instruments_loaded_at
     with _instruments_lock:
-        if _instruments:
+        if _instruments and (time.time() - _instruments_loaded_at) < _INSTRUMENTS_TTL_SECONDS:
             return _instruments
         try:
             import httpx  # type: ignore[import]
@@ -175,8 +181,13 @@ def _load_nse_instruments() -> list[dict]:
                 for row in reader
                 if row.get("SYMBOL", "").strip()
             ]
+            _instruments_loaded_at = time.time()
             logger.info("Loaded %d NSE instruments", len(_instruments))
         except Exception as exc:
+            # A failed refresh keeps serving the last known-good list (if any)
+            # rather than wiping it to empty — stale reference data beats no
+            # data. _instruments only stays [] here if this is the very first
+            # load, in which case the next call's falsy check retries anyway.
             logger.warning("Could not load NSE equity list: %s", exc)
     return _instruments
 
@@ -313,6 +324,7 @@ class MarketService:
         )
 
     def invalidate_instruments_cache(self) -> None:
-        global _instruments
+        global _instruments, _instruments_loaded_at
         with _instruments_lock:
             _instruments = []
+            _instruments_loaded_at = 0.0
