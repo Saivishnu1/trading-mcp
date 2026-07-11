@@ -76,7 +76,8 @@ async def test_preview_disabled_when_pin_unset():
 
 @pytest.mark.anyio
 async def test_preview_valid_returns_summary():
-    with patch.dict(os.environ, {"TRADE_PIN": "1234"}):
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True):
         status, body = await _call(
             "/trade/preview", method="POST",
             body=_json_body(pin="1234", symbol="RELIANCE", side="BUY",
@@ -87,6 +88,22 @@ async def test_preview_valid_returns_summary():
     assert data["ok"] is True
     assert "RELIANCE" in data["summary_html"]
     assert "LIMIT" in data["summary_html"]
+    assert "AMO" not in data["summary_html"]
+
+
+@pytest.mark.anyio
+async def test_preview_shows_amo_note_when_market_closed():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=False):
+        status, body = await _call(
+            "/trade/preview", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", side="BUY",
+                            quantity=2, order_type="LIMIT", limit_price=2870, product="CNC"),
+        )
+    assert status == 200
+    data = json.loads(body)
+    assert "AMO" in data["summary_html"]
+    assert "Market is closed" in data["summary_html"]
 
 
 @pytest.mark.anyio
@@ -116,6 +133,7 @@ async def test_place_rejects_bad_pin_before_touching_broker():
 async def test_place_valid_pin_places_order():
     placed = {"status": "ok", "order_id": "DRV-9", "order_status": "O-PENDING"}
     with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
          patch("src.execution.service.resolve_symbol", AsyncMock(return_value="2885")), \
          patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
         status, body = await _call(
@@ -126,11 +144,60 @@ async def test_place_valid_pin_places_order():
     assert json.loads(body)["order_id"] == "DRV-9"
     sub.assert_awaited_once()
     assert sub.call_args.kwargs["source"] == "web"
+    assert sub.call_args.args[0].is_amo is False
+
+
+@pytest.mark.anyio
+async def test_place_auto_amo_when_market_closed():
+    # Confirmed against INDstocks' docs (2026-07-12): AMO orders require
+    # is_amo=true + DAY validity and queue as O-PENDING until next session's
+    # open. Placing a regular-session order while the market is closed
+    # previously surfaced as an opaque 512 Internal Server Error from
+    # INDstocks — this auto-flags it as AMO instead.
+    placed = {"status": "ok", "order_id": "DRV-10", "order_status": "O-PENDING"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=False), \
+         patch("src.execution.service.resolve_symbol", AsyncMock(return_value="2885")), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/place", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", side="BUY", quantity=1),
+        )
+    assert status == 200
+    sub.assert_awaited_once()
+    placed_req = sub.call_args.args[0]
+    assert placed_req.is_amo is True
+    assert placed_req.validity == "DAY"
+
+
+@pytest.mark.anyio
+async def test_place_smart_order_rejected_when_market_closed():
+    # AMO support for INDstocks' /smart/order (SL/target leg) endpoint isn't
+    # confirmed — only the plain /order endpoint's is_amo behavior is. The
+    # web form can't set SL/target fields today, so this exercises the
+    # defensive guard directly via a patched _build_order_from_web.
+    from src.brokers.models import OrderRequest
+    smart_req = OrderRequest(
+        security_id="2885", exchange="NSE", segment="EQUITY",
+        transaction_type="BUY", quantity=1, sl_trigger_price=100.0,
+    )
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=False), \
+         patch("src.server._build_order_from_web", return_value=(smart_req, None)), \
+         patch("src.execution.service.submit_order", AsyncMock()) as sub:
+        status, body = await _call(
+            "/trade/place", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", side="BUY", quantity=1),
+        )
+    assert status == 400
+    assert "closed" in json.loads(body)["error"].lower()
+    sub.assert_not_awaited()
 
 
 @pytest.mark.anyio
 async def test_place_unknown_symbol_returns_400():
     with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
          patch("src.execution.service.resolve_symbol", AsyncMock(return_value=None)), \
          patch("src.execution.service.submit_order", AsyncMock()) as sub:
         status, body = await _call(
@@ -151,6 +218,7 @@ async def test_place_with_client_security_id_skips_ambiguous_resolve():
     # docstring in src/brokers/indmoney.py).
     placed = {"status": "ok", "order_id": "DRV-42", "order_status": "O-PENDING"}
     with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
          patch("src.execution.service.resolve_symbol", AsyncMock()) as resolve, \
          patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
         status, body = await _call(

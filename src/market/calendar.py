@@ -18,14 +18,20 @@ Expiry resolution order:
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time as _time, timedelta
 from typing import Optional
 
 import json as _json_mod
 import os as _os_mod
 import time as _time_mod
 
+import pytz as _pytz
+
 from src.providers.calendar.chain import get_calendar_provider, reset_calendar_provider
+
+_IST = _pytz.timezone("Asia/Kolkata")
+_MARKET_OPEN = _time(9, 15)
+_MARKET_CLOSE = _time(15, 30)
 
 
 def _load_zerodha_expiries_cache() -> dict:
@@ -380,6 +386,28 @@ def _fetch_bse_holidays_sync(year: int) -> list[str]:
             pass
 
     return []
+
+
+def is_market_session_open(calendar: dict | None = None) -> bool:
+    """True if the NSE/BSE cash+F&O session is live right now: today is a
+    trading day (not a weekend or holiday — via get_market_calendar()'s
+    existing holiday/weekend detection, not re-derived here) and the
+    current IST time falls within 09:15-15:30.
+
+    Used to auto-flag order-placement requests as AMO (see
+    OrderRequest.is_amo) instead of letting a regular-session order hit
+    INDstocks outside trading hours, which surfaces as an opaque 512
+    Internal Server Error rather than a clean rejection (confirmed
+    2026-07-12 against a real after-hours order attempt).
+
+    Pass an already-fetched get_market_calendar() dict via `calendar` to
+    avoid a second fetch when the caller already has one.
+    """
+    cal = calendar if calendar is not None else get_market_calendar()
+    if not cal.get("today", {}).get("is_trading_day", True):
+        return False
+    now = datetime.now(_IST).time()
+    return _MARKET_OPEN <= now <= _MARKET_CLOSE
 
 
 def get_market_calendar() -> dict:
