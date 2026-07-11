@@ -247,6 +247,49 @@ async def test_search_command_lists_matches():
 
 
 @pytest.mark.anyio
+async def test_search_command_shows_expiry_and_warns_on_ambiguous_symbol():
+    # Regression: index options (NIFTY/SENSEX weekly series) can return
+    # several rows sharing one display symbol, one per weekly expiry — /buy
+    # and /sell can only resolve by that symbol text, so ordering is
+    # ambiguous. /search must show the expiry per row and flag the ambiguity
+    # rather than silently look like one normal result.
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["27500"]
+
+    results = [
+        {"symbol": "NIFTY-JUL2026-27500-PE", "name": "NIFTY", "exchange": "NSE",
+         "segment": "DERIVATIVE", "expiry": "2026-07-02"},
+        {"symbol": "NIFTY-JUL2026-27500-PE", "name": "NIFTY", "exchange": "NSE",
+         "segment": "DERIVATIVE", "expiry": "2026-07-09"},
+    ]
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.search_symbols", AsyncMock(return_value=results)):
+        await search_command(update, context)
+
+    reply = message.reply_text.call_args[0][0]
+    assert "2026-07-02" in reply
+    assert "2026-07-09" in reply
+    assert "multiple expiries" in reply.lower()
+    assert "NIFTY-JUL2026-27500-PE" in reply
+
+
+@pytest.mark.anyio
+async def test_search_command_no_ambiguity_warning_for_unique_symbols():
+    update, message = _admin_update_with_message()
+    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
+    context.args = ["reliance"]
+
+    results = [{"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "segment": "EQUITY"}]
+    with patch("src.telegram_admin.auth.ADMIN_ID", ADMIN_ID), \
+         patch("src.execution.service.search_symbols", AsyncMock(return_value=results)):
+        await search_command(update, context)
+
+    reply = message.reply_text.call_args[0][0]
+    assert "multiple expiries" not in reply.lower()
+
+
+@pytest.mark.anyio
 async def test_search_command_no_matches():
     update, message = _admin_update_with_message()
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)

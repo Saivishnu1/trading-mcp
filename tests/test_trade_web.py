@@ -142,6 +142,29 @@ async def test_place_unknown_symbol_returns_400():
     sub.assert_not_awaited()
 
 
+@pytest.mark.anyio
+async def test_place_with_client_security_id_skips_ambiguous_resolve():
+    # When the user picked an exact contract from the /trade/symbols dropdown,
+    # the client sends that security_id — the server must trust it and skip
+    # resolve_symbol entirely, since resolving by symbol text is ambiguous for
+    # weekly index options sharing a display name (see search_instruments'
+    # docstring in src/brokers/indmoney.py).
+    placed = {"status": "ok", "order_id": "DRV-42", "order_status": "O-PENDING"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.resolve_symbol", AsyncMock()) as resolve, \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/place", method="POST",
+            body=_json_body(pin="1234", symbol="NIFTY-JUL2026-27500-PE",
+                            security_id="222", side="BUY", quantity=75),
+        )
+    assert status == 200
+    resolve.assert_not_awaited()  # exact id trusted, no ambiguous re-resolve
+    sub.assert_awaited_once()
+    placed_req = sub.call_args.args[0]
+    assert placed_req.security_id == "222"
+
+
 # ---------------------------------------------------------------------------
 # /trade/symbols — autocomplete search
 # ---------------------------------------------------------------------------

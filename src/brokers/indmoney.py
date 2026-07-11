@@ -409,6 +409,18 @@ class INDmoneyBroker(BrokerAdapter):
         UPPER_SNAKE_CASE — ``SECURITY_ID`` and ``TRADING_SYMBOL`` (with
         ``SYMBOL_NAME``/``CUSTOM_SYMBOL`` as secondary matches). Returns None
         if the symbol is not found.
+
+        CAUTION for options: for indices with a weekly series (NIFTY, SENSEX)
+        multiple weekly contracts in the same month can share an identical
+        ``TRADING_SYMBOL`` (INDstocks renders that column month-granular, e.g.
+        "NIFTY-JUL2026-27500-PE", for every Thursday in July) and differ only
+        by ``EXPIRY_DATE``/``SECURITY_ID``. Matching on symbol text alone is
+        therefore AMBIGUOUS for those — this returns whichever row the CSV
+        lists first, which may not be the contract the caller intends. Prefer
+        resolving directly by security_id (returned by search_instruments)
+        whenever the caller already has a specific contract selected — this
+        symbol-text path exists for the Telegram /buy /sell flow where the
+        user can only type a symbol string.
         """
         if not symbol:
             return None
@@ -432,9 +444,19 @@ class INDmoneyBroker(BrokerAdapter):
 
         Match order: symbols starting with the query rank before symbols that
         merely contain it, so typing "REL" surfaces RELIANCE before a ticker
-        that happens to contain "REL" mid-string. security_id is intentionally
-        NOT included — callers only need it to render a picker; the id is
-        re-resolved server-side at order time via resolve_security_id.
+        that happens to contain "REL" mid-string.
+
+        Distinct contracts are deduped by ``security_id``, NOT by the display
+        symbol string — INDstocks' TRADING_SYMBOL for index options is
+        month-granular (e.g. "NIFTY-JUL2026-27500-PE" for every weekly
+        contract that month on NIFTY/SENSEX, which still run a weekly series
+        post the Nov-2024 SEBI rationalization — see src/market/calendar.py's
+        _MONTHLY_ONLY_INDICES). Deduping on the symbol string alone silently
+        collapsed every weekly expiry down to one row. ``expiry`` is exposed
+        (from EXPIRY_DATE) so the caller/UI can show which specific date each
+        result is, and ``security_id`` is returned so the caller can act on
+        the EXACT contract the user picked rather than re-resolving by
+        (ambiguous) symbol text later.
         """
         target = query.strip().upper()
         if not target:
@@ -445,18 +467,29 @@ class INDmoneyBroker(BrokerAdapter):
         seen = set()
         for row in rows:
             sym = str(row.get("TRADING_SYMBOL") or row.get("SYMBOL_NAME") or "").strip().upper()
-            if not sym or sym in seen:
+            if not sym:
                 continue
             if target not in sym:
                 continue
-            seen.add(sym)
+            sec_id = str(row.get("SECURITY_ID") or "").strip()
+            dedup_key = sec_id or sym  # fall back to symbol text if no id (shouldn't happen)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
             name = str(row.get("INSTRUMENT_NAME") or row.get("SYMBOL_NAME") or sym).strip()
             exch = str(row.get("EXCH") or "NSE").strip().upper()
-            entry = {"symbol": sym, "name": name, "exchange": exch, "segment": row.get("SEGMENT", "")}
+            expiry = str(row.get("EXPIRY_DATE") or "").strip()
+            entry = {
+                "symbol": sym, "name": name, "exchange": exch,
+                "segment": row.get("SEGMENT", ""), "expiry": expiry,
+                "security_id": sec_id or None,
+            }
             (starts if sym.startswith(target) else contains).append(entry)
 
-        starts.sort(key=lambda e: len(e["symbol"]))
-        contains.sort(key=lambda e: len(e["symbol"]))
+        # Sort by (symbol length, expiry date) so same-named weekly contracts
+        # come back in chronological order instead of arbitrary CSV order.
+        starts.sort(key=lambda e: (len(e["symbol"]), e["expiry"]))
+        contains.sort(key=lambda e: (len(e["symbol"]), e["expiry"]))
         return (starts + contains)[:limit]
 
     async def get_quote(self, symbols: list[str]) -> list[Quote]:

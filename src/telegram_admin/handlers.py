@@ -755,9 +755,27 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"No symbols found matching '{query}'.")
             return
         lines = [f"🔎 *Symbols matching '{query}'*"]
+        seen_symbols: dict[str, int] = {}
+        for r in results:
+            seen_symbols[r["symbol"]] = seen_symbols.get(r["symbol"], 0) + 1
         for r in results:
             tag = "📈" if r["segment"] == "DERIVATIVE" else "📊"
-            lines.append(f"{tag} `{r['symbol']}`  —  {r['name']}  ({r['exchange']})")
+            expiry = f"  exp {r['expiry'][:10]}" if r.get("expiry") else ""
+            lines.append(f"{tag} `{r['symbol']}`  —  {r['name']}  ({r['exchange']}){expiry}")
+        # Index options (NIFTY/SENSEX still run a weekly series) can list several
+        # rows under one display symbol, one per weekly expiry that month — /buy
+        # and /sell can only key off the typed symbol text, so ordering one of
+        # these by name alone is ambiguous (INDstocks returns whichever weekly
+        # contract the CSV lists first). Surface that up front rather than let
+        # the wrong expiry get bought silently.
+        ambiguous = sorted({sym for sym, count in seen_symbols.items() if count > 1})
+        if ambiguous:
+            lines.append(
+                "\n⚠️ " + ", ".join(f"`{s}`" for s in ambiguous) +
+                " — matches multiple expiries above. /buy or /sell by this name "
+                "may pick the WRONG one; use the web /trade page and pick the "
+                "exact expiry from its dropdown instead for these."
+            )
         lines.append("\nTap-copy a symbol, then /buy SYMBOL QTY or /sell SYMBOL QTY.")
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
     except Exception as exc:

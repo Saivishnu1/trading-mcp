@@ -270,7 +270,9 @@ class TestSearchInstruments:
         with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
             results = await b.search_instruments("RELIANCE")
         assert [r["symbol"] for r in results] == ["RELIANCE", "IRELIANCEX"]
-        assert "security_id" not in results[0]  # never leak the id to the client
+        # security_id IS included (and must be correct) — the picker needs it
+        # to identify one exact contract among same-named weekly options.
+        assert results[0]["security_id"] == "2885"
         indmoney_module._instrument_cache.clear()
 
     @pytest.mark.anyio
@@ -303,6 +305,52 @@ class TestSearchInstruments:
         assert len(results) == 1
         indmoney_module._instrument_cache.clear()
 
+    @pytest.mark.anyio
+    async def test_same_display_symbol_different_expiries_not_collapsed(self):
+        # Regression: INDstocks renders TRADING_SYMBOL month-granular for index
+        # options ("NIFTY-JUL2026-27500-PE" for every Thursday in July), so
+        # deduping by that string alone silently dropped every weekly contract
+        # but the first — the bug behind "only months showing, no days" in the
+        # /trade dropdown. Rows differ only by SECURITY_ID/EXPIRY_DATE and must
+        # all survive.
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "NIFTY-JUL2026-27500-PE",
+             "SECURITY_ID": "111", "EXPIRY_DATE": "2026-07-02"},
+            {"EXCH": "NSE", "TRADING_SYMBOL": "NIFTY-JUL2026-27500-PE",
+             "SECURITY_ID": "222", "EXPIRY_DATE": "2026-07-09"},
+            {"EXCH": "NSE", "TRADING_SYMBOL": "NIFTY-JUL2026-27500-PE",
+             "SECURITY_ID": "333", "EXPIRY_DATE": "2026-07-16"},
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            results = await b.search_instruments("27500")
+        assert len(results) == 3
+        assert {r["security_id"] for r in results} == {"111", "222", "333"}
+        assert {r["expiry"] for r in results} == {"2026-07-02", "2026-07-09", "2026-07-16"}
+        # Ordered chronologically by expiry within the same symbol name.
+        assert [r["expiry"] for r in results] == ["2026-07-02", "2026-07-09", "2026-07-16"]
+        indmoney_module._instrument_cache.clear()
+
+    @pytest.mark.anyio
+    async def test_resolve_security_id_still_returns_a_result_for_ambiguous_symbol(self):
+        # resolve_security_id (symbol-text based, used by the Telegram /buy
+        # /sell flow which has no picker) is documented as best-effort/
+        # ambiguous for these — it must not crash or return None just because
+        # multiple rows share a TRADING_SYMBOL.
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "NIFTY-JUL2026-27500-PE", "SECURITY_ID": "111"},
+            {"EXCH": "NSE", "TRADING_SYMBOL": "NIFTY-JUL2026-27500-PE", "SECURITY_ID": "222"},
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            result = await b.resolve_security_id("NIFTY-JUL2026-27500-PE", source="fno")
+        assert result in ("111", "222")
+        indmoney_module._instrument_cache.clear()
+
 
 class TestSearchSymbols:
 
@@ -322,6 +370,27 @@ class TestSearchSymbols:
         segments = {r["segment"] for r in results}
         assert "EQUITY" in segments or "DERIVATIVE" in segments
         assert len(results) == 2
+
+    @pytest.mark.anyio
+    async def test_dedup_keys_on_security_id_not_symbol_text(self):
+        # Same symbol string, different security_id (e.g. two weekly NIFTY
+        # contracts returned from different sources by coincidence) must NOT
+        # be collapsed — only a genuinely identical security_id should dedup.
+        import src.execution.service as svc
+        adapter = MagicMock()
+
+        async def fake_search(query, source="equity", limit=15):
+            if source == "equity":
+                return [{"symbol": "NIFTY-JUL2026-27500-PE", "name": "", "exchange": "NSE",
+                          "segment": "", "security_id": "111", "expiry": "2026-07-02"}]
+            return [{"symbol": "NIFTY-JUL2026-27500-PE", "name": "", "exchange": "NSE",
+                      "segment": "", "security_id": "222", "expiry": "2026-07-09"}]
+
+        adapter.search_instruments = fake_search
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            results = await svc.search_symbols("27500")
+        assert len(results) == 2
+        assert {r["security_id"] for r in results} == {"111", "222"}
 
     @pytest.mark.anyio
     async def test_segment_hint_restricts_to_one_source(self):

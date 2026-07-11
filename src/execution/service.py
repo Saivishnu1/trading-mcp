@@ -51,13 +51,18 @@ async def search_symbols(query: str, *, segment: str | None = None, limit: int =
         *(broker.search_instruments(query, source=source, limit=limit) for source in sources)
     )
 
+    # Dedup by security_id (the only column guaranteed unique per contract),
+    # not the display symbol — index options (NIFTY/SENSEX) can have several
+    # weekly contracts sharing one TRADING_SYMBOL string, distinguished only
+    # by security_id/expiry (see search_instruments' docstring).
     seen: set[str] = set()
     results: list[dict] = []
     for source, rows in zip(sources, per_source):
         for row in rows:
-            if row["symbol"] in seen:
+            key = row.get("security_id") or row["symbol"]
+            if key in seen:
                 continue
-            seen.add(row["symbol"])
+            seen.add(key)
             results.append({**row, "segment": "DERIVATIVE" if source == "fno" else "EQUITY"})
     return results[:limit]
 

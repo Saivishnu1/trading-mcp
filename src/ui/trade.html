@@ -66,6 +66,7 @@
   .dd-main { flex: 1; min-width: 0; }
   .dd-sym { font-weight: 700; font-size: .92rem; }
   .dd-name { font-size: .76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-expiry { font-size: .76rem; color: var(--accent); font-weight: 600; white-space: nowrap; }
   .dd-exch { font-size: .68rem; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
   .dd-empty { padding: 14px; font-size: .85rem; color: var(--muted); text-align: center; }
 
@@ -228,9 +229,20 @@ function renderDropdown(results){
         <div class="dd-sym">${r.symbol}</div>
         <div class="dd-name">${r.name||""}</div>
       </div>
+      ${r.expiry ? `<span class="dd-expiry">${formatExpiry(r.expiry)}</span>` : ""}
       <span class="dd-exch">${r.exchange}</span>
     </div>`).join("");
   dd.classList.add("open");
+}
+
+function formatExpiry(raw){
+  // EXPIRY_DATE arrives as an ISO-ish date string ("2026-07-17" or with a
+  // time component) — several weekly contracts can share the same display
+  // symbol (e.g. "NIFTY-JUL2026-27500-PE"), so showing the exact day here is
+  // what actually lets the user tell them apart before picking.
+  const d = new Date(raw);
+  if(isNaN(d)) return raw;
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
 }
 
 function pickSymbol(i){
@@ -286,9 +298,16 @@ function highlightActive(){
 }
 
 function payload(){
+  const symbolText = document.getElementById("symbol").value.trim().toUpperCase();
+  // Only trust `selected` (and its security_id) if the typed text still
+  // matches exactly what was picked — guards against sending a stale id if
+  // the user edits the field after picking a dropdown result.
+  const pick = (selected && selected.symbol === symbolText) ? selected : null;
   return {
     pin: currentPin(),
-    symbol: document.getElementById("symbol").value.trim().toUpperCase(),
+    symbol: symbolText,
+    security_id: pick ? pick.security_id : null,
+    expiry: pick ? pick.expiry : null,
     side: side,
     quantity: parseInt(document.getElementById("qty").value,10),
     order_type: document.getElementById("orderType").value,
@@ -321,11 +340,24 @@ function renderSummary(d){
   document.getElementById("sumSym").textContent = o.symbol;
   document.getElementById("sumName").textContent = selected && selected.name ? selected.name : "";
   const priceLine = o.order_type === "MARKET" ? "Market (auto-LIMIT @ live price)" : ("Limit @ ₹" + o.limit_price);
-  document.getElementById("sumGrid").innerHTML = `
+  let rows = `
     <dt>Quantity</dt><dd>${o.quantity}</dd>
     <dt>Price</dt><dd>${priceLine}</dd>
     <dt>Product</dt><dd>${o.product}</dd>
     <dt>Exchange</dt><dd>${o.exchange}</dd>`;
+  if(o.expiry){ rows += `<dt>Expiry</dt><dd>${formatExpiry(o.expiry)}</dd>`; }
+  document.getElementById("sumGrid").innerHTML = rows;
+
+  const warnEl = document.getElementById("confirmMsg");
+  const looksLikeOption = /\d(\.\d+)?(CE|PE)$/.test(o.symbol) || o.symbol.endsWith("FUT");
+  if(looksLikeOption && !o.security_id){
+    show("confirmMsg", "err",
+      "⚠️ You typed this symbol without picking it from the dropdown. " +
+      "For weekly options, several expiries can share this exact name — " +
+      "pick the result from the search list to guarantee the right contract.");
+  } else {
+    warnEl.className = "msg"; warnEl.textContent = "";
+  }
 }
 
 function back(){ document.getElementById("confirmCard").style.display="none";

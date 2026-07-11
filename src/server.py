@@ -334,10 +334,19 @@ def _trade_pin_ok(supplied: str) -> bool:
 
 
 def _build_order_from_web(data: dict):
-    """Turn the trade page's JSON payload into an OrderRequest (security_id blank).
+    """Turn the trade page's JSON payload into an OrderRequest.
 
     Returns (OrderRequest, None) on success or (None, error_message) on bad input.
     Reuses the same validation vocabulary as the Telegram order_parser.
+
+    ``security_id``, if present, is trusted as-is — it means the user picked
+    an exact contract from the /trade/symbols autocomplete dropdown, which is
+    the only reliable way to identify a specific weekly-options contract
+    (index options can share a TRADING_SYMBOL string across several weekly
+    expiries in the same month; only security_id is unique per contract — see
+    INDmoneyBroker.search_instruments/resolve_security_id). If absent, the
+    caller (server.py's /trade/place route) falls back to symbol-text
+    resolution, which is ambiguous for those contracts.
     """
     from src.brokers.models import OrderRequest
     from src.telegram_admin.order_parser import _is_derivative_symbol
@@ -347,6 +356,7 @@ def _build_order_from_web(data: dict):
     order_type = str(data.get("order_type", "MARKET")).strip().upper()
     product = str(data.get("product", "INTRADAY")).strip().upper()
     exchange = str(data.get("exchange", "NSE")).strip().upper()
+    security_id = str(data.get("security_id", "")).strip()
     if not symbol:
         return None, "Symbol is required."
     if side not in ("BUY", "SELL"):
@@ -373,7 +383,7 @@ def _build_order_from_web(data: dict):
             return None, "LIMIT orders need a positive price."
 
     req = OrderRequest(
-        security_id="",
+        security_id=security_id,
         exchange=exchange,
         segment="DERIVATIVE" if _is_derivative_symbol(symbol) else "EQUITY",
         transaction_type=side,
@@ -941,16 +951,23 @@ async def _app(scope, receive, send):
                 await _send_json(send, 400, {"error": err})
                 return
             from src.execution.service import submit_order, resolve_symbol
-            try:
-                sec_id = await resolve_symbol(req.symbol, exchange=req.exchange, segment=req.segment)
-            except Exception as exc:
-                await _send_json(send, 502, {"error": f"symbol resolution failed: {exc}"})
-                return
-            if not sec_id:
-                await _send_json(send, 400, {
-                    "error": f"Symbol '{req.symbol}' not found in {req.exchange} {req.segment} instruments."})
-                return
-            req.security_id = sec_id
+            # If the client already sent a security_id (user picked an exact
+            # contract from the /trade/symbols dropdown), trust it — re-resolving
+            # by symbol text is ambiguous for weekly index options that share a
+            # TRADING_SYMBOL string across several expiries in the same month.
+            # Only fall back to text resolution when no id was supplied (e.g.
+            # user typed a symbol without picking from the dropdown).
+            if not req.security_id:
+                try:
+                    sec_id = await resolve_symbol(req.symbol, exchange=req.exchange, segment=req.segment)
+                except Exception as exc:
+                    await _send_json(send, 502, {"error": f"symbol resolution failed: {exc}"})
+                    return
+                if not sec_id:
+                    await _send_json(send, 400, {
+                        "error": f"Symbol '{req.symbol}' not found in {req.exchange} {req.segment} instruments."})
+                    return
+                req.security_id = sec_id
             result = await submit_order(req, source="web", user_id=os.environ.get("ZERODHA_USER_ID"))
             status = 200 if result.get("status") == "ok" else 502
             await _send_json(send, status, result)
