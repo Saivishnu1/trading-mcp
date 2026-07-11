@@ -10,6 +10,7 @@ import pytz
 from src.monitor.alerts import WhatsAppAlerter
 from src.monitor.bootstrap import MonitorBootstrap
 from src.monitor.conditions import MarketConditions
+from src.monitor.live_price_feed import LivePriceCache
 from src.monitor.market_intelligence import MarketIntelligence
 from src.monitor.position_tracker import PositionTracker
 from src.monitor.repository import MonitorRepository
@@ -38,6 +39,7 @@ class MarketMonitor:
         self.conditions = MarketConditions()
         self.alerter = WhatsAppAlerter()
         self.market_intelligence = MarketIntelligence(self.conditions)
+        self.live_prices = LivePriceCache()
 
     def get_poll_interval(self, min_dte: int, max_premium: float) -> int:
         if min_dte == 0:
@@ -336,7 +338,15 @@ class MarketMonitor:
             try:
                 chain = await self._get_option_chain("NIFTY")
                 records = chain.get("records", {}) or {}
-                spot = float(records.get("underlyingValue") or 0)
+                # Piece B (2026-07-11) — spot from the live WS cache when
+                # available (fresher than this poll's own REST snapshot could
+                # ever be, and immune to NSE's occasional soft-block on the
+                # option-chain endpoint); the chain's own underlyingValue is
+                # the REST fallback, same as before this cache existed. PCR/
+                # walls/max-pain below still need the full chain — there is
+                # no WS feed for OI, only LTP.
+                rest_spot = float(records.get("underlyingValue") or 0)
+                spot = self.live_prices.get("NIFTY") or rest_spot
                 expiry = (records.get("expiryDates") or [None])[0]
                 pcr = calculate_pcr(chain, expiry)
                 levels = identify_support_resistance_from_oi(chain, expiry)
@@ -369,7 +379,8 @@ class MarketMonitor:
         async def _sensex_spot() -> dict:
             try:
                 chain = await self._get_option_chain("SENSEX")
-                spot = float(chain.get("records", {}).get("underlyingValue") or 0)
+                rest_spot = float(chain.get("records", {}).get("underlyingValue") or 0)
+                spot = self.live_prices.get("SENSEX") or rest_spot
                 return {"sensex_spot": spot}
             except Exception as exc:
                 logger.debug("_get_market_intelligence_data sensex chain error: %s", exc)
@@ -567,4 +578,16 @@ class MarketMonitor:
             min_dte = min((p.get("dte", 7) for p in positions), default=7)
             max_premium = max((p.get("current_premium", 0) for p in positions), default=0)
             interval = self.get_poll_interval(min_dte, max_premium)
+
+            # Piece B (2026-07-11) — refresh which instruments the live-price
+            # cache is subscribed to now that this tick's position set is
+            # known, so the NEXT tick's check_market_conditions can read
+            # NIFTY/SENSEX spot from here instead of a fresh REST call. A
+            # brand-new position not yet subscribed just falls through to the
+            # existing REST path on its first tick (see LivePriceCache.get()).
+            try:
+                await self.live_prices.refresh_subscriptions([p["symbol"] for p in positions])
+            except Exception as exc:
+                logger.warning("live_prices.refresh_subscriptions failed: %s", exc)
+
             await asyncio.sleep(interval)
