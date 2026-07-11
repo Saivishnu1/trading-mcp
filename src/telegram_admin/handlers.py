@@ -34,6 +34,7 @@ _COMMAND_LIST_MESSAGE = (
     "/positions   - Show open positions\n"
     "/orders      - Show today's order book\n\n"
     "🛠 Admin:\n\n"
+    "/env         - Edit environment variables\n"
     "/admin       - Browse admin/ops commands by category\n"
     "/cancel      - Cancel active operation\n"
     "/help        - Show this command list\n\n"

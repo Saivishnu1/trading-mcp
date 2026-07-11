@@ -81,10 +81,17 @@ class TestBotCommandsInSync:
 
     def test_daily_trading_commands_are_in_the_flat_menu(self):
         """The core trading loop must stay one tap away — never buried
-        behind /admin's submenu."""
+        behind /admin's submenu. /env is included per explicit user request
+        (2026-07-11): used daily, unlike the rest of the config category."""
         listed = _bot_command_names()
-        for cmd in ("search", "buy", "sell", "positions", "orders"):
+        for cmd in ("search", "buy", "sell", "positions", "orders", "env"):
             assert cmd in listed, f"/{cmd} missing from the daily-use / menu"
+
+    def test_env_not_duplicated_in_admin_submenu(self):
+        """/env is a top-level daily command now — must not also appear
+        inside ADMIN_CATEGORIES, or it'd be listed in two places."""
+        submenu = _admin_menu_command_names()
+        assert "env" not in submenu
 
     def test_admin_and_help_are_in_the_flat_menu(self):
         listed = _bot_command_names()

@@ -34,7 +34,8 @@ ADMIN_CATEGORIES: dict[str, dict] = {
     "config": {
         "label": "🔧 Config",
         "commands": [
-            ("/env", "Edit environment variables"),
+            # /env lives in the top-level "/" picker (daily-use), not here —
+            # avoid listing it in two places.
             ("/show", "Show variables (masked)"),
             ("/ip", "Network IPs"),
             ("/disk", "Disk / RAM / load"),

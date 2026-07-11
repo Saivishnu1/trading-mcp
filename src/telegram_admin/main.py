@@ -48,6 +48,7 @@ _BOT_COMMANDS = [
     BotCommand("sell", "Place a sell order (confirmed)"),
     BotCommand("positions", "Show open positions"),
     BotCommand("orders", "Show today's order book"),
+    BotCommand("env", "Edit environment variables"),
     BotCommand("admin", "Browse admin/ops commands by category"),
     BotCommand("cancel", "Cancel active operation"),
     BotCommand("help", "Show the full command list"),
