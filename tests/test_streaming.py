@@ -98,6 +98,112 @@ class TestStreamPrices:
         assert received == [{"data": {"ltp": 1}}, {"data": {"ltp": 2}}]
 
 
+class TestSubscriptionUpdates:
+    """subscribe/unsubscribe on an already-open connection, no reconnect."""
+
+    @pytest.mark.anyio
+    async def test_subscribe_update_sent_on_live_connection(self):
+        import asyncio
+        from src.brokers import streaming
+
+        messages = [
+            json.dumps({"instrument": "2885", "data": {"ltp": 1426}}),
+            json.dumps({"instrument": "26000", "data": {"ltp": 24500}}),
+        ]
+        ws = _FakeWebSocket(messages)
+        updates: asyncio.Queue = asyncio.Queue()
+
+        with patch.object(streaming.websockets, "connect", return_value=_connect_cm(ws)):
+            received = []
+            gen = streaming.stream_prices(["NSE:2885"], mode="ltp", subscription_updates=updates)
+            async for msg in gen:
+                received.append(msg)
+                if len(received) == 1:
+                    await updates.put({
+                        "action": "subscribe", "mode": "ltp", "instruments": ["NIDX:26000"],
+                    })
+                    # Nothing in this synthetic fake ever performs real I/O,
+                    # so the background pump task never gets a scheduling
+                    # turn on its own — force one so it can drain the queue
+                    # and call ws.send() before we ask for the next message.
+                    # A real socket read/write always yields control here.
+                    await asyncio.sleep(0)
+                if len(received) == 2:
+                    break
+
+        assert received == [
+            {"instrument": "2885", "data": {"ltp": 1426}},
+            {"instrument": "26000", "data": {"ltp": 24500}},
+        ]
+        sent = [json.loads(s) for s in ws.sent]
+        assert sent[0] == {"action": "subscribe", "mode": "ltp", "instruments": ["NSE:2885"]}
+        assert sent[1] == {"action": "subscribe", "mode": "ltp", "instruments": ["NIDX:26000"]}
+
+    @pytest.mark.anyio
+    async def test_reconnect_replays_accumulated_subscriptions(self):
+        import asyncio
+        from src.brokers import streaming
+
+        ws1 = _FakeWebSocket([], raise_after=ConnectionError("dropped"))
+        ws2 = _FakeWebSocket([json.dumps({"instrument": "26000", "data": {"ltp": 1}})])
+        connect_mock = MagicMock(side_effect=[_connect_cm(ws1), _connect_cm(ws2)])
+        updates: asyncio.Queue = asyncio.Queue()
+        await updates.put({"action": "subscribe", "mode": "ltp", "instruments": ["NIDX:26000"]})
+
+        with patch.object(streaming.websockets, "connect", connect_mock), \
+             patch("src.brokers.streaming.asyncio.sleep", AsyncMock()):
+            received = []
+            async for msg in streaming.stream_prices(
+                ["NSE:2885"], mode="ltp", subscription_updates=updates,
+            ):
+                received.append(msg)
+                break
+
+        assert received == [{"instrument": "26000", "data": {"ltp": 1}}]
+        # ws2's replayed subscribe must include BOTH the original instrument
+        # and the one added via subscription_updates before the drop.
+        replayed = json.loads(ws2.sent[0])
+        assert replayed["action"] == "subscribe"
+        assert sorted(replayed["instruments"]) == ["NIDX:26000", "NSE:2885"]
+
+    @pytest.mark.anyio
+    async def test_unsubscribe_removes_from_reconnect_replay(self):
+        import asyncio
+        from src.brokers import streaming
+
+        ws1 = _FakeWebSocket([], raise_after=ConnectionError("dropped"))
+        ws2 = _FakeWebSocket([json.dumps({"instrument": "26000", "data": {"ltp": 1}})])
+        connect_mock = MagicMock(side_effect=[_connect_cm(ws1), _connect_cm(ws2)])
+        updates: asyncio.Queue = asyncio.Queue()
+        await updates.put({"action": "unsubscribe", "mode": "ltp", "instruments": ["NSE:2885"]})
+
+        with patch.object(streaming.websockets, "connect", connect_mock), \
+             patch("src.brokers.streaming.asyncio.sleep", AsyncMock()):
+            received = []
+            async for msg in streaming.stream_prices(
+                ["NSE:2885", "NIDX:26000"], mode="ltp", subscription_updates=updates,
+            ):
+                received.append(msg)
+                break
+
+        replayed = json.loads(ws2.sent[0])
+        assert replayed["instruments"] == ["NIDX:26000"]  # NSE:2885 removed
+
+    @pytest.mark.anyio
+    async def test_no_subscription_updates_arg_is_unchanged(self):
+        """Callers that don't pass subscription_updates (trailing_sl.py) get
+        the exact original single-subscribe-message behavior."""
+        from src.brokers import streaming
+        ws = _FakeWebSocket([json.dumps({"data": {"ltp": 1}})])
+        with patch.object(streaming.websockets, "connect", return_value=_connect_cm(ws)):
+            received = []
+            async for msg in streaming.stream_prices(["NSE:2885"]):
+                received.append(msg)
+                break
+        assert len(ws.sent) == 1
+        assert json.loads(ws.sent[0]) == {"action": "subscribe", "mode": "ltp", "instruments": ["NSE:2885"]}
+
+
 class TestStreamOrderUpdates:
 
     @pytest.mark.anyio
