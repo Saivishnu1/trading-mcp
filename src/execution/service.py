@@ -33,6 +33,27 @@ async def resolve_symbol(symbol: str, *, exchange: str, segment: str) -> str | N
     return await broker.resolve_security_id(symbol, source=source)
 
 
+# Confirmed directly against the user's live INDmoney app (2026-07-12), NOT
+# yet cross-checked against INDstocks' own instrument-master CSV — that
+# column's real name is still being discovered (see
+# INDmoneyBroker.search_instruments's one-time raw-row debug log). NSE/BSE
+# revise lot sizes periodically, so this table can go stale; only add an
+# entry here once it's been confirmed the same way, never guessed. Matched
+# by exact hyphen-prefix (e.g. "NIFTY-") so a different NIFTY-family index
+# with its own lot size (e.g. NIFTYNXT50) can never collide with this.
+_KNOWN_LOT_SIZES: dict[str, int] = {
+    "NIFTY-": 65,
+    "SENSEX-": 20,
+}
+
+
+def _lot_size_for(symbol: str) -> int | None:
+    for prefix, size in _KNOWN_LOT_SIZES.items():
+        if symbol.startswith(prefix):
+            return size
+    return None
+
+
 async def search_symbols(query: str, *, segment: str | None = None, limit: int = 15) -> list[dict]:
     """Search tradable symbols for autocomplete/dropdown UIs (web + Telegram).
 
@@ -63,7 +84,11 @@ async def search_symbols(query: str, *, segment: str | None = None, limit: int =
             if key in seen:
                 continue
             seen.add(key)
-            results.append({**row, "segment": "DERIVATIVE" if source == "fno" else "EQUITY"})
+            results.append({
+                **row,
+                "segment": "DERIVATIVE" if source == "fno" else "EQUITY",
+                "lot_size": _lot_size_for(row["symbol"]),
+            })
     return results[:limit]
 
 

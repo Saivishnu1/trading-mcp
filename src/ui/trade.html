@@ -136,8 +136,9 @@
 
   <div class="row">
     <div>
-      <label>Quantity</label>
+      <label id="qtyLabel">Quantity</label>
       <input id="qty" type="number" min="1" step="1" value="1">
+      <div id="qtyHint" class="hint" style="display:none; margin-top:4px"></div>
     </div>
     <div>
       <label>Order type</label>
@@ -245,6 +246,23 @@ function formatExpiry(raw){
   return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
 }
 
+function updateQtyHint(pick){
+  const label = document.getElementById("qtyLabel");
+  const hint = document.getElementById("qtyHint");
+  // lot_size is only known for a handful of confirmed symbols today (see
+  // _KNOWN_LOT_SIZES in src/execution/service.py) — everything else falls
+  // back to the previous raw-quantity behavior rather than guessing.
+  if(pick && pick.lot_size){
+    label.textContent = "Lots";
+    hint.style.display = "block";
+    const lots = parseInt(document.getElementById("qty").value,10) || 0;
+    hint.textContent = "1 lot = " + pick.lot_size + " qty  —  " + (lots * pick.lot_size) + " total qty";
+  } else {
+    label.textContent = "Quantity";
+    hint.style.display = "none";
+  }
+}
+
 function pickSymbol(i){
   const r = ddItems[i];
   if(!r) return;
@@ -253,12 +271,14 @@ function pickSymbol(i){
   document.getElementById("exchange").value = r.exchange === "BSE" ? "BSE" : "NSE";
   setSymbolStatus("ok", "✓ " + r.exchange);
   closeDropdown();
+  updateQtyHint(r);
 }
 
 async function onSymbolInput(){
   const q = document.getElementById("symbol").value.trim();
   selected = null;
   setSymbolStatus("", "");
+  updateQtyHint(null);
   if(searchDebounce) clearTimeout(searchDebounce);
   if(q.length < 2){ closeDropdown(); return; }
   searchDebounce = setTimeout(() => runSearch(q), 200);
@@ -291,6 +311,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   input.addEventListener("blur", () => setTimeout(closeDropdown, 150));
   input.addEventListener("focus", () => { if(ddItems.length) document.getElementById("dropdown").classList.add("open"); });
+  document.getElementById("qty").addEventListener("input", () => {
+    const symbolText = document.getElementById("symbol").value.trim().toUpperCase();
+    updateQtyHint((selected && selected.symbol === symbolText) ? selected : null);
+  });
 });
 
 function highlightActive(){
@@ -303,6 +327,11 @@ function payload(){
   // matches exactly what was picked — guards against sending a stale id if
   // the user edits the field after picking a dropdown result.
   const pick = (selected && selected.symbol === symbolText) ? selected : null;
+  const qtyInput = parseInt(document.getElementById("qty").value,10) || 0;
+  // qtyInput is "lots" when the picked contract has a known lot_size, else
+  // it's already the raw quantity (unchanged behavior for anything not in
+  // _KNOWN_LOT_SIZES yet).
+  const quantity = (pick && pick.lot_size) ? qtyInput * pick.lot_size : qtyInput;
   return {
     pin: currentPin(),
     symbol: symbolText,
@@ -310,7 +339,7 @@ function payload(){
     segment: pick ? pick.segment : null,
     expiry: pick ? pick.expiry : null,
     side: side,
-    quantity: parseInt(document.getElementById("qty").value,10),
+    quantity: quantity,
     order_type: document.getElementById("orderType").value,
     limit_price: parseFloat(document.getElementById("limitPrice").value||"0"),
     product: document.getElementById("product").value,

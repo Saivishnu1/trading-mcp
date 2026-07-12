@@ -510,6 +510,41 @@ class TestSearchSymbols:
         assert len(results) == 2
 
     @pytest.mark.anyio
+    async def test_lot_size_attached_for_known_index_options(self):
+        # Confirmed against the user's live INDmoney app (2026-07-12): NIFTY
+        # lot size 65, SENSEX lot size 20. The web UI uses this to let the
+        # user enter "lots" instead of raw qty and avoid a QtyMultipleOfLotSize
+        # rejection from INDstocks (see _KNOWN_LOT_SIZES in service.py).
+        import src.execution.service as svc
+        adapter = MagicMock()
+
+        async def fake_search(query, source="equity", limit=15):
+            return [
+                {"symbol": "NIFTY-JUL2026-24250-CE", "name": "NIFTY", "exchange": "NSE", "segment": ""},
+                {"symbol": "SENSEX-JUL2026-77500-PE", "name": "SENSEX", "exchange": "BSE", "segment": ""},
+            ]
+
+        adapter.search_instruments = fake_search
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            results = await svc.search_symbols("x", segment="DERIVATIVE")
+        by_symbol = {r["symbol"]: r["lot_size"] for r in results}
+        assert by_symbol["NIFTY-JUL2026-24250-CE"] == 65
+        assert by_symbol["SENSEX-JUL2026-77500-PE"] == 20
+
+    @pytest.mark.anyio
+    async def test_lot_size_none_for_unknown_symbol(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+
+        async def fake_search(query, source="equity", limit=15):
+            return [{"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "segment": ""}]
+
+        adapter.search_instruments = fake_search
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            results = await svc.search_symbols("reliance")
+        assert results[0]["lot_size"] is None
+
+    @pytest.mark.anyio
     async def test_dedup_keys_on_security_id_not_symbol_text(self):
         # Same symbol string, different security_id (e.g. two weekly NIFTY
         # contracts returned from different sources by coincidence) must NOT
