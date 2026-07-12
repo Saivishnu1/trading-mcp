@@ -282,7 +282,7 @@ function renderPositions(){
       ${slRow}
       <div class="pos-actions">
         <button class="btn sell" onclick="sellPosition(${i})">Sell @ market</button>
-        <button class="btn modify" onclick="openModify(${i})" ${canModify ? "" : "disabled title=\\"No active SL/Target order on file for this position\\""}>Modify SL/Target</button>
+        <button class="btn modify" onclick="openModify(${i})" ${canModify ? "" : `disabled title="No active SL/Target order on file for this position"`}>Modify SL/Target</button>
         <a class="btn" style="flex:0 0 auto;padding:10px 14px;text-decoration:none;display:flex;align-items:center"
            href="/trade?symbol=${encodeURIComponent(p.symbol)}&exchange=${encodeURIComponent(p.exchange)}&security_id=${encodeURIComponent(p.security_id||"")}&segment=${encodeURIComponent(p.segment||"")}"
            title="Open in the full order form (e.g. for a LIMIT sell)">⋯</a>
