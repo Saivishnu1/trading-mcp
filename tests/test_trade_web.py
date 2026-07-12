@@ -320,3 +320,336 @@ async def test_symbols_disabled_when_pin_unset():
         os.environ.pop("TRADE_PIN", None)
         status, _ = await _call("/trade/symbols", query_string=_qs(q="reliance", pin=""))
     assert status == 403
+
+
+# ---------------------------------------------------------------------------
+# SL/target/trailing-SL on the web form (2026-07-12)
+# ---------------------------------------------------------------------------
+
+class TestBuildOrderFromWebSlTarget:
+
+    def test_no_legs_by_default(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({"symbol": "RELIANCE", "side": "BUY", "quantity": 1})
+        assert err is None
+        assert req.sl_trigger_price is None
+        assert not req.is_smart_order
+
+    def test_sl_trigger_sets_smart_order(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1, "sl_trigger_price": 2820,
+        })
+        assert err is None
+        assert req.sl_trigger_price == 2820.0
+        assert req.sl_limit_price == 2820.0  # defaults to trigger
+        assert req.is_smart_order
+
+    def test_sl_limit_overrides_default(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1,
+            "sl_trigger_price": 2820, "sl_limit_price": 2810,
+        })
+        assert err is None
+        assert req.sl_limit_price == 2810.0
+
+    def test_target_leg(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1, "tgt_trigger_price": 2950,
+        })
+        assert err is None
+        assert req.tgt_trigger_price == 2950.0
+        assert req.tgt_limit_price == 2950.0
+
+    def test_trail_without_sl_is_error(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1, "trailing_sl_points": 5,
+        })
+        assert req is None
+        assert "trail" in err.lower()
+
+    def test_trail_with_sl_ok(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1,
+            "sl_trigger_price": 2820, "trailing_sl_points": 5,
+        })
+        assert err is None
+        assert req.trailing_sl_points == 5.0
+
+    def test_zero_or_negative_leg_ignored(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1, "sl_trigger_price": -5,
+        })
+        assert err is None
+        assert req.sl_trigger_price is None
+        assert not req.is_smart_order
+
+    def test_junk_leg_value_ignored_not_an_error(self):
+        from src.server import _build_order_from_web
+        req, err = _build_order_from_web({
+            "symbol": "RELIANCE", "side": "BUY", "quantity": 1, "sl_trigger_price": "abc",
+        })
+        assert err is None
+        assert req.sl_trigger_price is None
+
+
+@pytest.mark.anyio
+async def test_preview_shows_sl_target_trail_lines():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True):
+        status, body = await _call(
+            "/trade/preview", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", side="BUY", quantity=1,
+                            sl_trigger_price=2820, tgt_trigger_price=2950, trailing_sl_points=5),
+        )
+    assert status == 200
+    html = json.loads(body)["summary_html"]
+    assert "SL" in html and "2820" in html
+    assert "Target" in html and "2950" in html
+    assert "Trailing SL" in html and "5" in html
+
+
+@pytest.mark.anyio
+async def test_place_smart_order_wires_sl_target_through_to_order_request():
+    placed = {"status": "ok", "order_id": "GTT-1", "order_status": "CREATED"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/place", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", security_id="2885", side="BUY", quantity=1,
+                            sl_trigger_price=2820, tgt_trigger_price=2950),
+        )
+    assert status == 200
+    sub.assert_awaited_once()
+    req = sub.call_args.args[0]
+    assert req.sl_trigger_price == 2820.0
+    assert req.tgt_trigger_price == 2950.0
+
+
+# ---------------------------------------------------------------------------
+# /positions page + /positions/data
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_positions_page_served():
+    status, body = await _call("/positions")
+    assert status == 200
+    assert b"Positions" in body
+
+
+@pytest.mark.anyio
+async def test_positions_data_rejects_bad_pin():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.get_positions_for_web", AsyncMock()) as fn:
+        status, body = await _call("/positions/data", query_string=_qs(pin="0000"))
+    assert status == 403
+    fn.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_positions_data_returns_service_result():
+    result = {"positions": [{"symbol": "RELIANCE", "pnl": 120.0}], "total": 1}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.get_positions_for_web", AsyncMock(return_value=result)):
+        status, body = await _call("/positions/data", query_string=_qs(pin="1234"))
+    assert status == 200
+    assert json.loads(body) == result
+
+
+@pytest.mark.anyio
+async def test_positions_data_502_on_fetch_failure():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.get_positions_for_web", AsyncMock(side_effect=RuntimeError("boom"))):
+        status, body = await _call("/positions/data", query_string=_qs(pin="1234"))
+    assert status == 502
+
+
+# ---------------------------------------------------------------------------
+# /trade/sell — one-tap sell from the positions page
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_sell_rejects_bad_pin():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.submit_order", AsyncMock()) as sub:
+        status, _ = await _call(
+            "/trade/sell", method="POST",
+            body=_json_body(pin="0000", symbol="RELIANCE", security_id="2885",
+                            exchange="NSE", segment="EQUITY", quantity=1),
+        )
+    assert status == 403
+    sub.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_sell_forces_side_sell_regardless_of_input():
+    placed = {"status": "ok", "order_id": "X1"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/sell", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", security_id="2885",
+                            exchange="NSE", segment="EQUITY", quantity=1, side="BUY"),
+        )
+    assert status == 200
+    req = sub.call_args.args[0]
+    assert req.transaction_type == "SELL"
+
+
+@pytest.mark.anyio
+async def test_sell_defaults_to_market_order():
+    placed = {"status": "ok", "order_id": "X1"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/sell", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", security_id="2885",
+                            exchange="NSE", segment="EQUITY", quantity=1),
+        )
+    assert status == 200
+    req = sub.call_args.args[0]
+    assert req.order_type == "MARKET"
+
+
+@pytest.mark.anyio
+async def test_sell_auto_amo_when_market_closed():
+    placed = {"status": "ok", "order_id": "X1"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=False), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/sell", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", security_id="2885",
+                            exchange="NSE", segment="EQUITY", quantity=1),
+        )
+    assert status == 200
+    req = sub.call_args.args[0]
+    assert req.is_amo is True
+
+
+@pytest.mark.anyio
+async def test_sell_resolves_security_id_when_missing():
+    placed = {"status": "ok", "order_id": "X1"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
+         patch("src.execution.service.resolve_symbol", AsyncMock(return_value="9999")), \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/sell", method="POST",
+            body=_json_body(pin="1234", symbol="RELIANCE", exchange="NSE", segment="EQUITY", quantity=1),
+        )
+    assert status == 200
+    req = sub.call_args.args[0]
+    assert req.security_id == "9999"
+
+
+# ---------------------------------------------------------------------------
+# /trade/modify — SL/target modify on an existing smart order
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_modify_rejects_bad_pin():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.brokers.indmoney.INDmoneyBroker.modify_smart_order", AsyncMock()) as mod:
+        status, _ = await _call(
+            "/trade/modify", method="POST",
+            body=_json_body(pin="0000", order_id="GTT-1", sl_trigger_price=2830),
+        )
+    assert status == 403
+    mod.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_modify_requires_order_id():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}):
+        status, body = await _call(
+            "/trade/modify", method="POST",
+            body=_json_body(pin="1234", sl_trigger_price=2830),
+        )
+    assert status == 400
+    assert "order_id" in json.loads(body)["error"]
+
+
+@pytest.mark.anyio
+async def test_modify_requires_at_least_one_leg():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}):
+        status, body = await _call(
+            "/trade/modify", method="POST",
+            body=_json_body(pin="1234", order_id="GTT-1"),
+        )
+    assert status == 400
+
+
+@pytest.mark.anyio
+async def test_modify_calls_broker_with_sl_leg():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.brokers.indmoney.INDmoneyBroker.modify_smart_order",
+               AsyncMock(return_value={"status": "ok"})) as mod:
+        status, body = await _call(
+            "/trade/modify", method="POST",
+            body=_json_body(pin="1234", order_id="GTT-1", sl_trigger_price=2830, sl_limit_price=2825),
+        )
+    assert status == 200
+    mod.assert_awaited_once_with("GTT-1", sl_trigger_price=2830.0, sl_limit_price=2825.0)
+
+
+@pytest.mark.anyio
+async def test_modify_sl_limit_defaults_to_trigger():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.brokers.indmoney.INDmoneyBroker.modify_smart_order",
+               AsyncMock(return_value={"status": "ok"})) as mod:
+        status, body = await _call(
+            "/trade/modify", method="POST",
+            body=_json_body(pin="1234", order_id="GTT-1", sl_trigger_price=2830),
+        )
+    assert status == 200
+    mod.assert_awaited_once_with("GTT-1", sl_trigger_price=2830.0, sl_limit_price=2830.0)
+
+
+@pytest.mark.anyio
+async def test_modify_502_on_broker_error():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.brokers.indmoney.INDmoneyBroker.modify_smart_order",
+               AsyncMock(return_value={"status": "error", "message": "invalid"})):
+        status, body = await _call(
+            "/trade/modify", method="POST",
+            body=_json_body(pin="1234", order_id="GTT-1", sl_trigger_price=2830),
+        )
+    assert status == 502
+
+
+# ---------------------------------------------------------------------------
+# /positions/summary
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_summary_rejects_bad_pin():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.get_positions_for_web", AsyncMock()) as fn:
+        status, _ = await _call("/positions/summary", query_string=_qs(pin="0000"))
+    assert status == 403
+    fn.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_summary_aggregates_positions():
+    result = {"positions": [
+        {"symbol": "A", "pnl": 100.0, "sl_target": {"broker_order_id": "X"}},
+        {"symbol": "B", "pnl": -40.0, "sl_target": None},
+    ], "total": 2}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.service.get_positions_for_web", AsyncMock(return_value=result)):
+        status, body = await _call("/positions/summary", query_string=_qs(pin="1234"))
+    assert status == 200
+    data = json.loads(body)
+    assert data["total_positions"] == 2
+    assert data["total_pnl"] == 60.0
+    assert data["with_sl_or_target"] == 1

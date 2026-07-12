@@ -62,6 +62,7 @@ class ExecutionRepository:
         except Exception:
             raw_response = str(raw)
 
+        has_sl_or_target = bool(request.get("sl_trigger_price") or request.get("tgt_trigger_price"))
         row_kwargs = dict(
             id=str(uuid.uuid4()),
             user_id=user_id,
@@ -76,11 +77,17 @@ class ExecutionRepository:
             order_type=request.get("order_type") or "",
             product=request.get("product") or None,
             limit_price=float(request["limit_price"]) if request.get("limit_price") else None,
+            sl_trigger_price=float(request["sl_trigger_price"]) if request.get("sl_trigger_price") else None,
+            sl_limit_price=float(request["sl_limit_price"]) if request.get("sl_limit_price") else None,
+            tgt_trigger_price=float(request["tgt_trigger_price"]) if request.get("tgt_trigger_price") else None,
+            tgt_limit_price=float(request["tgt_limit_price"]) if request.get("tgt_limit_price") else None,
+            trailing_sl_points=float(request["trailing_sl_points"]) if request.get("trailing_sl_points") else None,
             broker_order_id=result.get("order_id"),
             status=result.get("status") or "unknown",
             order_status=result.get("order_status"),
             raw_response=raw_response,
             created_at=_now(),
+            sl_target_active=has_sl_or_target and (result.get("status") == "ok"),
         )
         try:
             async with get_session() as session:
@@ -175,6 +182,60 @@ class ExecutionRepository:
         except Exception as exc:
             logger.error("list_active_trailing_sl_state failed: %s", exc)
             return []
+
+    async def find_active_smart_order_for_symbol(self, symbol: str) -> dict | None:
+        """Return the most recent order for `symbol` still flagged
+        sl_target_active — used by the positions page to show "this
+        position has a live SL/target @ X" and to identify which
+        broker_order_id a Modify action should call /smart/order/modify on.
+        None if no active smart order is on file or the DB is unavailable.
+        Best-effort by design: if two orders for the same symbol are both
+        somehow still active (shouldn't happen — placing a new smart order
+        doesn't deactivate an old one, only an explicit modify/cancel or the
+        order-update listener does), the most recent one wins."""
+        try:
+            from sqlalchemy import select
+            from src.db.models import OrderLog
+        except ImportError:
+            return None
+        try:
+            async with get_session() as session:
+                stmt = (
+                    select(OrderLog)
+                    .where(OrderLog.symbol == symbol, OrderLog.sl_target_active.is_(True))
+                    .order_by(OrderLog.created_at.desc())
+                    .limit(1)
+                )
+                result = await session.execute(stmt)
+                row = result.scalars().first()
+                return _row_to_dict(row) if row is not None else None
+        except RuntimeError:
+            return None
+        except Exception as exc:
+            logger.error("find_active_smart_order_for_symbol failed: %s", exc)
+            return None
+
+    async def deactivate_sl_target(self, order_id: str) -> None:
+        """Clear sl_target_active for the order with this broker_order_id —
+        called after a successful modify-to-cancelled or when the position
+        closes. No-op if the DB is unavailable or no matching row exists."""
+        try:
+            from sqlalchemy import select
+            from src.db.models import OrderLog
+        except ImportError:
+            return
+        try:
+            async with get_session() as session:
+                stmt = select(OrderLog).where(OrderLog.broker_order_id == order_id)
+                result = await session.execute(stmt)
+                row = result.scalars().first()
+                if row is not None:
+                    row.sl_target_active = False
+                    await session.flush()
+        except RuntimeError as exc:
+            logger.warning("deactivate_sl_target skipped: %s", exc)
+        except Exception as exc:
+            logger.error("deactivate_sl_target failed: %s", exc)
 
     async def find_by_broker_order_id(self, broker_order_id: str) -> dict | None:
         """Look up the logged order (and its symbol/qty/side snapshot) that

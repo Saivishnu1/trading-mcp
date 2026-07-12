@@ -622,6 +622,143 @@ class TestSearchSymbols:
 
 
 # ---------------------------------------------------------------------------
+# get_positions_for_web (2026-07-12)
+# ---------------------------------------------------------------------------
+
+class TestGetPositionsForWeb:
+
+    def _position(self, symbol="RELIANCE", exchange="NSE", quantity=1, avg=2800.0, ltp=2850.0, pnl=50.0):
+        from src.brokers.models import Position
+        return Position(symbol=symbol, exchange=exchange, product="INTRADAY",
+                         quantity=quantity, avg_price=avg, current_price=ltp, pnl=pnl, broker="indmoney")
+
+    def _holding(self, symbol="TCS", exchange="NSE", quantity=5, avg=3500.0, ltp=3600.0, pnl=500.0):
+        from src.brokers.models import Holding
+        return Holding(symbol=symbol, exchange=exchange, quantity=quantity, avg_price=avg,
+                        current_price=ltp, pnl=pnl, pnl_percent=2.85, broker="indmoney")
+
+    @pytest.mark.anyio
+    async def test_combines_positions_and_holdings(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position()])
+        adapter.get_holdings = AsyncMock(return_value=[self._holding()])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", AsyncMock(return_value="2885")), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["total"] == 2
+        kinds = {r["kind"] for r in result["positions"]}
+        assert kinds == {"position", "holding"}
+
+    @pytest.mark.anyio
+    async def test_resolves_security_id_per_row(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position()])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        resolve_mock = AsyncMock(return_value="2885")
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", resolve_mock), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["positions"][0]["security_id"] == "2885"
+        resolve_mock.assert_awaited_once_with("RELIANCE", exchange="NSE", segment="DERIVATIVE")
+
+    @pytest.mark.anyio
+    async def test_holdings_resolved_as_equity_segment(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[])
+        adapter.get_holdings = AsyncMock(return_value=[self._holding()])
+        resolve_mock = AsyncMock(return_value="11536")
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", resolve_mock), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            await svc.get_positions_for_web()
+        resolve_mock.assert_awaited_once_with("TCS", exchange="NSE", segment="EQUITY")
+
+    @pytest.mark.anyio
+    async def test_resolve_failure_leaves_security_id_none_not_raise(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position()])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", AsyncMock(side_effect=RuntimeError("boom"))), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["positions"][0]["security_id"] is None
+
+    @pytest.mark.anyio
+    async def test_attaches_active_sl_target(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position()])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        active = {"broker_order_id": "GTT-1", "sl_trigger_price": 2820.0,
+                  "tgt_trigger_price": 2950.0, "trailing_sl_points": 5.0}
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", AsyncMock(return_value="2885")), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=active)):
+            result = await svc.get_positions_for_web()
+        assert result["positions"][0]["sl_target"] == {
+            "broker_order_id": "GTT-1", "sl_trigger_price": 2820.0,
+            "tgt_trigger_price": 2950.0, "trailing_sl_points": 5.0,
+        }
+
+    @pytest.mark.anyio
+    async def test_no_active_sl_target_is_none(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position()])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", AsyncMock(return_value="2885")), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["positions"][0]["sl_target"] is None
+
+    @pytest.mark.anyio
+    async def test_empty_when_no_positions_or_holdings(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            result = await svc.get_positions_for_web()
+        assert result == {"positions": [], "total": 0}
+
+
+# ---------------------------------------------------------------------------
+# ExecutionRepository — SL/target active-order lookup (2026-07-12)
+# ---------------------------------------------------------------------------
+
+class TestFindActiveSmartOrderForSymbol:
+
+    @pytest.mark.anyio
+    async def test_returns_none_when_sqlalchemy_unavailable(self):
+        from src.execution.repository import ExecutionRepository
+        repo = ExecutionRepository()
+        with patch.dict("sys.modules", {"src.db.models": None}):
+            assert await repo.find_active_smart_order_for_symbol("RELIANCE") is None
+
+    @pytest.mark.anyio
+    async def test_returns_none_when_db_unconfigured(self):
+        from src.execution.repository import ExecutionRepository
+        repo = ExecutionRepository()
+        with patch("src.execution.repository.get_session", side_effect=RuntimeError("no DATABASE_URL")):
+            assert await repo.find_active_smart_order_for_symbol("RELIANCE") is None
+
+    @pytest.mark.anyio
+    async def test_deactivate_sl_target_no_op_without_db(self):
+        from src.execution.repository import ExecutionRepository
+        repo = ExecutionRepository()
+        with patch("src.execution.repository.get_session", side_effect=RuntimeError("no DATABASE_URL")):
+            await repo.deactivate_sl_target("GTT-1")  # must not raise
+
+
+# ---------------------------------------------------------------------------
 # submit_order orchestrator
 # ---------------------------------------------------------------------------
 

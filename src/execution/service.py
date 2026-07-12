@@ -70,6 +70,66 @@ async def search_symbols(query: str, *, segment: str | None = None, limit: int =
     return results[:limit]
 
 
+async def get_positions_for_web() -> dict:
+    """Unified open-position view for the web /positions page — equity
+    holdings + derivative positions from INDmoney, each enriched with the
+    security_id needed to subscribe to a live price (Position/Holding
+    dataclasses don't carry it — see src/brokers/models.py — so it's
+    resolved on demand via resolve_symbol, same path the trade form already
+    uses when no dropdown pick is available) and any active SL/target this
+    app placed for that symbol (ExecutionRepository.find_active_smart_order_for_symbol).
+
+    Zerodha is deliberately excluded: order placement/modification in this
+    stack only ever goes through INDmoney (see ZerodhaBroker.place_order's
+    permanent "not available" stub), so a Zerodha-sourced position could be
+    displayed but never actionable here — better to keep this view honest
+    about what it can actually manage.
+    """
+    broker = get_broker_adapter("indmoney")
+    positions, holdings = await asyncio.gather(broker.get_positions(), broker.get_holdings())
+
+    rows: list[dict] = []
+    for entry, kind in [(p, "position") for p in positions] + [(h, "holding") for h in holdings]:
+        symbol = entry.symbol
+        exchange = entry.exchange.upper()
+        segment = "DERIVATIVE" if kind == "position" else "EQUITY"
+        security_id = None
+        try:
+            security_id = await resolve_symbol(symbol, exchange=exchange, segment=segment)
+        except Exception as exc:
+            logger.debug("get_positions_for_web: resolve_symbol(%s) failed: %s", symbol, exc)
+
+        active_order = None
+        try:
+            active_order = await _repo.find_active_smart_order_for_symbol(symbol)
+        except Exception as exc:
+            logger.debug("get_positions_for_web: SL/target lookup for %s failed: %s", symbol, exc)
+
+        rows.append({
+            "symbol": symbol,
+            "kind": kind,
+            "exchange": exchange,
+            "segment": segment,
+            "security_id": security_id,
+            "quantity": entry.quantity,
+            "avg_price": entry.avg_price,
+            "current_price": entry.current_price,
+            "pnl": entry.pnl,
+            "product": getattr(entry, "product", "CNC" if kind == "holding" else ""),
+            "sl_target": (
+                {
+                    "broker_order_id": active_order.get("broker_order_id"),
+                    "sl_trigger_price": active_order.get("sl_trigger_price"),
+                    "tgt_trigger_price": active_order.get("tgt_trigger_price"),
+                    "trailing_sl_points": active_order.get("trailing_sl_points"),
+                }
+                if active_order else None
+            ),
+        })
+
+    return {"positions": rows, "total": len(rows)}
+
+
 async def submit_order(
     req: OrderRequest,
     *,

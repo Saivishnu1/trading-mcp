@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Positions</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f8; --card: #ffffff; --border: #e3e6eb; --text: #14161a; --muted: #6b7280;
+    --accent: #2d6cdf; --accent-ink: #ffffff;
+    --buy: #0a8f4f; --buy-bg: #e7f8ee; --sell: #d1392a; --sell-bg: #fdecea;
+    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0f13; --card: #191b22; --border: #2a2d38; --text: #eef0f4; --muted: #9aa1af;
+      --accent: #5b8dff; --accent-ink: #0e0f13;
+      --buy: #35d17e; --buy-bg: #10281c; --sell: #ff6b5e; --sell-bg: #2c1512;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0; padding: 20px 16px 40px; max-width: 520px; margin-inline: auto;
+    background: var(--bg); color: var(--text);
+  }
+  h1 { font-size: 1.25rem; font-weight: 700; margin: 4px 0 4px; letter-spacing: -0.01em; }
+  .subtitle { font-size: .82rem; color: var(--muted); margin-bottom: 16px; }
+
+  .top-nav { display: flex; gap: 6px; margin-bottom: 14px; }
+  .top-nav a {
+    flex: 1; text-align: center; padding: 9px; border-radius: 9px; font-size: .84rem;
+    font-weight: 700; text-decoration: none; border: 1.5px solid var(--border); color: var(--muted);
+  }
+  .top-nav a.on { color: var(--accent); border-color: var(--accent); background: rgba(45,108,223,.08); }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  label {
+    display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); margin: 14px 0 6px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input {
+    width: 100%; padding: 12px 14px; font-size: 1rem; font-family: inherit;
+    border: 1.5px solid var(--border); border-radius: 10px; background: var(--card);
+    color: var(--text);
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+
+  .conn-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: .78rem; color: var(--muted); }
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .conn-dot.live { background: var(--buy); animation: pulse 2s ease infinite; }
+  .conn-dot.down { background: var(--sell); }
+  @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:.4; } }
+
+  .summary-row { display: flex; gap: 10px; margin-bottom: 16px; }
+  .stat { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .stat-label { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .stat-val { font-size: 1.15rem; font-weight: 800; }
+  .stat-val.pos { color: var(--buy); } .stat-val.neg { color: var(--sell); }
+
+  .pos-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); transition: border-color .2s;
+  }
+  .pos-card.flash { border-color: var(--accent); }
+  .pos-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+  .pos-sym { font-size: 1.05rem; font-weight: 800; }
+  .pos-tag { font-size: .68rem; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; margin-left: 6px; }
+  .pos-qty { font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+
+  .pos-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .pos-metric { text-align: left; }
+  .pos-metric-label { font-size: .66rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+  .pos-metric-val { font-size: .92rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pos-metric-val.live { transition: color .3s; }
+  .pos-metric-val.pos { color: var(--buy); } .pos-metric-val.neg { color: var(--sell); }
+
+  .sl-target-row {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; font-size: .76rem;
+  }
+  .sl-badge, .tgt-badge, .trail-badge {
+    padding: 3px 9px; border-radius: 6px; font-weight: 600;
+  }
+  .sl-badge { background: var(--sell-bg); color: var(--sell); }
+  .tgt-badge { background: var(--buy-bg); color: var(--buy); }
+  .trail-badge { background: var(--accent); color: var(--accent-ink); }
+  .no-sl-note { font-size: .76rem; color: var(--muted); margin-bottom: 12px; }
+
+  .pos-actions { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 10px; font-size: .86rem; font-weight: 700; letter-spacing: .01em;
+    border-radius: 9px; cursor: pointer; border: 1.5px solid var(--border);
+    background: var(--card); color: var(--text); transition: opacity .12s, transform .05s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.sell { color: var(--sell); border-color: var(--sell); }
+  .btn.modify { color: var(--accent); border-color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .empty { text-align: center; padding: 40px 16px; color: var(--muted); font-size: .9rem; }
+  .empty-icon { font-size: 2rem; margin-bottom: 8px; }
+
+  .msg {
+    padding: 12px 14px; border-radius: 10px; margin-top: 12px; font-size: .88rem;
+    line-height: 1.5; white-space: pre-wrap; display: none;
+  }
+  .msg.err { background: var(--sell-bg); color: var(--sell); display: block; }
+  .msg.ok  { background: var(--buy-bg);  color: var(--buy);  display: block; }
+
+  /* Modify modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50;
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--card); border-radius: 16px 16px 0 0; padding: 20px 18px 28px;
+    width: 100%; max-width: 520px; box-shadow: 0 -4px 24px rgba(0,0,0,.2);
+  }
+  .modal h2 { font-size: 1.05rem; margin: 0 0 14px; }
+  .modal .row { display: flex; gap: 10px; }
+  .modal .row > * { flex: 1; min-width: 0; }
+</style>
+</head>
+<body>
+<div class="top-nav">
+  <a href="/trade">📲 Trade</a>
+  <a class="on" href="/positions">📊 Positions</a>
+</div>
+<h1>📊 Positions</h1>
+<div class="subtitle">Live prices via WebSocket — no polling.</div>
+
+<div class="card" id="pinCard">
+  <label>PIN</label>
+  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" onkeyup="if(event.key==='Enter')load()">
+  <div class="conn-row"><span class="conn-dot" id="connDot"></span><span id="connText">Not connected</span></div>
+  <div class="msg" id="pinMsg"></div>
+</div>
+
+<div class="summary-row" id="summaryRow" style="display:none">
+  <div class="stat">
+    <div class="stat-label">Open positions</div>
+    <div class="stat-val" id="statCount">—</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total P&amp;L</div>
+    <div class="stat-val" id="statPnl">—</div>
+  </div>
+</div>
+
+<div id="positionsList"></div>
+
+<div class="modal-backdrop" id="modifyBackdrop">
+  <div class="modal">
+    <h2 id="modifySym">Modify SL / Target</h2>
+    <div class="row">
+      <div>
+        <label>SL trigger</label>
+        <input id="modSlTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2820">
+      </div>
+      <div>
+        <label>SL limit</label>
+        <input id="modSlLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Target trigger</label>
+        <input id="modTgtTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2950">
+      </div>
+      <div>
+        <label>Target limit</label>
+        <input id="modTgtLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger">
+      </div>
+    </div>
+    <div class="pos-actions" style="margin-top:16px">
+      <button class="btn" onclick="closeModify()">Cancel</button>
+      <button class="btn modify" id="modifySaveBtn" onclick="saveModify()">Save changes</button>
+    </div>
+    <div class="msg" id="modifyMsg"></div>
+  </div>
+</div>
+
+<script>
+let positions = [];
+let ws = null;
+let wsRetryMs = 1000;
+let modifyTarget = null; // {symbol, broker_order_id}
+
+function currentPin(){ return document.getElementById("pin").value.trim(); }
+function show(id,cls,txt){ const e=document.getElementById(id); e.className="msg "+cls; e.textContent=txt; }
+function fmtMoney(v){ return (v>=0?"+":"") + "₹" + Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0}) * (v<0?-1:1); }
+
+function setConn(state, text){
+  const dot = document.getElementById("connDot");
+  dot.className = "conn-dot " + state;
+  document.getElementById("connText").textContent = text;
+}
+
+async function load(){
+  const pin = currentPin();
+  if(!pin){ show("pinMsg","err","Enter your PIN."); return; }
+  show("pinMsg","","");
+  try{
+    const r = await fetch("/positions/data?pin=" + encodeURIComponent(pin));
+    const d = await r.json();
+    if(!r.ok){ show("pinMsg","err", d.error || ("Error " + r.status)); return; }
+    positions = d.positions || [];
+    renderPositions();
+    renderSummary();
+    connectWs(pin);
+  }catch(e){ show("pinMsg","err", String(e)); }
+}
+
+function renderSummary(){
+  document.getElementById("summaryRow").style.display = positions.length ? "flex" : "none";
+  document.getElementById("statCount").textContent = positions.length;
+  const totalPnl = positions.reduce((s,p) => s + (p.pnl||0), 0);
+  const el = document.getElementById("statPnl");
+  el.textContent = fmtMoney(totalPnl);
+  el.className = "stat-val " + (totalPnl >= 0 ? "pos" : "neg");
+}
+
+function instrumentKey(p){ return p.security_id ? (p.exchange + ":" + p.security_id) : null; }
+
+function renderPositions(){
+  const list = document.getElementById("positionsList");
+  if(!positions.length){
+    list.innerHTML = '<div class="card empty"><div class="empty-icon">📭</div>No open positions right now.</div>';
+    return;
+  }
+  list.innerHTML = positions.map((p,i) => {
+    const pnlClass = (p.pnl||0) >= 0 ? "pos" : "neg";
+    const sl = p.sl_target;
+    let slRow = '<div class="no-sl-note">No SL/Target set on this position.</div>';
+    if(sl){
+      const badges = [];
+      if(sl.sl_trigger_price) badges.push(`<span class="sl-badge">SL ₹${sl.sl_trigger_price}</span>`);
+      if(sl.tgt_trigger_price) badges.push(`<span class="tgt-badge">Target ₹${sl.tgt_trigger_price}</span>`);
+      if(sl.trailing_sl_points) badges.push(`<span class="trail-badge">Trailing ${sl.trailing_sl_points}pt</span>`);
+      slRow = `<div class="sl-target-row">${badges.join("")}</div>`;
+    }
+    const canModify = sl && sl.broker_order_id;
+    return `
+    <div class="pos-card" id="poscard-${i}">
+      <div class="pos-head">
+        <div><span class="pos-sym">${p.symbol}</span><span class="pos-tag">${p.exchange}</span><span class="pos-tag">${p.kind}</span></div>
+      </div>
+      <div class="pos-qty">Qty ${p.quantity} @ avg ₹${(p.avg_price||0).toLocaleString()}</div>
+      <div class="pos-grid">
+        <div class="pos-metric">
+          <div class="pos-metric-label">LTP</div>
+          <div class="pos-metric-val live" id="ltp-${i}">₹${(p.current_price||0).toLocaleString()}</div>
+        </div>
+        <div class="pos-metric">
+          <div class="pos-metric-label">P&amp;L</div>
+          <div class="pos-metric-val live ${pnlClass}" id="pnl-${i}">${fmtMoney(p.pnl||0)}</div>
+        </div>
+        <div class="pos-metric">
+          <div class="pos-metric-label">Qty</div>
+          <div class="pos-metric-val">${p.quantity}</div>
+        </div>
+      </div>
+      ${slRow}
+      <div class="pos-actions">
+        <button class="btn sell" onclick="sellPosition(${i})">Sell @ market</button>
+        <button class="btn modify" onclick="openModify(${i})" ${canModify ? "" : "disabled title=\\"No active SL/Target order on file for this position\\""}>Modify SL/Target</button>
+        <a class="btn" style="flex:0 0 auto;padding:10px 14px;text-decoration:none;display:flex;align-items:center"
+           href="/trade?symbol=${encodeURIComponent(p.symbol)}&exchange=${encodeURIComponent(p.exchange)}&security_id=${encodeURIComponent(p.security_id||"")}&segment=${encodeURIComponent(p.segment||"")}"
+           title="Open in the full order form (e.g. for a LIMIT sell)">⋯</a>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function connectWs(pin){
+  if(ws){ ws.close(); ws = null; }
+  const instruments = positions.map(instrumentKey).filter(Boolean);
+  if(!instruments.length){ setConn("", "No live-priceable positions"); return; }
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const url = proto + "//" + location.host + "/ws/prices?pin=" + encodeURIComponent(pin) +
+              "&instruments=" + encodeURIComponent(instruments.join(","));
+  setConn("", "Connecting…");
+  ws = new WebSocket(url);
+
+  ws.onopen = () => { wsRetryMs = 1000; };
+  ws.onmessage = (evt) => {
+    let msg;
+    try{ msg = JSON.parse(evt.data); }catch(e){ return; }
+    if(msg.type === "error"){ setConn("down", msg.message || "connection error"); return; }
+    if(msg.type === "snapshot"){
+      setConn("live", "Live");
+      Object.entries(msg.prices || {}).forEach(([inst, ltp]) => applyTick(inst, ltp));
+      return;
+    }
+    if(msg.type === "tick"){
+      setConn("live", "Live");
+      applyTick(msg.instrument, msg.ltp);
+    }
+  };
+  ws.onclose = () => {
+    setConn("down", "Disconnected — retrying…");
+    setTimeout(() => { if(currentPin()) connectWs(currentPin()); }, wsRetryMs);
+    wsRetryMs = Math.min(wsRetryMs * 2, 15000);
+  };
+  ws.onerror = () => {};
+}
+
+function applyTick(instrument, ltp){
+  positions.forEach((p, i) => {
+    if(instrumentKey(p) !== instrument) return;
+    p.current_price = ltp;
+    // quantity is signed (negative for a short position, per INDstocks'
+    // net_quantity convention — see INDmoneyBroker.get_positions), so this
+    // naturally flips sign for shorts without a separate side flag.
+    p.pnl = (ltp - (p.avg_price||0)) * (p.quantity||0);
+    const ltpEl = document.getElementById("ltp-" + i);
+    const pnlEl = document.getElementById("pnl-" + i);
+    const cardEl = document.getElementById("poscard-" + i);
+    if(ltpEl){ ltpEl.textContent = "₹" + ltp.toLocaleString(); }
+    if(pnlEl){
+      pnlEl.textContent = fmtMoney(p.pnl);
+      pnlEl.className = "pos-metric-val live " + (p.pnl >= 0 ? "pos" : "neg");
+    }
+    if(cardEl){
+      cardEl.classList.add("flash");
+      setTimeout(() => cardEl.classList.remove("flash"), 300);
+    }
+  });
+  renderSummary();
+}
+
+async function sellPosition(i){
+  const p = positions[i];
+  const btn = document.querySelector(`#poscard-${i} .btn.sell`);
+  if(btn){ btn.disabled = true; btn.textContent = "Selling…"; }
+  try{
+    const r = await fetch("/trade/sell", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        pin: currentPin(), symbol: p.symbol, security_id: p.security_id,
+        segment: p.segment, exchange: p.exchange, quantity: p.quantity,
+        product: p.product || "INTRADAY", order_type: "MARKET",
+      }),
+    });
+    const d = await r.json();
+    if(r.ok && d.status === "ok"){ show("pinMsg","ok","✅ Sold " + p.symbol + ". Order ID: " + (d.order_id || "—")); load(); }
+    else{ show("pinMsg","err","❌ " + (d.error || d.message || d.order_status || "Sell failed")); if(btn){ btn.disabled=false; btn.textContent="Sell @ market"; } }
+  }catch(e){ show("pinMsg","err","❌ " + String(e)); if(btn){ btn.disabled=false; btn.textContent="Sell @ market"; } }
+}
+
+function openModify(i){
+  const p = positions[i];
+  if(!p.sl_target || !p.sl_target.broker_order_id) return;
+  modifyTarget = { symbol: p.symbol, broker_order_id: p.sl_target.broker_order_id };
+  document.getElementById("modifySym").textContent = "Modify " + p.symbol;
+  document.getElementById("modSlTrigger").value = p.sl_target.sl_trigger_price || "";
+  document.getElementById("modSlLimit").value = "";
+  document.getElementById("modTgtTrigger").value = p.sl_target.tgt_trigger_price || "";
+  document.getElementById("modTgtLimit").value = "";
+  show("modifyMsg","","");
+  document.getElementById("modifyBackdrop").classList.add("open");
+}
+function closeModify(){
+  document.getElementById("modifyBackdrop").classList.remove("open");
+  modifyTarget = null;
+}
+async function saveModify(){
+  if(!modifyTarget) return;
+  const btn = document.getElementById("modifySaveBtn");
+  btn.disabled = true; btn.textContent = "Saving…";
+  const num = (id) => { const v = parseFloat(document.getElementById(id).value); return (v>0) ? v : null; };
+  try{
+    const r = await fetch("/trade/modify", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        pin: currentPin(), order_id: modifyTarget.broker_order_id,
+        sl_trigger_price: num("modSlTrigger"), sl_limit_price: num("modSlLimit"),
+        tgt_trigger_price: num("modTgtTrigger"), tgt_limit_price: num("modTgtLimit"),
+      }),
+    });
+    const d = await r.json();
+    if(r.ok && d.status === "ok"){ show("modifyMsg","ok","✅ Updated."); setTimeout(() => { closeModify(); load(); }, 900); }
+    else{ show("modifyMsg","err","❌ " + (d.error || d.message || "Modify failed")); }
+  }catch(e){ show("modifyMsg","err", String(e)); }
+  finally{ btn.disabled = false; btn.textContent = "Save changes"; }
+}
+</script>
+</body>
+</html>

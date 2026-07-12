@@ -94,6 +94,14 @@
 
   #limitWrap { display: none; }
 
+  .sl-toggle {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    color: var(--accent); font-weight: 600; font-size: .85rem;
+    text-transform: none; letter-spacing: 0; margin-top: 16px;
+  }
+  #slToggleIcon { display: inline-block; transition: transform .15s; font-size: .75rem; }
+  #slTargetWrap { margin-top: 8px; }
+
   .msg {
     padding: 12px 14px; border-radius: 10px; margin-top: 12px; font-size: .88rem;
     line-height: 1.5; white-space: pre-wrap; display: none;
@@ -113,9 +121,20 @@
 
   .hint { font-size: .74rem; color: var(--muted); margin-top: 10px; line-height: 1.5; }
   .hint.warn { color: var(--sell); }
+
+  .top-nav { display: flex; gap: 6px; margin-bottom: 14px; }
+  .top-nav a {
+    flex: 1; text-align: center; padding: 9px; border-radius: 9px; font-size: .84rem;
+    font-weight: 700; text-decoration: none; border: 1.5px solid var(--border); color: var(--muted);
+  }
+  .top-nav a.on { color: var(--accent); border-color: var(--accent); background: rgba(45,108,223,.08); }
 </style>
 </head>
 <body>
+<div class="top-nav">
+  <a class="on" href="/trade">📲 Trade</a>
+  <a href="/positions">📊 Positions</a>
+</div>
 <h1>📲 Place Order</h1>
 
 <div class="card" id="formCard">
@@ -172,6 +191,35 @@
     </div>
   </div>
 
+  <label class="sl-toggle" id="slToggle" onclick="toggleSlTarget()">
+    <span id="slToggleIcon">▸</span> Add SL / Target (optional)
+  </label>
+  <div id="slTargetWrap" style="display:none">
+    <div class="row">
+      <div>
+        <label>SL trigger price</label>
+        <input id="slTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2820">
+      </div>
+      <div>
+        <label>SL limit price</label>
+        <input id="slLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Target trigger price</label>
+        <input id="tgtTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2950">
+      </div>
+      <div>
+        <label>Target limit price</label>
+        <input id="tgtLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger">
+      </div>
+    </div>
+    <label>Trailing SL (points)</label>
+    <input id="trailPoints" type="number" min="0" step="0.5" placeholder="e.g. 5 — requires SL above">
+    <div class="hint">SL/Target route through INDstocks' Smart Order endpoint. Trailing SL has no native broker support — this app ratchets it for you via a live price feed, so it only works while the server is running.</div>
+  </div>
+
   <button class="primary" id="previewBtn" onclick="preview()">Review order →</button>
   <div class="hint">MARKET orders are placed as a LIMIT at the live price (INDstocks rule).</div>
   <div class="msg" id="formMsg"></div>
@@ -201,6 +249,12 @@ function setSide(s){ side=s;
   document.querySelectorAll(".side button").forEach(b=>b.classList.toggle("active", b.dataset.side===s)); }
 function toggleLimit(){ document.getElementById("limitWrap").style.display =
   document.getElementById("orderType").value==="LIMIT" ? "block":"none"; }
+function toggleSlTarget(){
+  const wrap = document.getElementById("slTargetWrap");
+  const open = wrap.style.display === "block";
+  wrap.style.display = open ? "none" : "block";
+  document.getElementById("slToggleIcon").style.transform = open ? "" : "rotate(90deg)";
+}
 
 function currentPin(){ return document.getElementById("pin").value; }
 
@@ -298,7 +352,31 @@ async function runSearch(q){
   }catch(e){ /* aborted or network hiccup — ignore, user is still typing */ }
 }
 
+function prefillFromQuery(){
+  // Deep link from /positions' "…" button — e.g. /trade?symbol=RELIANCE&
+  // exchange=NSE&security_id=2885&segment=EQUITY. Prefills as if the user
+  // had picked this exact contract from the dropdown (so weekly-options
+  // orders stay unambiguous), sets side to SELL (the deep link's use case
+  // today is "sell this position I already hold, but via LIMIT/SL/target"),
+  // and expands the SL/Target section since that's the point of this link.
+  const qs = new URLSearchParams(location.search);
+  const symbol = qs.get("symbol");
+  if(!symbol) return;
+  const exchange = qs.get("exchange") || "NSE";
+  const securityId = qs.get("security_id") || "";
+  const segment = qs.get("segment") || "";
+  document.getElementById("symbol").value = symbol;
+  document.getElementById("exchange").value = exchange === "BSE" ? "BSE" : "NSE";
+  if(securityId){
+    selected = { symbol, exchange, security_id: securityId, segment, name: "" };
+    setSymbolStatus("ok", "✓ " + exchange);
+  }
+  setSide("SELL");
+  toggleSlTarget();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  prefillFromQuery();
   const input = document.getElementById("symbol");
   input.addEventListener("input", onSymbolInput);
   input.addEventListener("keydown", (e) => {
@@ -332,6 +410,7 @@ function payload(){
   // it's already the raw quantity (unchanged behavior for anything not in
   // _KNOWN_LOT_SIZES yet).
   const quantity = (pick && pick.lot_size) ? qtyInput * pick.lot_size : qtyInput;
+  const num = (id) => { const v = parseFloat(document.getElementById(id).value); return (v>0) ? v : null; };
   return {
     pin: currentPin(),
     symbol: symbolText,
@@ -343,7 +422,12 @@ function payload(){
     order_type: document.getElementById("orderType").value,
     limit_price: parseFloat(document.getElementById("limitPrice").value||"0"),
     product: document.getElementById("product").value,
-    exchange: document.getElementById("exchange").value
+    exchange: document.getElementById("exchange").value,
+    sl_trigger_price: num("slTrigger"),
+    sl_limit_price: num("slLimit"),
+    tgt_trigger_price: num("tgtTrigger"),
+    tgt_limit_price: num("tgtLimit"),
+    trailing_sl_points: num("trailPoints")
   };
 }
 function show(id,cls,txt){ const e=document.getElementById(id); e.className="msg "+cls; e.textContent=txt; }
@@ -376,6 +460,9 @@ function renderSummary(d){
     <dt>Product</dt><dd>${o.product}</dd>
     <dt>Exchange</dt><dd>${o.exchange}</dd>`;
   if(o.expiry){ rows += `<dt>Expiry</dt><dd>${formatExpiry(o.expiry)}</dd>`; }
+  if(o.sl_trigger_price){ rows += `<dt>SL</dt><dd>trigger ₹${o.sl_trigger_price}${o.sl_limit_price ? " / limit ₹"+o.sl_limit_price : ""}</dd>`; }
+  if(o.tgt_trigger_price){ rows += `<dt>Target</dt><dd>trigger ₹${o.tgt_trigger_price}${o.tgt_limit_price ? " / limit ₹"+o.tgt_limit_price : ""}</dd>`; }
+  if(o.trailing_sl_points){ rows += `<dt>Trailing SL</dt><dd>${o.trailing_sl_points} points (bot-managed)</dd>`; }
   document.getElementById("sumGrid").innerHTML = rows;
 
   const warnEl = document.getElementById("confirmMsg");
@@ -393,12 +480,20 @@ function renderSummary(d){
 function back(){ document.getElementById("confirmCard").style.display="none";
   document.getElementById("formCard").style.display="block"; show("confirmMsg","",""); }
 
+function escapeHtml(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+
 async function place(){
   const btn=document.getElementById("placeBtn"); btn.disabled=true; btn.textContent="Placing…";
   try{
     const r=await fetch("/trade/place",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(window._order)});
     const d=await r.json();
-    if(r.ok && d.status==="ok"){ show("confirmMsg","ok","✅ Order placed. ID: "+(d.order_id||"—")+"\nStatus: "+(d.order_status||"submitted")); }
+    if(r.ok && d.status==="ok"){
+      const el=document.getElementById("confirmMsg");
+      el.className="msg ok";
+      el.innerHTML = "✅ Order placed. ID: "+escapeHtml(d.order_id||"—")+"<br>Status: "+escapeHtml(d.order_status||"submitted")+
+        '<br><a href="/positions" style="color:inherit;font-weight:700;text-decoration:underline">View in positions →</a>';
+      btn.style.display="none";
+    }
     else { show("confirmMsg","err","❌ "+(d.error || d.message || d.order_status || "Rejected")); btn.disabled=false; btn.textContent="✅ Confirm & place order"; }
   }catch(e){ show("confirmMsg","err", String(e)); btn.disabled=false; btn.textContent="✅ Confirm & place order"; }
 }

@@ -599,6 +599,82 @@ pre.code {
     <div class="session-btns" id="sess-btns"></div>
   </div>
 
+  <!-- Trading web app -->
+  <p class="section-head a5">Trading web app</p>
+  <div class="access-grid a5">
+    <div class="access-card">
+      <div class="access-head">
+        <div class="access-title blue">Place orders<span class="oauth-tag" style="margin-left:8px">PIN-gated</span></div>
+        <div class="access-desc">Search a symbol, buy or sell, set SL/target/trailing SL</div>
+      </div>
+      <div class="access-items">
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">Symbol search</div><div class="ai-desc">Live autocomplete across equity + F&amp;O</div></div></div>
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">SL / Target / Trailing SL</div><div class="ai-desc">Smart orders with bot-managed trailing stop</div></div></div>
+        <div class="ai"><span class="ai-dot blue"></span><div><div class="ai-name">AMO support</div><div class="ai-desc">Queues automatically when the market is closed</div></div></div>
+      </div>
+      <div class="access-foot">
+        <a href="/trade" class="btn-primary">Place an order →</a>
+      </div>
+    </div>
+
+    <div class="access-card">
+      <div class="access-head">
+        <div class="access-title green">Manage positions<span class="oauth-tag" style="margin-left:8px">Live via WebSocket</span></div>
+        <div class="access-desc">See what you hold, sell, or modify SL/target — no polling</div>
+      </div>
+      <div class="access-items">
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Live prices</div><div class="ai-desc">Streamed over WebSocket, not refresh-and-poll</div></div></div>
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">One-tap sell</div><div class="ai-desc">Sell at market straight from the position row</div></div></div>
+        <div class="ai"><span class="ai-dot green"></span><div><div class="ai-name">Modify SL/Target</div><div class="ai-desc">Adjust an existing smart order without re-placing it</div></div></div>
+      </div>
+      <div class="access-foot">
+        <a href="/positions" class="btn-ghost">View positions →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- What's new -->
+  <p class="section-head a5">What's new</p>
+  <div class="qs-card a5" style="margin-bottom:32px">
+    <div class="access-items">
+      <div class="ai">
+        <span class="ai-dot blue"></span>
+        <div>
+          <div class="ai-name">Live positions with WebSocket prices<span class="badge">NEW</span></div>
+          <div class="ai-desc">/positions streams live LTP and P&amp;L over a WebSocket relay — sell or modify SL/target in one tap.</div>
+        </div>
+      </div>
+      <div class="ai">
+        <span class="ai-dot blue"></span>
+        <div>
+          <div class="ai-name">SL / Target / Trailing SL on orders</div>
+          <div class="ai-desc">Smart orders route through INDstocks' GTT-style endpoint; trailing SL is ratcheted by the server since no broker-native field exists.</div>
+        </div>
+      </div>
+      <div class="ai">
+        <span class="ai-dot blue"></span>
+        <div>
+          <div class="ai-name">Instant order-fill alerts</div>
+          <div class="ai-desc">A live WebSocket order-updates listener pushes a Telegram alert the moment an order fills or is rejected.</div>
+        </div>
+      </div>
+      <div class="ai">
+        <span class="ai-dot blue"></span>
+        <div>
+          <div class="ai-name">Trailing SL survives a restart</div>
+          <div class="ai-desc">Active trailing stops are persisted and automatically resumed if the server restarts mid-trade.</div>
+        </div>
+      </div>
+      <div class="ai">
+        <span class="ai-dot blue"></span>
+        <div>
+          <div class="ai-name">Monitor alerts now event-driven</div>
+          <div class="ai-desc">Wall-break, PCR, and index-move checks read from a live WebSocket price cache instead of polling on a fixed interval.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Server info + Clients -->
   <div class="bot-grid a6">
     <div class="bot-card">

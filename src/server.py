@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import json
 import os
 import logging
@@ -286,9 +288,10 @@ _http_app = mcp.streamable_http_app()
 
 
 _UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
-_LOGIN_TEMPLATE = open(os.path.join(_UI_DIR, "login.html"), encoding="utf-8").read()
-_HOME_TEMPLATE  = open(os.path.join(_UI_DIR, "home.html"),  encoding="utf-8").read()
-_TRADE_TEMPLATE = open(os.path.join(_UI_DIR, "trade.html"), encoding="utf-8").read()
+_LOGIN_TEMPLATE     = open(os.path.join(_UI_DIR, "login.html"),     encoding="utf-8").read()
+_HOME_TEMPLATE      = open(os.path.join(_UI_DIR, "home.html"),      encoding="utf-8").read()
+_TRADE_TEMPLATE     = open(os.path.join(_UI_DIR, "trade.html"),     encoding="utf-8").read()
+_POSITIONS_TEMPLATE = open(os.path.join(_UI_DIR, "positions.html"), encoding="utf-8").read()
 
 _TOOL_COUNT = len(mcp._tool_manager.list_tools())
 
@@ -400,6 +403,28 @@ def _build_order_from_web(data: dict):
         if limit_price <= 0:
             return None, "LIMIT orders need a positive price."
 
+    # SL/target/trailing-SL (2026-07-12) — same optional-leg vocabulary as
+    # the Telegram /buy /sell SL/TARGET/TRAIL grammar (order_parser.py) and
+    # the same OrderRequest fields; a leg is only set if its trigger price
+    # was actually supplied, so a plain order's payload is unchanged.
+    def _optional_float(key: str) -> float | None:
+        raw = data.get(key)
+        if raw in (None, "", "null"):
+            return None
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return val if val > 0 else None
+
+    sl_trigger_price = _optional_float("sl_trigger_price")
+    sl_limit_price = _optional_float("sl_limit_price") or sl_trigger_price
+    tgt_trigger_price = _optional_float("tgt_trigger_price")
+    tgt_limit_price = _optional_float("tgt_limit_price") or tgt_trigger_price
+    trailing_sl_points = _optional_float("trailing_sl_points")
+    if trailing_sl_points is not None and sl_trigger_price is None:
+        return None, "Trailing SL requires an SL trigger price to trail from."
+
     req = OrderRequest(
         security_id=security_id,
         exchange=exchange,
@@ -410,6 +435,11 @@ def _build_order_from_web(data: dict):
         product=product,
         limit_price=limit_price,
         symbol=symbol,
+        sl_trigger_price=sl_trigger_price,
+        sl_limit_price=sl_limit_price,
+        tgt_trigger_price=tgt_trigger_price,
+        tgt_limit_price=tgt_limit_price,
+        trailing_sl_points=trailing_sl_points,
     )
     return req, None
 
@@ -622,7 +652,89 @@ def _resolve_user(scope) -> str | None:
     return None
 
 
+async def _ws_prices_app(scope, receive, send) -> None:
+    """GET /ws/prices — browser-facing live price stream (2026-07-12).
+
+    Raw ASGI websocket scope handler (uvicorn[standard] supports this
+    natively; no framework routing needed). PIN-gated the same way as every
+    other /trade*/positions* route — the query string carries ?pin=..., not
+    the INDstocks token, which never leaves the server (see
+    src/execution/browser_price_relay.py's module docstring for why).
+
+    Client protocol, deliberately minimal:
+      connect ?pin=XXXX&instruments=NSE:2885,BSE:500325
+      server -> {"type": "snapshot", "prices": {"NSE:2885": 1426.5, ...}}
+              (immediately, from whatever the relay already has cached)
+      server -> {"type": "tick", "instrument": "NSE:2885", "ltp": 1426.5}
+              (on every subsequent live update)
+      server -> {"type": "error", "message": "..."}  then closes, on bad PIN
+    """
+    from src.execution.browser_price_relay import get_relay
+
+    qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+    pin = (qs.get("pin", [""])[0]).strip()
+    instruments_raw = (qs.get("instruments", [""])[0]).strip()
+    instruments = [i for i in instruments_raw.split(",") if i]
+
+    event = await receive()
+    if event["type"] != "websocket.connect":
+        return
+    await send({"type": "websocket.accept"})
+
+    if not _trade_pin_ok(pin):
+        await send({"type": "websocket.send", "text": json.dumps({"type": "error", "message": "invalid PIN"})})
+        await send({"type": "websocket.close"})
+        return
+    if not instruments:
+        await send({"type": "websocket.send", "text": json.dumps({"type": "error", "message": "no instruments requested"})})
+        await send({"type": "websocket.close"})
+        return
+
+    relay = get_relay()
+    sub_id, queue = await relay.register(instruments)
+    try:
+        snapshot = {inst: relay.snapshot(inst) for inst in instruments}
+        snapshot = {k: v for k, v in snapshot.items() if v is not None}
+        await send({"type": "websocket.send", "text": json.dumps({"type": "snapshot", "prices": snapshot})})
+
+        async def _pump_ticks():
+            while True:
+                tick = await queue.get()
+                await send({"type": "websocket.send", "text": json.dumps({"type": "tick", **tick})})
+
+        async def _watch_disconnect():
+            while True:
+                event = await receive()
+                if event["type"] == "websocket.disconnect":
+                    return
+
+        pump_task = asyncio.ensure_future(_pump_ticks())
+        disconnect_task = asyncio.ensure_future(_watch_disconnect())
+        try:
+            # Race the two: whichever finishes first (a real client
+            # disconnect, or — since pump_task never finishes on its own —
+            # this always means disconnect) ends the connection. Using
+            # asyncio.wait instead of a manual receive-loop lets the event
+            # loop actually schedule _pump_ticks in between receive() calls,
+            # so a tick queued right after the snapshot is never lost to a
+            # disconnect that happens to be processed first.
+            await asyncio.wait([pump_task, disconnect_task], return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            pump_task.cancel()
+            disconnect_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump_task
+            with contextlib.suppress(asyncio.CancelledError):
+                await disconnect_task
+    finally:
+        await relay.unregister(sub_id)
+
+
 async def app(scope, receive, send):
+    if scope["type"] == "websocket" and scope.get("path") == "/ws/prices":
+        await _ws_prices_app(scope, receive, send)
+        return
+
     # Resolve user from API key header before any route runs
     if scope["type"] == "http":
         uid = _resolve_user(scope)
@@ -971,6 +1083,12 @@ async def _app(scope, receive, send):
                 f"Qty: <b>{req.quantity}</b><br>{price}<br>"
                 f"Product: {req.product} &nbsp;|&nbsp; {req.exchange} {req.segment}"
             )
+            if req.sl_trigger_price is not None:
+                summary_html += f"<br>SL: trigger ₹{req.sl_trigger_price:g} / limit ₹{req.sl_limit_price:g}"
+            if req.tgt_trigger_price is not None:
+                summary_html += f"<br>Target: trigger ₹{req.tgt_trigger_price:g} / limit ₹{req.tgt_limit_price:g}"
+            if req.trailing_sl_points is not None:
+                summary_html += f"<br>Trailing SL: {req.trailing_sl_points:g} points (bot-managed)"
             if not session_open:
                 summary_html += (
                     "<br><b>Market is closed</b> — this will be placed as an "
@@ -999,9 +1117,7 @@ async def _app(scope, receive, send):
                     # AMO support for INDstocks' /smart/order (SL/target leg)
                     # endpoint isn't confirmed against their docs — only the
                     # plain /order endpoint's is_amo behavior is (2026-07-12).
-                    # Reject rather than guess at an unverified API contract;
-                    # today the web form never sets SL/target fields anyway,
-                    # so this only matters if that changes later.
+                    # Reject rather than guess at an unverified API contract.
                     await _send_json(send, 400, {
                         "error": "Market is closed. SL/target orders can't be placed "
                                  "after hours (AMO support for that order type isn't "
@@ -1031,6 +1147,143 @@ async def _app(scope, receive, send):
             result = await submit_order(req, source="web", user_id=os.environ.get("ZERODHA_USER_ID"))
             status = 200 if result.get("status") == "ok" else 502
             await _send_json(send, status, result)
+            return
+
+        # ── Positions page (2026-07-12) ─────────────────────────────────────
+        # Same PIN gate as /trade — view open positions, sell in one tap,
+        # modify an existing SL/target. Read-only /positions/data is also the
+        # source for the home page's live P&L card (see /positions/summary).
+        if path == "/positions" and method == "GET":
+            await _send_html(send, 200, _POSITIONS_TEMPLATE)
+            return
+
+        if path == "/positions/data" and method == "GET":
+            qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+            pin = (qs.get("pin", [""])[0]).strip()
+            if not _trade_pin_ok(pin):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            from src.execution.service import get_positions_for_web
+            try:
+                data = await get_positions_for_web()
+            except Exception as exc:
+                await _send_json(send, 502, {"error": f"positions fetch failed: {exc}"})
+                return
+            await _send_json(send, 200, data)
+            return
+
+        if path == "/trade/sell" and method == "POST":
+            # One-tap sell from the positions page: PIN-gated, no separate
+            # preview/confirm screen (the position row IS the confirmation —
+            # user already sees symbol/qty/current price before tapping).
+            raw = await _read_body(receive)
+            try:
+                data = json.loads(raw.decode()) if raw else {}
+            except Exception:
+                await _send_json(send, 400, {"error": "invalid JSON"})
+                return
+            if not _trade_pin_ok(data.get("pin", "")):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            sell_data = {**data, "side": "SELL", "order_type": data.get("order_type") or "MARKET"}
+            req, err = _build_order_from_web(sell_data)
+            if err:
+                await _send_json(send, 400, {"error": err})
+                return
+            session_open = await _is_market_session_open_safe()
+            if not session_open:
+                req.is_amo = True
+                req.validity = "DAY"
+            from src.execution.service import submit_order, resolve_symbol
+            if not req.security_id:
+                try:
+                    sec_id = await resolve_symbol(req.symbol, exchange=req.exchange, segment=req.segment)
+                except Exception as exc:
+                    await _send_json(send, 502, {"error": f"symbol resolution failed: {exc}"})
+                    return
+                if not sec_id:
+                    await _send_json(send, 400, {
+                        "error": f"Symbol '{req.symbol}' not found in {req.exchange} {req.segment} instruments."})
+                    return
+                req.security_id = sec_id
+            result = await submit_order(req, source="web", user_id=os.environ.get("ZERODHA_USER_ID"))
+            status = 200 if result.get("status") == "ok" else 502
+            await _send_json(send, status, result)
+            return
+
+        if path == "/trade/modify" and method == "POST":
+            # Modify the SL/target legs of an existing smart order — identified
+            # by broker_order_id, which the positions page already has from
+            # /positions/data's sl_target block (never asks the user to find
+            # or paste an order id by hand).
+            raw = await _read_body(receive)
+            try:
+                data = json.loads(raw.decode()) if raw else {}
+            except Exception:
+                await _send_json(send, 400, {"error": "invalid JSON"})
+                return
+            if not _trade_pin_ok(data.get("pin", "")):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            order_id = str(data.get("order_id", "")).strip()
+            if not order_id:
+                await _send_json(send, 400, {"error": "order_id is required"})
+                return
+
+            def _optional_float(key: str):
+                raw_val = data.get(key)
+                if raw_val in (None, "", "null"):
+                    return None
+                try:
+                    val = float(raw_val)
+                except (TypeError, ValueError):
+                    return None
+                return val if val > 0 else None
+
+            fields = {}
+            sl_trigger = _optional_float("sl_trigger_price")
+            sl_limit = _optional_float("sl_limit_price") or sl_trigger
+            tgt_trigger = _optional_float("tgt_trigger_price")
+            tgt_limit = _optional_float("tgt_limit_price") or tgt_trigger
+            if sl_trigger is not None:
+                fields["sl_trigger_price"] = sl_trigger
+                fields["sl_limit_price"] = sl_limit
+            if tgt_trigger is not None:
+                fields["tgt_trigger_price"] = tgt_trigger
+                fields["tgt_limit_price"] = tgt_limit
+            if not fields:
+                await _send_json(send, 400, {"error": "Provide at least one of sl_trigger_price/tgt_trigger_price."})
+                return
+
+            from src.brokers.factory import get_broker_adapter
+            adapter = get_broker_adapter("indmoney")
+            result = await adapter.modify_smart_order(order_id, **fields)
+            status = 200 if result.get("status") == "ok" else 502
+            await _send_json(send, status, result)
+            return
+
+        if path == "/positions/summary" and method == "GET":
+            # Lightweight aggregate for the home page's live card — total
+            # open positions + today's net unrealized P&L. Same PIN gate;
+            # the home page only renders this card once a PIN is entered.
+            qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+            pin = (qs.get("pin", [""])[0]).strip()
+            if not _trade_pin_ok(pin):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            from src.execution.service import get_positions_for_web
+            try:
+                data = await get_positions_for_web()
+            except Exception as exc:
+                await _send_json(send, 502, {"error": f"positions fetch failed: {exc}"})
+                return
+            rows = data.get("positions", [])
+            total_pnl = sum(r.get("pnl") or 0 for r in rows)
+            await _send_json(send, 200, {
+                "total_positions": len(rows),
+                "total_pnl": total_pnl,
+                "with_sl_or_target": sum(1 for r in rows if r.get("sl_target")),
+            })
             return
 
         if path == "/sse" or path.startswith("/messages"):

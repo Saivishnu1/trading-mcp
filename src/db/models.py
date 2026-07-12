@@ -91,9 +91,17 @@ try:
     class OrderLog(Base):
         """Append-only record of every order this app submits to a broker.
 
-        Snapshot semantics (per CLAUDE.md): the requested fields are the
-        entry-time intent and are never mutated. broker_order_id / status /
-        raw_response record what the broker returned at submission time.
+        Snapshot semantics (per CLAUDE.md): the requested-intent and
+        broker-response fields below are entry-time and never mutated.
+        The ONE exception is ``sl_target_active`` (2026-07-12): it starts
+        True whenever an order carries an SL/target leg, and is flipped to
+        False later (order cancelled/modified-away, or the position closes)
+        so the positions UI can show "this position has a live SL/target"
+        and find the right order to modify — see
+        ExecutionRepository.find_active_smart_order_for_symbol /
+        deactivate_sl_target. This is the one live-state field on an
+        otherwise immutable row; everything else keeps the original
+        snapshot contract.
         """
         __tablename__ = "orders"
         __table_args__ = (
@@ -119,12 +127,19 @@ try:
         order_type: Mapped[str]        = mapped_column(Text, nullable=False)
         product: Mapped[str | None]    = mapped_column(Text)
         limit_price: Mapped[float | None] = mapped_column(Float)
+        sl_trigger_price: Mapped[float | None]  = mapped_column(Float)
+        sl_limit_price: Mapped[float | None]    = mapped_column(Float)
+        tgt_trigger_price: Mapped[float | None] = mapped_column(Float)
+        tgt_limit_price: Mapped[float | None]   = mapped_column(Float)
+        trailing_sl_points: Mapped[float | None] = mapped_column(Float)
         # Broker response
         broker_order_id: Mapped[str | None] = mapped_column(Text)
         status: Mapped[str]            = mapped_column(Text, nullable=False)
         order_status: Mapped[str | None]   = mapped_column(Text)
         raw_response: Mapped[str | None]   = mapped_column(Text)
         created_at: Mapped[str]        = mapped_column(Text, nullable=False)
+        # Live state — the one mutable field, see class docstring
+        sl_target_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     # -------------------------------------------------------------------------
     # zerodha.trailing_sl_state — mutable current-SL snapshot for active
