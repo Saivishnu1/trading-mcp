@@ -628,6 +628,26 @@ class TestAdaptivePolling:
             mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 23, 45))
             assert self.monitor.is_mcx_session_active() is False
 
+    def test_is_market_open_false_on_sunday_during_session_hours(self):
+        # Confirmed bug (2026-07-12): a Sunday poll at 09:22 IST — squarely
+        # inside 09:15-15:30 — previously read as "market open" and fired
+        # check_market_conditions() off stale Friday-close data.
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 12, 9, 22))
+            assert self.monitor.is_market_open() is False
+
+    def test_is_market_open_false_on_saturday_during_session_hours(self):
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 11, 11, 0))
+            assert self.monitor.is_market_open() is False
+
+    def test_is_market_open_true_on_weekday_during_session_hours(self):
+        # 2026-07-13 is a Monday — sanity check the weekday gate doesn't
+        # also suppress genuine trading-day hours.
+        with patch("src.monitor.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self.monitor.IST.localize(datetime(2026, 7, 13, 11, 0))
+            assert self.monitor.is_market_open() is True
+
 
 # ---------------------------------------------------------------------------
 # MCX session-close risk (Priority B7, 2026-07-11) — proactive Telegram push
@@ -1091,8 +1111,11 @@ class TestBriefDedup:
         self.monitor.send_eod_summary = AsyncMock()
         self.monitor.check_market_conditions = AsyncMock()
         self.monitor._get_vix = AsyncMock(return_value=13.0)
-        # Force "now" past MORNING_BRIEF_TIME but before EOD_SUMMARY_TIME
-        fixed_now = self.monitor.IST.localize(datetime.combine(date.today(), time(10, 0)))
+        # Force "now" past MORNING_BRIEF_TIME but before EOD_SUMMARY_TIME, on
+        # a fixed weekday (2026-07-13 is a Monday) — date.today() would make
+        # this test flaky against the weekday gate depending on which real
+        # calendar day it happens to run on.
+        fixed_now = self.monitor.IST.localize(datetime(2026, 7, 13, 10, 0))
 
         async def _raise_stop(*a, **k):
             raise StopAsyncIteration
@@ -1107,6 +1130,33 @@ class TestBriefDedup:
         self.monitor.send_eod_summary.assert_not_awaited()
         saved = self.monitor.repo.save_session_state.call_args_list
         assert any(c.args[1].get("last_morning_brief") == fixed_now.date().isoformat() for c in saved)
+
+    @pytest.mark.anyio
+    async def test_run_skips_morning_brief_on_sunday(self):
+        # Confirmed bug (2026-07-12) — the morning-brief send was gated only
+        # by time-of-day + "not sent today", with no day-of-week check, so
+        # it fired on a Sunday. 2026-07-12 is a Sunday.
+        self.monitor.repo.get_active_users.return_value = [{"id": "u1", "name": "Vishnu"}]
+        self.monitor.repo.get_session_state.return_value = {}
+        self.monitor.repo.get_active_positions.return_value = []
+        self.monitor.send_morning_brief = AsyncMock()
+        self.monitor.send_eod_summary = AsyncMock()
+        self.monitor.check_market_conditions = AsyncMock()
+        self.monitor._get_vix = AsyncMock(return_value=13.0)
+        fixed_now = self.monitor.IST.localize(datetime(2026, 7, 12, 10, 0))
+
+        async def _raise_stop(*a, **k):
+            raise StopAsyncIteration
+
+        with patch("src.monitor.scheduler.datetime") as mock_dt, \
+             patch("asyncio.sleep", new=AsyncMock(side_effect=_raise_stop)):
+            mock_dt.now.return_value = fixed_now
+            with pytest.raises(StopAsyncIteration):
+                await self.monitor.run()
+
+        self.monitor.send_morning_brief.assert_not_awaited()
+        self.monitor.send_eod_summary.assert_not_awaited()
+        self.monitor.check_market_conditions.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
