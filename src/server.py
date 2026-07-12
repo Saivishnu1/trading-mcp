@@ -396,6 +396,25 @@ def _build_order_from_web(data: dict):
     return req, None
 
 
+async def _is_market_session_open_safe() -> bool:
+    """Wraps is_market_session_open() with a conservative fallback.
+
+    A calendar-provider fetch failure here must not silently make a
+    closed-market order look "open" (that's exactly the 512
+    Internal Server Error bug from INDstocks this check exists to avoid,
+    confirmed 2026-07-12) — on error, assume closed so the order gets
+    AMO-flagged. Worst case that's an unnecessary AMO flag on a session
+    that was actually open; the alternative risks reproducing the bug.
+    """
+    import asyncio
+    from src.market.calendar import is_market_session_open
+    try:
+        return await asyncio.get_running_loop().run_in_executor(None, is_market_session_open)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("is_market_session_open() failed, assuming closed: %s", exc)
+        return False
+
+
 _oauth_codes = {}
 
 def _verify_pkce(code_verifier: str, code_challenge: str, method: str) -> bool:
@@ -926,9 +945,7 @@ async def _app(scope, receive, send):
             if err:
                 await _send_json(send, 400, {"error": err})
                 return
-            import asyncio
-            from src.market.calendar import is_market_session_open
-            session_open = await asyncio.get_running_loop().run_in_executor(None, is_market_session_open)
+            session_open = await _is_market_session_open_safe()
             price = ("at market (auto-LIMIT @ live price)" if req.order_type == "MARKET"
                      else f"LIMIT @ ₹{req.limit_price:g}")
             summary_html = (
@@ -958,9 +975,7 @@ async def _app(scope, receive, send):
             if err:
                 await _send_json(send, 400, {"error": err})
                 return
-            import asyncio
-            from src.market.calendar import is_market_session_open
-            session_open = await asyncio.get_running_loop().run_in_executor(None, is_market_session_open)
+            session_open = await _is_market_session_open_safe()
             if not session_open:
                 if req.is_smart_order:
                     # AMO support for INDstocks' /smart/order (SL/target leg)
