@@ -472,6 +472,38 @@ class TestSearchInstruments:
         indmoney_module._instrument_cache.clear()
 
     @pytest.mark.anyio
+    async def test_lot_size_parsed_from_lot_units_column(self):
+        # Confirmed 2026-07-12 against a real INDstocks instrument-master row
+        # (SENSEX PE: 'LOT_UNITS': '20', matching the exchange-published lot
+        # size exactly) — this is real per-contract data from the CSV, not a
+        # guessed/hardcoded table (see the segment-misclassification bug this
+        # session already hit once from guessing a field's behavior).
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [
+            {"EXCH": "BSE", "TRADING_SYMBOL": "SENSEX-24Sep2026-87000-PE",
+             "SECURITY_ID": "1129411", "LOT_UNITS": "20"},
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            results = await b.search_instruments("87000")
+        assert results[0]["lot_size"] == 20
+        indmoney_module._instrument_cache.clear()
+
+    @pytest.mark.anyio
+    async def test_lot_size_none_when_lot_units_missing(self):
+        # Equity rows have no lot concept — LOT_UNITS is absent, and the UI
+        # must fall back to raw share quantity rather than erroring.
+        from src.brokers import indmoney as indmoney_module
+        indmoney_module._instrument_cache.clear()
+        b = _broker()
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "2885"}]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            results = await b.search_instruments("RELIANCE")
+        assert results[0]["lot_size"] is None
+        indmoney_module._instrument_cache.clear()
+
+    @pytest.mark.anyio
     async def test_resolve_security_id_still_returns_a_result_for_ambiguous_symbol(self):
         # resolve_security_id (symbol-text based, used by the Telegram /buy
         # /sell flow which has no picker) is documented as best-effort/
@@ -510,39 +542,22 @@ class TestSearchSymbols:
         assert len(results) == 2
 
     @pytest.mark.anyio
-    async def test_lot_size_attached_for_known_index_options(self):
-        # Confirmed against the user's live INDmoney app (2026-07-12): NIFTY
-        # lot size 65, SENSEX lot size 20. The web UI uses this to let the
-        # user enter "lots" instead of raw qty and avoid a QtyMultipleOfLotSize
-        # rejection from INDstocks (see _KNOWN_LOT_SIZES in service.py).
+    async def test_lot_size_passed_through_from_broker_row(self):
+        # search_symbols no longer computes lot_size itself — it's real
+        # per-contract data already attached by
+        # INDmoneyBroker.search_instruments (from the CSV's LOT_UNITS
+        # column), just passed through here.
         import src.execution.service as svc
         adapter = MagicMock()
 
         async def fake_search(query, source="equity", limit=15):
-            return [
-                {"symbol": "NIFTY-JUL2026-24250-CE", "name": "NIFTY", "exchange": "NSE", "segment": ""},
-                {"symbol": "SENSEX-JUL2026-77500-PE", "name": "SENSEX", "exchange": "BSE", "segment": ""},
-            ]
+            return [{"symbol": "SENSEX-24Sep2026-87000-PE", "name": "SENSEX",
+                      "exchange": "BSE", "segment": "", "lot_size": 20}]
 
         adapter.search_instruments = fake_search
         with patch.object(svc, "get_broker_adapter", return_value=adapter):
-            results = await svc.search_symbols("x", segment="DERIVATIVE")
-        by_symbol = {r["symbol"]: r["lot_size"] for r in results}
-        assert by_symbol["NIFTY-JUL2026-24250-CE"] == 65
-        assert by_symbol["SENSEX-JUL2026-77500-PE"] == 20
-
-    @pytest.mark.anyio
-    async def test_lot_size_none_for_unknown_symbol(self):
-        import src.execution.service as svc
-        adapter = MagicMock()
-
-        async def fake_search(query, source="equity", limit=15):
-            return [{"symbol": "RELIANCE", "name": "Reliance Industries", "exchange": "NSE", "segment": ""}]
-
-        adapter.search_instruments = fake_search
-        with patch.object(svc, "get_broker_adapter", return_value=adapter):
-            results = await svc.search_symbols("reliance")
-        assert results[0]["lot_size"] is None
+            results = await svc.search_symbols("87000", segment="DERIVATIVE")
+        assert results[0]["lot_size"] == 20
 
     @pytest.mark.anyio
     async def test_dedup_keys_on_security_id_not_symbol_text(self):
