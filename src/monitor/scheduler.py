@@ -88,9 +88,21 @@ class MarketMonitor:
     # is_market_open() so it still fires in that gap.
     MCX_CLOSE = time(23, 30)
 
+    @staticmethod
+    def _is_weekday(now: datetime) -> bool:
+        return now.weekday() < 5
+
     def is_market_open(self) -> bool:
-        now = datetime.now(self.IST).time()
-        return self.MARKET_OPEN <= now <= self.MARKET_CLOSE
+        # Confirmed bug (2026-07-12) — this checked time-of-day only, so a
+        # Sunday poll at e.g. 09:22 IST read as "open" and ran
+        # check_market_conditions() off Friday's stale closing data,
+        # misfiring a PINNING_RISK alert. Weekday-only, not full NSE-holiday
+        # awareness (that needs an async get_market_calendar() fetch — see
+        # src/market/calendar.py::is_market_session_open, used by the web
+        # order-placement path where the call site is already async);
+        # holidays remain a small residual gap here.
+        now = datetime.now(self.IST)
+        return self._is_weekday(now) and self.MARKET_OPEN <= now.time() <= self.MARKET_CLOSE
 
     def is_mcx_session_active(self) -> bool:
         now = datetime.now(self.IST).time()
@@ -635,6 +647,12 @@ class MarketMonitor:
         while True:
             now = datetime.now(self.IST)
             today_str = now.date().isoformat()
+            # Confirmed bug (2026-07-12) — the morning-brief/EOD-summary
+            # sends below were never gated by is_market_open() at all, only
+            # by time-of-day + "not already sent today", so they fired on a
+            # Sunday too (see is_market_open()'s docstring for the paired
+            # check_market_conditions() half of this bug).
+            is_weekday = self._is_weekday(now)
             users = await self.repo.get_active_users()
 
             for user in users:
@@ -642,14 +660,16 @@ class MarketMonitor:
                 session_state = await self.repo.get_session_state(user["id"]) or {}
 
                 if (
-                    now.time() >= self.MORNING_BRIEF_TIME
+                    is_weekday
+                    and now.time() >= self.MORNING_BRIEF_TIME
                     and session_state.get("last_morning_brief") != today_str
                 ):
                     await self.send_morning_brief(user)
                     await self.repo.save_session_state(user["id"], {"last_morning_brief": today_str})
 
                 if (
-                    now.time() >= self.EOD_SUMMARY_TIME
+                    is_weekday
+                    and now.time() >= self.EOD_SUMMARY_TIME
                     and session_state.get("last_eod_summary") != today_str
                 ):
                     await self.send_eod_summary(user)
