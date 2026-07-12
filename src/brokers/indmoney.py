@@ -587,6 +587,7 @@ class INDmoneyBroker(BrokerAdapter):
 
         starts, contains = [], []
         seen = set()
+        logged_raw_row = False
         for row in rows:
             sym = str(row.get("TRADING_SYMBOL") or row.get("SYMBOL_NAME") or "").strip().upper()
             if not sym:
@@ -598,6 +599,14 @@ class INDmoneyBroker(BrokerAdapter):
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
+            if not logged_raw_row:
+                # One-time discovery log (2026-07-12) — need the real column
+                # name INDstocks uses for lot size (for per-contract "lots"
+                # UI support) before wiring anything up; guessing a field
+                # name here would repeat the exact mistake the segment bug
+                # already cost us. Logged once per search call, not per row.
+                logger.info("INDmoneyBroker.search_instruments raw row sample (%s): %s", source, row)
+                logged_raw_row = True
             name = str(row.get("INSTRUMENT_NAME") or row.get("SYMBOL_NAME") or sym).strip()
             exch = str(row.get("EXCH") or "NSE").strip().upper()
             expiry = str(row.get("EXPIRY_DATE") or "").strip()
