@@ -82,6 +82,7 @@
     transition: all var(--dur-micro) var(--ease-standard); font-family: inherit;
   }
   .side-btn:active { transform: scale(0.98); }
+  .side-btn:hover:not(.on) { border-color: var(--border-strong); color: var(--content-secondary); }
   .side-btn.buy.on  { background: var(--buy-surface);  color: var(--buy);  border-color: var(--buy); }
   .side-btn.sell.on { background: var(--sell-surface); color: var(--sell); border-color: var(--sell); }
 
@@ -95,6 +96,7 @@
     background: transparent; color: var(--content-secondary);
     transition: all var(--dur-micro) var(--ease-standard);
   }
+  .seg-btn:hover:not(.on) { color: var(--content-primary); }
   .seg-btn.on { background: var(--surface-1); color: var(--content-primary); box-shadow: var(--shadow-sm); }
 
   /* Quantity stepper */
@@ -193,11 +195,17 @@
     .step-bottom-bar { margin-bottom: 0; padding-bottom: var(--space-3); }
   }
   @media (min-width: 1024px) {
-    .step-bottom-bar { position: static; margin: var(--space-5) 0 0; padding: 0; border-top: none; background: none; }
+    /* .step-bottom-bar only ever wraps a .mobile-only button — this
+       explicit display:none (not just relying on .mobile-only's own
+       override) fixes a real cascade bug found during Phase 7 QA: both
+       rules had equal specificity, and .step-bottom-bar's unconditional
+       display:flex (declared later in this file) was winning over
+       .mobile-only's display:none at every width, rendering the mobile
+       AND desktop "Review order" buttons simultaneously on desktop. */
+    .step-bottom-bar { display: none; position: static; margin: var(--space-5) 0 0; padding: 0; border-top: none; background: none; }
   }
 
-  .icon { width: 18px; height: 18px; stroke-width: 2; flex-shrink: 0; }
-  .icon-sm { width: 14px; height: 14px; }
+  /* .icon/.icon-sm are shared, defined once in components.css. */
 </style>
 </head>
 <body>
@@ -248,9 +256,9 @@
           <div class="field" style="margin-bottom:0">
             <label id="qtyLabel" for="qty">Quantity</label>
             <div class="qty-stepper">
-              <button type="button" class="qty-step-btn" onclick="stepQty(-1)" aria-label="Decrease quantity"><i data-lucide="minus" class="icon-sm"></i></button>
+              <button type="button" class="qty-step-btn" onclick="stepQty(-1)" aria-label="Decrease quantity"><i data-lucide="minus" class="icon icon-sm"></i></button>
               <input id="qty" type="number" min="1" step="1" value="1" inputmode="numeric">
-              <button type="button" class="qty-step-btn" onclick="stepQty(1)" aria-label="Increase quantity"><i data-lucide="plus" class="icon-sm"></i></button>
+              <button type="button" class="qty-step-btn" onclick="stepQty(1)" aria-label="Increase quantity"><i data-lucide="plus" class="icon icon-sm"></i></button>
             </div>
             <div id="qtyHint" class="field-error-text" style="display:none; color: var(--content-tertiary)"></div>
           </div>
@@ -287,8 +295,8 @@
         </div>
 
         <button type="button" class="protection-toggle" id="protectionToggle" aria-expanded="false" aria-controls="protectionPanel" onclick="toggleProtection()">
-          <span><i data-lucide="shield" class="icon-sm" style="margin-right:8px;vertical-align:-2px"></i>SL / Target / Trailing SL <span class="text-tertiary" style="font-weight:400">(optional)</span></span>
-          <i data-lucide="chevron-down" class="icon-sm protection-chevron"></i>
+          <span style="display:inline-flex;align-items:center;gap:var(--space-2)"><i data-lucide="shield" class="icon icon-sm"></i>SL / Target / Trailing SL <span class="text-tertiary" style="font-weight:400">(optional)</span></span>
+          <i data-lucide="chevron-down" class="icon icon-sm protection-chevron"></i>
         </button>
         <div class="protection-panel" id="protectionPanel">
           <div class="row">
@@ -473,7 +481,7 @@ function currentPin(){ return document.getElementById("pin").value; }
 function setSymbolStatus(kind, text){
   var el = document.getElementById("symbolStatus");
   el.className = "symbol-status " + kind;
-  el.innerHTML = kind === "ok" ? '<i data-lucide="check" class="icon-sm"></i>' + text : text;
+  el.innerHTML = kind === "ok" ? '<i data-lucide="check" class="icon icon-sm"></i>' + text : text;
   if (window.lucide) lucide.createIcons();
 }
 
@@ -564,11 +572,26 @@ async function onSymbolInput(){
   searchDebounce = setTimeout(function(){ runSearch(q); }, 200);
 }
 
+function renderSearchSkeleton(){
+  var dd = document.getElementById("dropdown");
+  var rows = "";
+  for (var i = 0; i < 3; i++){
+    rows += '<div class="dd-item" style="cursor:default">' +
+      '<div class="skeleton" style="width:18px;height:18px;border-radius:4px"></div>' +
+      '<div class="dd-main"><div class="skeleton skel-line" style="width:60%;margin-bottom:4px"></div>' +
+      '<div class="skeleton skel-line" style="width:40%;height:10px;margin-bottom:0"></div></div>' +
+    '</div>';
+  }
+  dd.innerHTML = rows;
+  dd.classList.add("open");
+}
+
 async function runSearch(q){
   var pin = currentPin();
   if (!pin){ setSymbolStatus("pending", "Enter PIN first"); return; }
   if (searchAbort) searchAbort.abort();
   searchAbort = new AbortController();
+  renderSearchSkeleton();
   try {
     var url = "/trade/symbols?q=" + encodeURIComponent(q) + "&pin=" + encodeURIComponent(pin);
     var r = await fetch(url, { signal: searchAbort.signal });
@@ -713,15 +736,7 @@ function payload(){
   };
 }
 
-function showBanner(id, cls, txt){
-  var e = document.getElementById(id);
-  e.className = "banner " + cls;
-  e.textContent = txt;
-}
-function hideBanner(id){
-  var e = document.getElementById(id);
-  e.className = "banner hidden";
-}
+// showBanner/hideBanner/escapeHtml are shared, defined once in app.js.
 
 // Client-side validation mirrors the server's own rules (see
 // _build_order_from_web in server.py) so obviously-invalid input is caught
@@ -764,7 +779,7 @@ function renderLiveReview(){
   contentEl.classList.remove("hidden");
   var priceLine = o.order_type === "MARKET" ? "Market" : ("Limit @ ₹" + o.limit_price);
   var rows =
-    '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">' +
+    '<div style="display:flex;align-items:baseline;gap:var(--space-2);margin-bottom:var(--space-3)">' +
     '<span class="badge ' + (o.side === "BUY" ? "badge-buy" : "badge-sell") + '">' + o.side + '</span>' +
     '<span class="title-m data">' + o.symbol + '</span></div>' +
     '<div class="review-row"><span class="review-k">Quantity</span><span class="review-v data">' + o.quantity + '</span></div>' +
@@ -838,8 +853,6 @@ function back(){
   hideBanner("confirmMsg");
   document.getElementById("formCard").scrollIntoView({ behavior: "smooth", block: "start" });
 }
-
-function escapeHtml(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
 async function place(){
   [["placeBtn","placeBtnLabel","placeSpinner"],["placeBtnDesktop","placeBtnLabelDesktop","placeSpinnerDesktop"]].forEach(function(ids){

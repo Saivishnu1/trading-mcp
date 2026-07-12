@@ -16,7 +16,8 @@ body {
   background: var(--surface-0);
   color: var(--content-primary);
   min-height: 100vh;
-  overflow-x: hidden; /* no horizontal scroll, ever — Phase 6 requirement */
+  min-height: 100dvh; /* Safari: dvh excludes the address bar's variable space, so content isn't clipped/overflowed as it shows/hides */
+  overflow-x: hidden; /* no horizontal scroll, ever */
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -31,6 +32,19 @@ h1, h2, h3, h4, h5, h6, p { margin: 0; }
   box-shadow: var(--focus-ring);
   border-radius: var(--radius-sm);
 }
+
+/* ── Lucide icon sizing — was duplicated identically across all 4 pages;
+   promoted here. display:inline-flex (not the <i> tag's default
+   display:inline) is required so width/height actually apply BEFORE
+   lucide.createIcons() swaps <i data-lucide> for an <svg> — inline
+   elements ignore width/height, which would otherwise let the icon's
+   reserved space collapse to zero on a slow connection and cause a
+   layout shift when the SVG pops in. ── */
+.icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; stroke-width: 2; flex-shrink: 0;
+}
+.icon-sm { width: 14px; height: 14px; }
 
 /* ── Numeric/data role — the one rule every page must follow: every
    money/quantity/id value uses this class, never plain body text. ── */
@@ -159,7 +173,10 @@ input, select, textarea {
   min-height: var(--touch-target-min);
   padding: var(--space-3) var(--space-4);
   font-family: inherit;
-  font-size: var(--text-body-l);
+  /* 16px minimum, not --text-body-l (15px) — iOS Safari auto-zooms the
+     page on focus for any input below 16px, which is jarring and hard to
+     undo one-handed. */
+  font-size: max(16px, var(--text-body-l));
   background: var(--surface-2);
   color: var(--content-primary);
   border: 1.5px solid var(--border-subtle);
@@ -320,6 +337,7 @@ input[type="number"], input.data-input { font-family: var(--font-mono); font-var
 /* ── Layout shells ── */
 .page-shell {
   min-height: 100vh;
+  min-height: 100dvh; /* Safari address-bar-safe height */
   display: flex;
 }
 /* .page-shell-content: the flex sizing every page's own content wrapper
@@ -351,13 +369,4 @@ input[type="number"], input.data-input { font-family: var(--font-mono); font-var
   .page-content { max-width: 1440px; }
 }
 
-.section-gap { margin-top: var(--space-6); }
-.stack > * + * { margin-top: var(--space-4); }
-
-/* Utility row for two-up card grids (positions tablet, home cards) */
-.grid-2 { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
-@media (min-width: 600px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
-
 .hidden { display: none !important; }
-@media (max-width: 599px)  { .hide-compact  { display: none !important; } }
-@media (min-width: 600px)  { .show-compact-only { display: none !important; } }

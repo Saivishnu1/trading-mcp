@@ -28,6 +28,36 @@
   };
 })();
 
+/* ── Banner show/hide — one implementation, used by trade.html and
+   positions.html (was byte-identical duplicated code in both before this
+   consolidation). Expects an element with class="banner ..." — see
+   .banner in components.css. ── */
+function showBanner(id, cls, txt) {
+  var e = document.getElementById(id);
+  if (!e) return;
+  e.className = "banner " + cls;
+  e.textContent = txt;
+}
+function hideBanner(id) {
+  var e = document.getElementById(id);
+  if (!e) return;
+  e.className = "banner hidden";
+}
+
+/* ── Money formatter — signed rupee amount, used by trade.html's live
+   review panel and positions.html's P&L display. ── */
+function fmtMoney(v) {
+  var sign = v >= 0 ? "+" : "";
+  return sign + "₹" + Math.round(Math.abs(v)).toLocaleString() * (v < 0 ? -1 : 1);
+}
+
+/* ── HTML-escape a string for safe interpolation into innerHTML. ── */
+function escapeHtml(s) {
+  var d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 /* ── Copy to clipboard — one implementation, used by every copy button. ── */
 function copyToClipboard(text, btnEl, labelDefault, labelOk) {
   labelDefault = labelDefault || "Copy";

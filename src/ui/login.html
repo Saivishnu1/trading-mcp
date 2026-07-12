@@ -18,7 +18,17 @@
      with the backend and are kept exactly; only their visual styling
      changes here. ── */
 
-  .login-center { min-height: 100vh; }
+  /* .page-shell-content has no centering of its own by design (Phase 1 —
+     shared across pages with very different layouts), so this page must
+     center its own card. Missing display:flex here was the root cause of
+     a real bug: .auth-card's width:100% filled the entire remaining
+     flex-content width next to the nav rail and then capped at
+     max-width:420px, block-left-aligning instead of centering. */
+  .login-center {
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: var(--space-5) var(--space-4);
+  }
 
   .auth-card {
     width: 100%;
@@ -185,8 +195,7 @@
 
   .done-btn { margin-top: var(--space-4); }
 
-  .icon { width: 18px; height: 18px; stroke-width: 2; flex-shrink: 0; }
-  .icon-sm { width: 14px; height: 14px; }
+  /* .icon/.icon-sm are shared, defined once in components.css. */
 </style>
 </head>
 <body>
@@ -353,7 +362,7 @@
       apiKeySection,
 
       '<button type="button" class="ai-setup-toggle" id="ai-setup-toggle" aria-expanded="false" aria-controls="ai-setup-panel">',
-      '  <span><i data-lucide="bot" class="icon icon-sm" style="margin-right:8px;vertical-align:-2px"></i>Connect an AI client instead</span>',
+      '  <span style="display:inline-flex;align-items:center;gap:var(--space-2)"><i data-lucide="bot" class="icon icon-sm"></i>Connect an AI client instead</span>',
       '  <i data-lucide="chevron-down" class="icon icon-sm ai-setup-chevron"></i>',
       '</button>',
 
@@ -374,7 +383,7 @@
       '  <div data-tab-panel="ai" class="setup-panel">',
       '    <p>Settings → Integrations → <strong>Add MCP Server</strong>. Paste the SSE URL, then add the Authorization header to unlock personal tools.</p>',
       '    <div class="code-wrap"><div class="code-block" id="blk-ai-url">' + esc(sseUrl) + '</div><button class="btn btn-ghost btn-sm copy-code-btn" type="button" onclick="copyToClipboard(document.getElementById(\'blk-ai-url\').textContent,this)">Copy</button></div>',
-      '    <p style="margin-top:12px">Authorization header value:</p>',
+      '    <p style="margin-top:var(--space-3)">Authorization header value:</p>',
       '    <div class="code-wrap"><div class="code-block" id="blk-ai-hdr">' + esc(bearer) + '</div><button class="btn btn-ghost btn-sm copy-code-btn" type="button" onclick="copyToClipboard(document.getElementById(\'blk-ai-hdr\').textContent,this)">Copy</button></div>',
       '  </div>',
 
@@ -391,7 +400,7 @@
       '  <div data-tab-panel="pm" class="setup-panel">',
       '    <p>New → MCP Server → <strong>SSE</strong> → paste the URL, then add the Authorization header:</p>',
       '    <div class="code-wrap"><div class="code-block" id="blk-pm-url">' + esc(sseUrl) + '</div><button class="btn btn-ghost btn-sm copy-code-btn" type="button" onclick="copyToClipboard(document.getElementById(\'blk-pm-url\').textContent,this)">Copy</button></div>',
-      '    <p style="margin-top:12px">Authorization header value:</p>',
+      '    <p style="margin-top:var(--space-3)">Authorization header value:</p>',
       '    <div class="code-wrap"><div class="code-block" id="blk-pm-hdr">' + esc(bearer) + '</div><button class="btn btn-ghost btn-sm copy-code-btn" type="button" onclick="copyToClipboard(document.getElementById(\'blk-pm-hdr\').textContent,this)">Copy</button></div>',
       '  </div>',
       '</div>',
