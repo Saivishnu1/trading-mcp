@@ -298,6 +298,11 @@ _FONTS_DIR = os.path.join(_SHARED_DIR, "fonts")
 # and render-blocking). Static bytes loaded once at import time, same
 # pattern as _SHARED_CSS/_SHARED_JS below.
 _LUCIDE_JS = open(os.path.join(_VENDOR_DIR, "lucide.js"), encoding="utf-8").read()
+# Candlestick chart (2026-07-12) — TradingView Lightweight Charts v5.2.0,
+# Apache 2.0, self-hosted same-origin same as Lucide above (no CDN). Only
+# trade.html loads this (via its own <script> tag, not _SHARED_HEAD_TAG) —
+# it's the only page that needs it.
+_LIGHTWEIGHT_CHARTS_JS = open(os.path.join(_VENDOR_DIR, "lightweight-charts.js"), encoding="utf-8").read()
 _FONT_INTER = open(os.path.join(_FONTS_DIR, "inter-var.woff2"), "rb").read()
 _FONT_JBMONO = open(os.path.join(_FONTS_DIR, "jbmono-var.woff2"), "rb").read()
 
@@ -336,6 +341,7 @@ _NAV_PARTIAL = open(os.path.join(_SHARED_DIR, "nav.html"), encoding="utf-8").rea
 _SHARED_CSS_V = _content_hash(_SHARED_CSS)
 _SHARED_JS_V = _content_hash(_SHARED_JS)
 _LUCIDE_JS_V = _content_hash(_LUCIDE_JS)
+_LIGHTWEIGHT_CHARTS_JS_V = _content_hash(_LIGHTWEIGHT_CHARTS_JS)
 
 _SHARED_HEAD_TAG = (
     '<link rel="stylesheet" href="/ui/shared.css?v={css_v}">\n'
@@ -906,6 +912,15 @@ async def _app(scope, receive, send):
             await send({"type": "http.response.body", "body": body})
             return
 
+        if path == "/ui/lightweight-charts.js":
+            body = _LIGHTWEIGHT_CHARTS_JS.encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/javascript; charset=utf-8"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"cache-control", b"public, max-age=31536000, immutable"]]})
+            await send({"type": "http.response.body", "body": body})
+            return
+
         if path == "/ui/fonts/inter-var.woff2":
             await send({"type": "http.response.start", "status": 200,
                         "headers": [[b"content-type", b"font/woff2"],
@@ -1160,7 +1175,8 @@ async def _app(scope, receive, send):
         # order"). These sit before the MCP fall-through and never touch
         # current_user — TRADE_PIN is the sole gate.
         if path == "/trade" and method == "GET":
-            await _send_html(send, 200, _with_shared(_TRADE_TEMPLATE, "trade"))
+            html = _TRADE_TEMPLATE.replace("{lightweight_charts_v}", _LIGHTWEIGHT_CHARTS_JS_V)
+            await _send_html(send, 200, _with_shared(html, "trade"))
             return
 
         if path == "/trade/symbols" and method == "GET":
@@ -1181,6 +1197,31 @@ async def _app(scope, receive, send):
                 await _send_json(send, 502, {"error": f"symbol search failed: {exc}"})
                 return
             await _send_json(send, 200, {"results": results})
+            return
+
+        if path == "/trade/candles" and method == "GET":
+            # Candlestick chart data (2026-07-12) — PIN-gated like every
+            # other /trade* route. Purely additive: read-only, no order
+            # placement or broker-state change here.
+            qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+            pin = (qs.get("pin", [""])[0]).strip()
+            exchange = (qs.get("exchange", [""])[0]).strip()
+            security_id = (qs.get("security_id", [""])[0]).strip()
+            interval = (qs.get("interval", [""])[0]).strip()
+            if not _trade_pin_ok(pin):
+                await _send_json(send, 403, {"error": "invalid PIN"})
+                return
+            from src.execution.chart_service import get_candles
+            try:
+                result = await get_candles(exchange, security_id, interval)
+            except Exception as exc:
+                await _send_json(send, 502, {
+                    "status": "error", "error": "broker_unavailable",
+                    "message": f"Chart data fetch failed: {exc}",
+                })
+                return
+            status = 200 if result.get("status") == "ok" else 502
+            await _send_json(send, status, result)
             return
 
         if path == "/trade/preview" and method == "POST":
