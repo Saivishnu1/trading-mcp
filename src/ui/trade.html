@@ -3,287 +3,507 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Place Order</title>
+<title>Trade — Zerodha</title>
+<script src="https://unpkg.com/lucide@latest"></script>
 {shared_head}
 <style>
-  :root {
-    color-scheme: light dark;
-    --bg: #f4f5f8; --card: #ffffff; --border: #e3e6eb; --text: #14161a; --muted: #6b7280;
-    --accent: #2d6cdf; --accent-ink: #ffffff;
-    --buy: #0a8f4f; --buy-bg: #e7f8ee; --sell: #d1392a; --sell-bg: #fdecea;
-    --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
-    --radius: 14px;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0e0f13; --card: #191b22; --border: #2a2d38; --text: #eef0f4; --muted: #9aa1af;
-      --accent: #5b8dff; --accent-ink: #0e0f13;
-      --buy: #35d17e; --buy-bg: #10281c; --sell: #ff6b5e; --sell-bg: #2c1512;
-      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.35);
+  /* ── Trade-page-specific layout only — tokens/components/nav from the
+     shared design system (Phase 1). Backend contract is UNCHANGED: same
+     /trade/symbols, /trade/preview, /trade/place endpoints, same request
+     payload shape (payload()), same response handling. Only markup/CSS/
+     presentation logic changed below. ── */
+
+  .trade-layout { display: flex; flex-direction: column; gap: var(--space-4); }
+
+  /* Desktop: multi-panel workspace, not a centered narrow form. */
+  @media (min-width: 1024px) {
+    .trade-layout {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      grid-template-areas:
+        "form   review"
+        "chart  market";
+      gap: var(--space-4);
+      align-items: start;
     }
+    .panel-form   { grid-area: form; }
+    .panel-review { grid-area: review; position: sticky; top: var(--space-4); }
+    .panel-chart  { grid-area: chart; }
+    .panel-market { grid-area: market; }
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    margin: 0; padding: 20px 16px 40px; max-width: 460px; margin-inline: auto;
-    background: var(--bg); color: var(--text);
+  @media (min-width: 1600px) {
+    .trade-layout { grid-template-columns: 1.1fr 0.9fr 0.7fr; grid-template-areas: "form chart review" "form market review"; }
   }
-  h1 { font-size: 1.25rem; font-weight: 700; margin: 4px 0 18px; letter-spacing: -0.01em; }
-  .card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
-  }
-  label {
-    display: block; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
-    text-transform: uppercase; color: var(--muted); margin: 14px 0 6px;
-  }
-  label:first-of-type { margin-top: 0; }
-  input, select {
-    width: 100%; padding: 12px 14px; font-size: 1rem; font-family: inherit;
-    border: 1.5px solid var(--border); border-radius: 10px; background: var(--card);
-    color: var(--text); transition: border-color .15s;
-  }
-  input:focus, select:focus { outline: none; border-color: var(--accent); }
-  select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
 
-  .row { display: flex; gap: 10px; }
-  .row > * { flex: 1; min-width: 0; }
+  .panel-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  .panel-head .icon { color: var(--content-tertiary); }
 
-  /* Symbol search + autocomplete */
+  /* Symbol search */
   .symbol-wrap { position: relative; }
-  #symbol { text-transform: uppercase; font-weight: 600; letter-spacing: .01em; }
-  .symbol-status { position: absolute; right: 12px; top: 50%; transform: translateY(calc(-50% + 17px)); font-size: .78rem; pointer-events: none; }
-  .symbol-status.ok { color: var(--buy); } .symbol-status.pending { color: var(--muted); }
+  #symbol { text-transform: uppercase; font-weight: var(--weight-semibold); letter-spacing: 0.01em; padding-right: 70px; }
+  .symbol-status {
+    position: absolute; right: var(--space-3); top: 38px;
+    font-size: var(--text-body-s); pointer-events: none;
+  }
+  .symbol-status.ok { color: var(--buy); display: flex; align-items: center; gap: 4px; }
+  .symbol-status.pending { color: var(--content-tertiary); }
   #dropdown {
     position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20;
-    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-    box-shadow: var(--shadow); max-height: 260px; overflow-y: auto; display: none;
+    background: var(--surface-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg); max-height: 320px; overflow-y: auto; display: none;
   }
   #dropdown.open { display: block; }
-  .dd-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); }
+  .dd-item {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4); cursor: pointer;
+    border-bottom: 1px solid var(--border-subtle);
+    min-height: var(--touch-target-min);
+  }
   .dd-item:last-child { border-bottom: none; }
-  .dd-item:hover, .dd-item.active { background: var(--bg); }
-  .dd-tag { font-size: .95rem; }
+  .dd-item:hover, .dd-item.active { background: var(--surface-2); }
+  .dd-icon { color: var(--content-tertiary); flex-shrink: 0; }
   .dd-main { flex: 1; min-width: 0; }
-  .dd-sym { font-weight: 700; font-size: .92rem; }
-  .dd-name { font-size: .76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dd-expiry { font-size: .76rem; color: var(--accent); font-weight: 600; white-space: nowrap; }
-  .dd-exch { font-size: .68rem; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
-  .dd-empty { padding: 14px; font-size: .85rem; color: var(--muted); text-align: center; }
+  .dd-sym { font-weight: var(--weight-semibold); font-size: var(--text-body-m); }
+  .dd-name { font-size: var(--text-body-s); color: var(--content-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dd-expiry { font-size: var(--text-body-s); color: var(--accent); font-weight: var(--weight-medium); white-space: nowrap; }
+  .dd-exch { font-size: 11px; font-weight: var(--weight-bold); color: var(--content-tertiary); border: 1px solid var(--border-subtle); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; }
+  .dd-empty { padding: var(--space-5); font-size: var(--text-body-s); color: var(--content-tertiary); text-align: center; }
 
-  .side { display: flex; gap: 10px; margin-top: 6px; }
-  .side button {
-    flex: 1; padding: 13px; font-size: .95rem; font-weight: 700; letter-spacing: .02em;
-    border: 1.5px solid var(--border); border-radius: 10px; cursor: pointer;
-    background: var(--card); color: var(--muted); transition: all .12s;
+  /* BUY/SELL segmented control — larger, clearer than a plain button pair */
+  .side-toggle { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+  .side-btn {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: var(--space-2);
+    min-height: 52px; padding: var(--space-3); font-size: var(--text-body-l); font-weight: var(--weight-bold);
+    letter-spacing: 0.01em; border: 1.5px solid var(--border-subtle); border-radius: var(--radius-sm);
+    cursor: pointer; background: var(--surface-2); color: var(--content-tertiary);
+    transition: all var(--dur-micro) var(--ease-standard); font-family: inherit;
   }
-  .side button.buy.active  { background: var(--buy-bg);  color: var(--buy);  border-color: var(--buy); }
-  .side button.sell.active { background: var(--sell-bg); color: var(--sell); border-color: var(--sell); }
+  .side-btn:active { transform: scale(0.98); }
+  .side-btn.buy.on  { background: var(--buy-surface);  color: var(--buy);  border-color: var(--buy); }
+  .side-btn.sell.on { background: var(--sell-surface); color: var(--sell); border-color: var(--sell); }
 
-  .primary {
-    width: 100%; padding: 15px; font-size: 1rem; font-weight: 700; letter-spacing: .01em;
-    color: var(--accent-ink); background: var(--accent); border: none; border-radius: 11px;
-    cursor: pointer; margin-top: 16px; transition: opacity .12s, transform .05s;
+  /* Order type — segmented, not a native select, for a more premium feel
+     and better touch targets */
+  .seg-control { display: flex; gap: 2px; padding: 2px; background: var(--surface-2); border-radius: var(--radius-sm); }
+  .seg-btn {
+    flex: 1; min-height: 40px; padding: var(--space-2) var(--space-3);
+    font-size: var(--text-body-s); font-weight: var(--weight-semibold); font-family: inherit;
+    border: none; border-radius: calc(var(--radius-sm) - 2px); cursor: pointer;
+    background: transparent; color: var(--content-secondary);
+    transition: all var(--dur-micro) var(--ease-standard);
   }
-  .primary:active { transform: scale(.98); }
-  .primary:disabled { opacity: .45; cursor: default; }
-  .secondary {
-    width: 100%; padding: 13px; font-size: .9rem; font-weight: 600; margin-top: 8px;
-    background: transparent; color: var(--muted); border: 1.5px solid var(--border);
-    border-radius: 11px; cursor: pointer;
+  .seg-btn.on { background: var(--surface-1); color: var(--content-primary); box-shadow: var(--shadow-sm); }
+
+  /* Quantity stepper */
+  .qty-stepper { display: flex; align-items: stretch; gap: var(--space-2); }
+  .qty-stepper input { text-align: center; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .qty-step-btn {
+    width: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid var(--border-subtle); border-radius: var(--radius-sm);
+    background: var(--surface-2); color: var(--content-secondary); cursor: pointer;
+  }
+  .qty-step-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .qty-step-btn:active { transform: scale(0.95); }
+
+  .row { display: flex; gap: var(--space-3); }
+  .row > * { flex: 1; min-width: 0; }
+
+  #limitWrap { display: none; margin-top: var(--space-4); }
+
+  /* SL/Target/Trailing — a clearly labeled, always-visible section on
+     desktop (room exists); collapsible on mobile via the same toggle
+     pattern, expanded automatically by the Positions deep link. */
+  .protection-toggle {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    padding: var(--space-3) 0; background: none; border: none; cursor: pointer; font-family: inherit;
+    color: var(--content-secondary); font-size: var(--text-body-m); font-weight: var(--weight-medium);
+    min-height: var(--touch-target-min); margin-top: var(--space-3); border-top: 1px solid var(--border-subtle);
+  }
+  .protection-toggle:hover { color: var(--content-primary); }
+  .protection-chevron { transition: transform var(--dur-transition) var(--ease-standard); }
+  .protection-toggle[aria-expanded="true"] .protection-chevron { transform: rotate(180deg); }
+  .protection-panel { display: none; }
+  .protection-panel.open { display: block; }
+  .protection-hint {
+    font-size: var(--text-body-s); color: var(--content-tertiary); line-height: var(--leading-normal);
+    margin-top: var(--space-2);
+  }
+  @media (min-width: 1024px) {
+    /* Desktop has room — show protection open by default, still collapsible */
+    .protection-panel { display: block; }
   }
 
-  #limitWrap { display: none; }
+  .place-row { margin-top: var(--space-5); }
 
-  .sl-toggle {
-    display: flex; align-items: center; gap: 6px; cursor: pointer;
-    color: var(--accent); font-weight: 600; font-size: .85rem;
-    text-transform: none; letter-spacing: 0; margin-top: 16px;
+  .field-error-text {
+    font-size: var(--text-body-s); color: var(--sell); margin-top: var(--space-1); display: none;
   }
-  #slToggleIcon { display: inline-block; transition: transform .15s; font-size: .75rem; }
-  #slTargetWrap { margin-top: 8px; }
+  .field.invalid .field-error-text { display: block; }
+  .field.invalid input, .field.invalid select { border-color: var(--sell); }
 
-  .msg {
-    padding: 12px 14px; border-radius: 10px; margin-top: 12px; font-size: .88rem;
-    line-height: 1.5; white-space: pre-wrap; display: none;
+  /* Live review panel */
+  .review-row { display: flex; justify-content: space-between; align-items: baseline; padding: var(--space-2) 0; border-top: 1px solid var(--border-subtle); gap: var(--space-3); }
+  .review-row:first-child { border-top: none; }
+  .review-k { font-size: var(--text-body-s); color: var(--content-tertiary); }
+  .review-v { font-size: var(--text-body-s); font-weight: var(--weight-medium); text-align: right; }
+  .review-empty { text-align: center; padding: var(--space-6) var(--space-3); color: var(--content-tertiary); font-size: var(--text-body-s); }
+  .review-empty .icon { margin-bottom: var(--space-2); opacity: 0.5; }
+
+  .live-quote { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-4); }
+  .live-quote-price { font-size: var(--text-data-l); }
+  .live-quote-change { font-size: var(--text-body-m); font-weight: var(--weight-medium); }
+
+  /* Chart placeholder — honest, not fake. No chart data source exists in
+     this codebase's web trading path today; this is a designed slot for
+     future integration, not invented functionality. */
+  .chart-placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: var(--space-2); min-height: 220px; color: var(--content-tertiary);
+    border: 1.5px dashed var(--border-subtle); border-radius: var(--radius-md);
   }
-  .msg.err { background: var(--sell-bg); color: var(--sell); display: block; }
-  .msg.ok  { background: var(--buy-bg);  color: var(--buy);  display: block; }
+  .chart-placeholder .icon { width: 32px; height: 32px; opacity: 0.4; }
+  .chart-placeholder-title { font-size: var(--text-body-m); font-weight: var(--weight-medium); color: var(--content-secondary); }
+  .chart-placeholder-sub { font-size: var(--text-body-s); }
 
-  .summary-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
-  .summary-side { font-size: .78rem; font-weight: 800; letter-spacing: .04em; padding: 3px 8px; border-radius: 6px; }
-  .summary-side.BUY  { background: var(--buy-bg);  color: var(--buy); }
-  .summary-side.SELL { background: var(--sell-bg); color: var(--sell); }
-  .summary-sym { font-size: 1.15rem; font-weight: 800; }
-  .summary-name { font-size: .8rem; color: var(--muted); margin-bottom: 12px; }
-  .summary-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: .9rem; }
-  .summary-grid dt { color: var(--muted); }
-  .summary-grid dd { margin: 0; font-weight: 600; }
+  /* Mobile guided flow */
+  .mobile-only { display: block; }
+  .desktop-only { display: none; }
+  @media (min-width: 1024px) {
+    .mobile-only { display: none; }
+    .desktop-only { display: block; }
+  }
 
-  .hint { font-size: .74rem; color: var(--muted); margin-top: 10px; line-height: 1.5; }
-  .hint.warn { color: var(--sell); }
+  .step-progress {
+    font-size: var(--text-body-s); color: var(--content-tertiary); margin-bottom: var(--space-4);
+  }
+  .step-bottom-bar {
+    position: sticky; bottom: 0; left: 0; right: 0;
+    background: var(--surface-0);
+    border-top: 1px solid var(--border-subtle);
+    padding: var(--space-3) 0;
+    margin: var(--space-5) calc(-1 * var(--space-4)) calc(-1 * var(--bottom-nav-height));
+    padding-left: var(--space-4); padding-right: var(--space-4);
+    padding-bottom: calc(var(--space-3) + var(--bottom-nav-height));
+    display: flex; gap: var(--space-3);
+  }
+  @media (min-width: 600px) {
+    .step-bottom-bar { margin-bottom: 0; padding-bottom: var(--space-3); }
+  }
+  @media (min-width: 1024px) {
+    .step-bottom-bar { position: static; margin: var(--space-5) 0 0; padding: 0; border-top: none; background: none; }
+  }
 
+  .icon { width: 18px; height: 18px; stroke-width: 2; flex-shrink: 0; }
+  .icon-sm { width: 14px; height: 14px; }
 </style>
 </head>
 <body>
 <div class="page-shell">
 {nav}
 <div class="page-shell-content page-content">
-<h1>📲 Place Order</h1>
 
-<div class="card" id="formCard">
-  <label>PIN</label>
-  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+  <h1 class="title-l" style="margin-bottom: var(--space-4)">Place Order</h1>
 
-  <label>Symbol</label>
-  <div class="symbol-wrap">
-    <input id="symbol" type="text" autocomplete="off" placeholder="Search RELIANCE, NIFTY 24200 CE…">
-    <span class="symbol-status" id="symbolStatus"></span>
-    <div id="dropdown"></div>
-  </div>
+  <div class="trade-layout">
 
-  <div class="side">
-    <button type="button" class="buy active" data-side="BUY" onclick="setSide('BUY')">BUY</button>
-    <button type="button" class="sell" data-side="SELL" onclick="setSide('SELL')">SELL</button>
-  </div>
+    <!-- Order form panel -->
+    <div class="panel-form">
+      <div class="card card-pad" id="formCard">
+        <div class="panel-head">
+          <i data-lucide="arrow-left-right" class="icon"></i>
+          <h2 class="title-m">Order details</h2>
+        </div>
 
-  <div class="row">
-    <div>
-      <label id="qtyLabel">Quantity</label>
-      <input id="qty" type="number" min="1" step="1" value="1">
-      <div id="qtyHint" class="hint" style="display:none; margin-top:4px"></div>
-    </div>
-    <div>
-      <label>Order type</label>
-      <select id="orderType" onchange="toggleLimit()">
-        <option value="MARKET">MARKET</option>
-        <option value="LIMIT">LIMIT</option>
-      </select>
-    </div>
-  </div>
+        <div class="field">
+          <label for="pin">PIN</label>
+          <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" aria-label="Trading PIN">
+        </div>
 
-  <div id="limitWrap">
-    <label>Limit price</label>
-    <input id="limitPrice" type="number" min="0" step="0.05" placeholder="e.g. 2870">
-  </div>
+        <div class="field" id="field-symbol">
+          <label for="symbol">Symbol</label>
+          <div class="symbol-wrap">
+            <input id="symbol" type="text" autocomplete="off" placeholder="Search RELIANCE, NIFTY 24200 CE…"
+                   aria-describedby="symbolStatus" data-symbol-search role="combobox" aria-expanded="false"
+                   aria-autocomplete="list" aria-controls="dropdown">
+            <span class="symbol-status" id="symbolStatus" role="status"></span>
+            <div id="dropdown" role="listbox"></div>
+          </div>
+          <div class="field-error-text">Pick a symbol from the search results.</div>
+        </div>
 
-  <div class="row">
-    <div>
-      <label>Product</label>
-      <select id="product">
-        <option value="INTRADAY">INTRADAY</option>
-        <option value="CNC">CNC</option>
-        <option value="MARGIN">MARGIN</option>
-      </select>
-    </div>
-    <div>
-      <label>Exchange</label>
-      <select id="exchange">
-        <option value="NSE">NSE</option>
-        <option value="BSE">BSE</option>
-      </select>
-    </div>
-  </div>
+        <label id="sideLabel" style="margin-top: var(--space-4)">Side</label>
+        <div class="side-toggle" role="radiogroup" aria-labelledby="sideLabel">
+          <button type="button" class="side-btn buy on" data-side="BUY" role="radio" aria-checked="true" onclick="setSide('BUY')">
+            <i data-lucide="trending-up" class="icon"></i>BUY
+          </button>
+          <button type="button" class="side-btn sell" data-side="SELL" role="radio" aria-checked="false" onclick="setSide('SELL')">
+            <i data-lucide="trending-down" class="icon"></i>SELL
+          </button>
+        </div>
 
-  <label class="sl-toggle" id="slToggle" onclick="toggleSlTarget()">
-    <span id="slToggleIcon">▸</span> Add SL / Target (optional)
-  </label>
-  <div id="slTargetWrap" style="display:none">
-    <div class="row">
-      <div>
-        <label>SL trigger price</label>
-        <input id="slTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2820">
+        <div class="row" style="margin-top: var(--space-4)">
+          <div class="field" style="margin-bottom:0">
+            <label id="qtyLabel" for="qty">Quantity</label>
+            <div class="qty-stepper">
+              <button type="button" class="qty-step-btn" onclick="stepQty(-1)" aria-label="Decrease quantity"><i data-lucide="minus" class="icon-sm"></i></button>
+              <input id="qty" type="number" min="1" step="1" value="1" inputmode="numeric">
+              <button type="button" class="qty-step-btn" onclick="stepQty(1)" aria-label="Increase quantity"><i data-lucide="plus" class="icon-sm"></i></button>
+            </div>
+            <div id="qtyHint" class="field-error-text" style="display:none; color: var(--content-tertiary)"></div>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label id="orderTypeLabel">Order type</label>
+            <div class="seg-control" role="radiogroup" aria-labelledby="orderTypeLabel">
+              <button type="button" class="seg-btn on" data-order-type="MARKET" onclick="setOrderType('MARKET')">MARKET</button>
+              <button type="button" class="seg-btn" data-order-type="LIMIT" onclick="setOrderType('LIMIT')">LIMIT</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="limitWrap" class="field">
+          <label for="limitPrice">Limit price</label>
+          <input id="limitPrice" type="number" min="0" step="0.05" placeholder="e.g. 2870" inputmode="decimal">
+        </div>
+
+        <div class="row" style="margin-top: var(--space-4)">
+          <div class="field" style="margin-bottom:0">
+            <label for="product">Product</label>
+            <select id="product">
+              <option value="INTRADAY">INTRADAY</option>
+              <option value="CNC">CNC</option>
+              <option value="MARGIN">MARGIN</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label for="exchange">Exchange</label>
+            <select id="exchange">
+              <option value="NSE">NSE</option>
+              <option value="BSE">BSE</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="button" class="protection-toggle" id="protectionToggle" aria-expanded="false" aria-controls="protectionPanel" onclick="toggleProtection()">
+          <span><i data-lucide="shield" class="icon-sm" style="margin-right:8px;vertical-align:-2px"></i>SL / Target / Trailing SL <span class="text-tertiary" style="font-weight:400">(optional)</span></span>
+          <i data-lucide="chevron-down" class="icon-sm protection-chevron"></i>
+        </button>
+        <div class="protection-panel" id="protectionPanel">
+          <div class="row">
+            <div class="field">
+              <label for="slTrigger">SL trigger price</label>
+              <input id="slTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2820" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="slLimit">SL limit price</label>
+              <input id="slLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger" inputmode="decimal">
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="tgtTrigger">Target trigger price</label>
+              <input id="tgtTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2950" inputmode="decimal">
+            </div>
+            <div class="field">
+              <label for="tgtLimit">Target limit price</label>
+              <input id="tgtLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger" inputmode="decimal">
+            </div>
+          </div>
+          <div class="field">
+            <label for="trailPoints">Trailing SL (points)</label>
+            <input id="trailPoints" type="number" min="0" step="0.5" placeholder="e.g. 5 — requires SL above" inputmode="decimal">
+            <div class="field-error-text" id="trailError">Trailing SL requires an SL trigger price.</div>
+          </div>
+          <div class="protection-hint">
+            SL/Target route through INDstocks' Smart Order endpoint. Trailing SL has no native broker support — this app ratchets it for you via a live price feed, so it only works while the server is running.
+          </div>
+        </div>
+
+        <div class="step-bottom-bar mobile-only">
+          <button class="btn btn-primary btn-block btn-lg" id="previewBtn" onclick="preview()">
+            <span id="previewBtnLabel">Review order</span>
+            <span class="spinner hidden" id="previewSpinner" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="desktop-only" style="margin-top: var(--space-5)">
+          <button class="btn btn-primary btn-block btn-lg" id="previewBtnDesktop" onclick="preview()">
+            <span id="previewBtnLabelDesktop">Review order</span>
+            <span class="spinner hidden" id="previewSpinnerDesktop" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="text-tertiary" style="font-size: var(--text-body-s); margin-top: var(--space-3)">MARKET orders are placed as a LIMIT at the live price (INDstocks rule).</div>
+        <div class="banner hidden" id="formMsg" role="alert"></div>
       </div>
-      <div>
-        <label>SL limit price</label>
-        <input id="slLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger">
+    </div>
+
+    <!-- Live review panel -->
+    <div class="panel-review">
+      <div class="card card-pad" id="reviewCard">
+        <div class="panel-head">
+          <i data-lucide="clipboard-check" class="icon"></i>
+          <h2 class="title-m">Review</h2>
+        </div>
+        <div id="reviewEmpty" class="review-empty">
+          <i data-lucide="file-text" class="icon" style="width:28px;height:28px"></i>
+          <div>Fill in the order details to see a live preview here.</div>
+        </div>
+        <div id="reviewContent" class="hidden"></div>
+      </div>
+
+      <!-- Confirm card — shown after a successful /trade/preview -->
+      <div class="card card-pad hidden" id="confirmCard" style="margin-top: var(--space-4)">
+        <div class="panel-head">
+          <i data-lucide="check-circle" class="icon"></i>
+          <h2 class="title-m">Confirm order</h2>
+        </div>
+        <div style="display:flex; align-items:baseline; gap: var(--space-2); margin-bottom: var(--space-1)">
+          <span class="badge" id="sumSide"></span>
+          <span class="title-m data" id="sumSym"></span>
+        </div>
+        <div class="text-tertiary" style="font-size: var(--text-body-s); margin-bottom: var(--space-3)" id="sumName"></div>
+        <div id="sumGrid"></div>
+        <div class="step-bottom-bar mobile-only">
+          <button class="btn btn-secondary" onclick="back()" aria-label="Back to edit order"><i data-lucide="arrow-left" class="icon"></i></button>
+          <button class="btn btn-primary btn-block btn-lg" id="placeBtn" onclick="place()">
+            <i data-lucide="check" class="icon"></i><span id="placeBtnLabel">Confirm &amp; place order</span>
+            <span class="spinner hidden" id="placeSpinner" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="desktop-only" style="margin-top: var(--space-4); display:flex; gap: var(--space-3)">
+          <button class="btn btn-secondary" onclick="back()">Back</button>
+          <button class="btn btn-primary btn-block btn-lg" id="placeBtnDesktop" onclick="place()">
+            <i data-lucide="check" class="icon"></i><span id="placeBtnLabelDesktop">Confirm &amp; place order</span>
+            <span class="spinner hidden" id="placeSpinnerDesktop" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="banner hidden" id="confirmMsg" role="alert"></div>
       </div>
     </div>
-    <div class="row">
-      <div>
-        <label>Target trigger price</label>
-        <input id="tgtTrigger" type="number" min="0" step="0.05" placeholder="e.g. 2950">
-      </div>
-      <div>
-        <label>Target limit price</label>
-        <input id="tgtLimit" type="number" min="0" step="0.05" placeholder="defaults to trigger">
+
+    <!-- Chart placeholder (desktop only — honest, not fake; no chart data
+         source exists in this app's web trading path today) -->
+    <div class="panel-chart desktop-only">
+      <div class="card card-pad">
+        <div class="panel-head">
+          <i data-lucide="line-chart" class="icon"></i>
+          <h2 class="title-m">Chart</h2>
+        </div>
+        <div class="chart-placeholder">
+          <i data-lucide="bar-chart-3" class="icon"></i>
+          <div class="chart-placeholder-title">Chart coming soon</div>
+          <div class="chart-placeholder-sub">Reserved for future live chart integration</div>
+        </div>
       </div>
     </div>
-    <label>Trailing SL (points)</label>
-    <input id="trailPoints" type="number" min="0" step="0.5" placeholder="e.g. 5 — requires SL above">
-    <div class="hint">SL/Target route through INDstocks' Smart Order endpoint. Trailing SL has no native broker support — this app ratchets it for you via a live price feed, so it only works while the server is running.</div>
-  </div>
 
-  <button class="primary" id="previewBtn" onclick="preview()">Review order →</button>
-  <div class="hint">MARKET orders are placed as a LIMIT at the live price (INDstocks rule).</div>
-  <div class="msg" id="formMsg"></div>
-</div>
+    <!-- Market info: live quote once a symbol with a security_id is
+         picked (real WebSocket via /ws/prices, same protocol as
+         /positions — no new backend). -->
+    <div class="panel-market desktop-only">
+      <div class="card card-pad">
+        <div class="panel-head">
+          <i data-lucide="activity" class="icon"></i>
+          <h2 class="title-m">Market info</h2>
+          <span class="badge badge-neutral" id="quoteConnBadge" style="margin-left:auto">
+            <span class="status-dot" id="quoteConnDot"></span><span id="quoteConnText">No symbol</span>
+          </span>
+        </div>
+        <div id="liveQuoteEmpty" class="review-empty" style="padding: var(--space-5) var(--space-3)">
+          <i data-lucide="radio" class="icon" style="width:24px;height:24px"></i>
+          <div>Pick a symbol to see its live price here.</div>
+        </div>
+        <div id="liveQuoteContent" class="hidden">
+          <div class="live-quote">
+            <span class="data live-quote-price live-value" id="liveQuotePrice">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
-<div class="card" id="confirmCard" style="display:none;">
-  <div class="summary-head">
-    <span class="summary-side" id="sumSide"></span>
-    <span class="summary-sym" id="sumSym"></span>
   </div>
-  <div class="summary-name" id="sumName"></div>
-  <dl class="summary-grid" id="sumGrid"></dl>
-  <button class="primary" id="placeBtn" onclick="place()">✅ Confirm & place order</button>
-  <button class="secondary" onclick="back()">← Back</button>
-  <div class="msg" id="confirmMsg"></div>
-</div>
 
 </div>
 </div>
 <script>
 let side = "BUY";
-let selected = null;   // {symbol, name, exchange, segment} once chosen from the dropdown
+let orderType = "MARKET";
+let selected = null;   // {symbol, name, exchange, segment, security_id, lot_size} once chosen from the dropdown
 let ddItems = [];
 let ddActive = -1;
 let searchAbort = null;
 let searchDebounce = null;
+let previewDebounce = null;
+let quoteWs = null;
 
-function setSide(s){ side=s;
-  document.querySelectorAll(".side button").forEach(b=>b.classList.toggle("active", b.dataset.side===s)); }
-function toggleLimit(){ document.getElementById("limitWrap").style.display =
-  document.getElementById("orderType").value==="LIMIT" ? "block":"none"; }
-function toggleSlTarget(){
-  const wrap = document.getElementById("slTargetWrap");
-  const open = wrap.style.display === "block";
-  wrap.style.display = open ? "none" : "block";
-  document.getElementById("slToggleIcon").style.transform = open ? "" : "rotate(90deg)";
+function setSide(s){
+  side = s;
+  document.querySelectorAll(".side-btn").forEach(function(b){
+    var on = b.dataset.side === s;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", String(on));
+  });
+  scheduleReviewUpdate();
+}
+function setOrderType(t){
+  orderType = t;
+  document.querySelectorAll("[data-order-type]").forEach(function(b){ b.classList.toggle("on", b.dataset.orderType === t); });
+  document.getElementById("limitWrap").style.display = t === "LIMIT" ? "block" : "none";
+  scheduleReviewUpdate();
+}
+function stepQty(delta){
+  var input = document.getElementById("qty");
+  var v = parseInt(input.value, 10) || 0;
+  var step = (selected && selected.lot_size) ? 1 : 1;
+  v = Math.max(1, v + delta * step);
+  input.value = v;
+  updateQtyHint(selectedIfCurrent());
+  scheduleReviewUpdate();
+}
+function toggleProtection(){
+  var panel = document.getElementById("protectionPanel");
+  var btn = document.getElementById("protectionToggle");
+  var open = panel.classList.toggle("open");
+  btn.setAttribute("aria-expanded", String(open));
 }
 
 function currentPin(){ return document.getElementById("pin").value; }
 
 function setSymbolStatus(kind, text){
-  const el = document.getElementById("symbolStatus");
+  var el = document.getElementById("symbolStatus");
   el.className = "symbol-status " + kind;
-  el.textContent = text;
+  el.innerHTML = kind === "ok" ? '<i data-lucide="check" class="icon-sm"></i>' + text : text;
+  if (window.lucide) lucide.createIcons();
 }
 
 function closeDropdown(){
   document.getElementById("dropdown").classList.remove("open");
+  document.getElementById("symbol").setAttribute("aria-expanded", "false");
   ddItems = []; ddActive = -1;
 }
 
 function renderDropdown(results){
-  const dd = document.getElementById("dropdown");
+  var dd = document.getElementById("dropdown");
   ddItems = results; ddActive = -1;
-  if(!results.length){
+  if (!results.length){
     dd.innerHTML = '<div class="dd-empty">No matching symbols</div>';
     dd.classList.add("open");
+    document.getElementById("symbol").setAttribute("aria-expanded", "true");
     return;
   }
-  dd.innerHTML = results.map((r,i) => `
-    <div class="dd-item" data-i="${i}" onmousedown="pickSymbol(${i})">
-      <span class="dd-tag">${r.segment==="DERIVATIVE"?"📈":"📊"}</span>
-      <div class="dd-main">
-        <div class="dd-sym">${r.symbol}</div>
-        <div class="dd-name">${r.name||""}</div>
-      </div>
-      ${r.expiry ? `<span class="dd-expiry">${formatExpiry(r.expiry)}</span>` : ""}
-      <span class="dd-exch">${r.exchange}</span>
-    </div>`).join("");
+  dd.innerHTML = results.map(function(r, i){
+    var icon = r.segment === "DERIVATIVE" ? "trending-up" : "building-2";
+    return '<div class="dd-item" data-i="' + i + '" role="option" onmousedown="pickSymbol(' + i + ')">' +
+      '<i data-lucide="' + icon + '" class="icon dd-icon"></i>' +
+      '<div class="dd-main"><div class="dd-sym">' + r.symbol + '</div><div class="dd-name">' + (r.name || "") + '</div></div>' +
+      (r.expiry ? '<span class="dd-expiry">' + formatExpiry(r.expiry) + '</span>' : '') +
+      '<span class="dd-exch">' + r.exchange + '</span>' +
+    '</div>';
+  }).join("");
   dd.classList.add("open");
+  document.getElementById("symbol").setAttribute("aria-expanded", "true");
+  if (window.lucide) lucide.createIcons();
 }
 
 function formatExpiry(raw){
@@ -291,22 +511,28 @@ function formatExpiry(raw){
   // time component) — several weekly contracts can share the same display
   // symbol (e.g. "NIFTY-JUL2026-27500-PE"), so showing the exact day here is
   // what actually lets the user tell them apart before picking.
-  const d = new Date(raw);
-  if(isNaN(d)) return raw;
+  var d = new Date(raw);
+  if (isNaN(d)) return raw;
   return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
 }
 
+function selectedIfCurrent(){
+  var symbolText = document.getElementById("symbol").value.trim().toUpperCase();
+  return (selected && selected.symbol === symbolText) ? selected : null;
+}
+
 function updateQtyHint(pick){
-  const label = document.getElementById("qtyLabel");
-  const hint = document.getElementById("qtyHint");
+  var label = document.getElementById("qtyLabel");
+  var hint = document.getElementById("qtyHint");
   // lot_size is only known for a handful of confirmed symbols today (see
   // _KNOWN_LOT_SIZES in src/execution/service.py) — everything else falls
   // back to the previous raw-quantity behavior rather than guessing.
-  if(pick && pick.lot_size){
+  if (pick && pick.lot_size){
     label.textContent = "Lots";
     hint.style.display = "block";
-    const lots = parseInt(document.getElementById("qty").value,10) || 0;
-    hint.textContent = "1 lot = " + pick.lot_size + " qty  —  " + (lots * pick.lot_size) + " total qty";
+    hint.style.color = "var(--content-tertiary)";
+    var lots = parseInt(document.getElementById("qty").value, 10) || 0;
+    hint.textContent = "1 lot = " + pick.lot_size + " qty — " + (lots * pick.lot_size) + " total qty";
   } else {
     label.textContent = "Quantity";
     hint.style.display = "none";
@@ -314,38 +540,85 @@ function updateQtyHint(pick){
 }
 
 function pickSymbol(i){
-  const r = ddItems[i];
-  if(!r) return;
+  var r = ddItems[i];
+  if (!r) return;
   selected = r;
   document.getElementById("symbol").value = r.symbol;
   document.getElementById("exchange").value = r.exchange === "BSE" ? "BSE" : "NSE";
-  setSymbolStatus("ok", "✓ " + r.exchange);
+  setSymbolStatus("ok", r.exchange);
+  document.getElementById("field-symbol").classList.remove("invalid");
   closeDropdown();
   updateQtyHint(r);
+  connectQuote(r);
+  scheduleReviewUpdate();
 }
 
 async function onSymbolInput(){
-  const q = document.getElementById("symbol").value.trim();
+  var q = document.getElementById("symbol").value.trim();
   selected = null;
   setSymbolStatus("", "");
   updateQtyHint(null);
-  if(searchDebounce) clearTimeout(searchDebounce);
-  if(q.length < 2){ closeDropdown(); return; }
-  searchDebounce = setTimeout(() => runSearch(q), 200);
+  disconnectQuote();
+  if (searchDebounce) clearTimeout(searchDebounce);
+  if (q.length < 2){ closeDropdown(); return; }
+  searchDebounce = setTimeout(function(){ runSearch(q); }, 200);
 }
 
 async function runSearch(q){
-  const pin = currentPin();
-  if(!pin){ setSymbolStatus("pending", "enter PIN first"); return; }
-  if(searchAbort) searchAbort.abort();
+  var pin = currentPin();
+  if (!pin){ setSymbolStatus("pending", "Enter PIN first"); return; }
+  if (searchAbort) searchAbort.abort();
   searchAbort = new AbortController();
-  try{
-    const url = "/trade/symbols?q=" + encodeURIComponent(q) + "&pin=" + encodeURIComponent(pin);
-    const r = await fetch(url, { signal: searchAbort.signal });
-    const d = await r.json();
-    if(!r.ok){ closeDropdown(); return; }
+  try {
+    var url = "/trade/symbols?q=" + encodeURIComponent(q) + "&pin=" + encodeURIComponent(pin);
+    var r = await fetch(url, { signal: searchAbort.signal });
+    var d = await r.json();
+    if (!r.ok){ closeDropdown(); return; }
     renderDropdown(d.results || []);
-  }catch(e){ /* aborted or network hiccup — ignore, user is still typing */ }
+  } catch (e) { /* aborted or network hiccup — ignore, user is still typing */ }
+}
+
+// Live quote panel (desktop) — reuses the same /ws/prices relay
+// positions.html already uses. Purely additive: connects only when a
+// symbol with a security_id is picked, disconnects on symbol change.
+// Never touches order placement.
+function connectQuote(pick){
+  disconnectQuote();
+  if (!pick || !pick.security_id) return;
+  var pin = currentPin();
+  if (!pin) return;
+  var badge = document.getElementById("quoteConnText");
+  var dot = document.getElementById("quoteConnDot");
+  var instrument = pick.exchange + ":" + pick.security_id;
+  var proto = location.protocol === "https:" ? "wss:" : "ws:";
+  var url = proto + "//" + location.host + "/ws/prices?pin=" + encodeURIComponent(pin) + "&instruments=" + encodeURIComponent(instrument);
+  badge.textContent = "Connecting…";
+  quoteWs = new WebSocket(url);
+  quoteWs.onopen = function(){};
+  quoteWs.onmessage = function(evt){
+    var msg; try { msg = JSON.parse(evt.data); } catch (e) { return; }
+    if (msg.type === "error"){ badge.textContent = "Unavailable"; return; }
+    var ltp = null;
+    if (msg.type === "snapshot") { var vals = Object.values(msg.prices || {}); ltp = vals.length ? vals[0] : null; }
+    if (msg.type === "tick") { ltp = msg.ltp; }
+    if (ltp == null) return;
+    dot.classList.add("live");
+    badge.textContent = "Live";
+    document.getElementById("liveQuoteEmpty").classList.add("hidden");
+    document.getElementById("liveQuoteContent").classList.remove("hidden");
+    var priceEl = document.getElementById("liveQuotePrice");
+    priceEl.textContent = "₹" + ltp.toLocaleString();
+    flashValue(priceEl);
+  };
+  quoteWs.onclose = function(){ dot.classList.remove("live"); badge.textContent = "Disconnected"; };
+  quoteWs.onerror = function(){};
+}
+function disconnectQuote(){
+  if (quoteWs) { quoteWs.close(); quoteWs = null; }
+  document.getElementById("quoteConnDot").classList.remove("live");
+  document.getElementById("quoteConnText").textContent = "No symbol";
+  document.getElementById("liveQuoteEmpty").classList.remove("hidden");
+  document.getElementById("liveQuoteContent").classList.add("hidden");
 }
 
 function prefillFromQuery(){
@@ -354,59 +627,72 @@ function prefillFromQuery(){
   // had picked this exact contract from the dropdown (so weekly-options
   // orders stay unambiguous), sets side to SELL (the deep link's use case
   // today is "sell this position I already hold, but via LIMIT/SL/target"),
-  // and expands the SL/Target section since that's the point of this link.
-  const qs = new URLSearchParams(location.search);
-  const symbol = qs.get("symbol");
-  if(!symbol) return;
-  const exchange = qs.get("exchange") || "NSE";
-  const securityId = qs.get("security_id") || "";
-  const segment = qs.get("segment") || "";
+  // and expands the Protection section since that's the point of this link.
+  var qs = new URLSearchParams(location.search);
+  var symbol = qs.get("symbol");
+  if (!symbol) return;
+  var exchange = qs.get("exchange") || "NSE";
+  var securityId = qs.get("security_id") || "";
+  var segment = qs.get("segment") || "";
   document.getElementById("symbol").value = symbol;
   document.getElementById("exchange").value = exchange === "BSE" ? "BSE" : "NSE";
-  if(securityId){
-    selected = { symbol, exchange, security_id: securityId, segment, name: "" };
-    setSymbolStatus("ok", "✓ " + exchange);
+  if (securityId){
+    selected = { symbol: symbol, exchange: exchange, security_id: securityId, segment: segment, name: "" };
+    setSymbolStatus("ok", exchange);
+    connectQuote(selected);
   }
   setSide("SELL");
-  toggleSlTarget();
+  document.getElementById("protectionPanel").classList.add("open");
+  document.getElementById("protectionToggle").setAttribute("aria-expanded", "true");
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", function(){
   prefillFromQuery();
-  const input = document.getElementById("symbol");
+  var input = document.getElementById("symbol");
   input.addEventListener("input", onSymbolInput);
-  input.addEventListener("keydown", (e) => {
-    const dd = document.getElementById("dropdown");
-    if(!dd.classList.contains("open")) return;
-    if(e.key === "ArrowDown"){ e.preventDefault(); ddActive = Math.min(ddActive+1, ddItems.length-1); highlightActive(); }
-    else if(e.key === "ArrowUp"){ e.preventDefault(); ddActive = Math.max(ddActive-1, 0); highlightActive(); }
-    else if(e.key === "Enter"){ e.preventDefault(); if(ddActive>=0) pickSymbol(ddActive); }
-    else if(e.key === "Escape"){ closeDropdown(); }
+  input.addEventListener("keydown", function(e){
+    var dd = document.getElementById("dropdown");
+    if (!dd.classList.contains("open")) return;
+    if (e.key === "ArrowDown"){ e.preventDefault(); ddActive = Math.min(ddActive + 1, ddItems.length - 1); highlightActive(); }
+    else if (e.key === "ArrowUp"){ e.preventDefault(); ddActive = Math.max(ddActive - 1, 0); highlightActive(); }
+    else if (e.key === "Enter"){ e.preventDefault(); if (ddActive >= 0) pickSymbol(ddActive); }
+    else if (e.key === "Escape"){ closeDropdown(); }
   });
-  input.addEventListener("blur", () => setTimeout(closeDropdown, 150));
-  input.addEventListener("focus", () => { if(ddItems.length) document.getElementById("dropdown").classList.add("open"); });
-  document.getElementById("qty").addEventListener("input", () => {
-    const symbolText = document.getElementById("symbol").value.trim().toUpperCase();
-    updateQtyHint((selected && selected.symbol === symbolText) ? selected : null);
+  input.addEventListener("blur", function(){ setTimeout(closeDropdown, 150); });
+  input.addEventListener("focus", function(){ if (ddItems.length) document.getElementById("dropdown").classList.add("open"); });
+
+  ["qty", "limitPrice", "product", "exchange", "slTrigger", "slLimit", "tgtTrigger", "tgtLimit", "trailPoints"].forEach(function(id){
+    var el = document.getElementById(id);
+    el.addEventListener("input", function(){
+      updateQtyHint(selectedIfCurrent());
+      scheduleReviewUpdate();
+    });
+    el.addEventListener("change", scheduleReviewUpdate);
   });
+
+  if (window.lucide) lucide.createIcons();
 });
 
 function highlightActive(){
-  document.querySelectorAll(".dd-item").forEach((el,i) => el.classList.toggle("active", i===ddActive));
+  document.querySelectorAll(".dd-item").forEach(function(el, i){ el.classList.toggle("active", i === ddActive); });
+}
+
+function num(id){
+  var v = parseFloat(document.getElementById(id).value);
+  return (v > 0) ? v : null;
 }
 
 function payload(){
-  const symbolText = document.getElementById("symbol").value.trim().toUpperCase();
+  var symbolText = document.getElementById("symbol").value.trim().toUpperCase();
   // Only trust `selected` (and its security_id) if the typed text still
   // matches exactly what was picked — guards against sending a stale id if
   // the user edits the field after picking a dropdown result.
-  const pick = (selected && selected.symbol === symbolText) ? selected : null;
-  const qtyInput = parseInt(document.getElementById("qty").value,10) || 0;
+  var pick = (selected && selected.symbol === symbolText) ? selected : null;
+  var qtyInput = parseInt(document.getElementById("qty").value, 10) || 0;
   // qtyInput is "lots" when the picked contract has a known lot_size, else
   // it's already the raw quantity (unchanged behavior for anything not in
   // _KNOWN_LOT_SIZES yet).
-  const quantity = (pick && pick.lot_size) ? qtyInput * pick.lot_size : qtyInput;
-  const num = (id) => { const v = parseFloat(document.getElementById(id).value); return (v>0) ? v : null; };
+  var quantity = (pick && pick.lot_size) ? qtyInput * pick.lot_size : qtyInput;
   return {
     pin: currentPin(),
     symbol: symbolText,
@@ -415,8 +701,8 @@ function payload(){
     expiry: pick ? pick.expiry : null,
     side: side,
     quantity: quantity,
-    order_type: document.getElementById("orderType").value,
-    limit_price: parseFloat(document.getElementById("limitPrice").value||"0"),
+    order_type: orderType,
+    limit_price: parseFloat(document.getElementById("limitPrice").value || "0"),
     product: document.getElementById("product").value,
     exchange: document.getElementById("exchange").value,
     sl_trigger_price: num("slTrigger"),
@@ -426,72 +712,168 @@ function payload(){
     trailing_sl_points: num("trailPoints")
   };
 }
-function show(id,cls,txt){ const e=document.getElementById(id); e.className="msg "+cls; e.textContent=txt; }
 
-async function preview(){
-  show("formMsg","",""); document.getElementById("formMsg").className="msg";
-  const btn=document.getElementById("previewBtn"); btn.disabled=true;
-  try{
-    const r=await fetch("/trade/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())});
-    const d=await r.json();
-    if(!r.ok){ show("formMsg","err", d.error || ("Error "+r.status)); return; }
-    renderSummary(d);
-    window._order = payload();
-    document.getElementById("formCard").style.display="none";
-    document.getElementById("confirmCard").style.display="block";
-  }catch(e){ show("formMsg","err", String(e)); }
-  finally{ btn.disabled=false; }
+function showBanner(id, cls, txt){
+  var e = document.getElementById(id);
+  e.className = "banner " + cls;
+  e.textContent = txt;
+}
+function hideBanner(id){
+  var e = document.getElementById(id);
+  e.className = "banner hidden";
 }
 
-function renderSummary(d){
-  const o = window._order || payload();
-  document.getElementById("sumSide").textContent = o.side;
-  document.getElementById("sumSide").className = "summary-side " + o.side;
-  document.getElementById("sumSym").textContent = o.symbol;
-  document.getElementById("sumName").textContent = selected && selected.name ? selected.name : "";
-  const priceLine = o.order_type === "MARKET" ? "Market (auto-LIMIT @ live price)" : ("Limit @ ₹" + o.limit_price);
-  let rows = `
-    <dt>Quantity</dt><dd>${o.quantity}</dd>
-    <dt>Price</dt><dd>${priceLine}</dd>
-    <dt>Product</dt><dd>${o.product}</dd>
-    <dt>Exchange</dt><dd>${o.exchange}</dd>`;
-  if(o.expiry){ rows += `<dt>Expiry</dt><dd>${formatExpiry(o.expiry)}</dd>`; }
-  if(o.sl_trigger_price){ rows += `<dt>SL</dt><dd>trigger ₹${o.sl_trigger_price}${o.sl_limit_price ? " / limit ₹"+o.sl_limit_price : ""}</dd>`; }
-  if(o.tgt_trigger_price){ rows += `<dt>Target</dt><dd>trigger ₹${o.tgt_trigger_price}${o.tgt_limit_price ? " / limit ₹"+o.tgt_limit_price : ""}</dd>`; }
-  if(o.trailing_sl_points){ rows += `<dt>Trailing SL</dt><dd>${o.trailing_sl_points} points (bot-managed)</dd>`; }
-  document.getElementById("sumGrid").innerHTML = rows;
+// Client-side validation mirrors the server's own rules (see
+// _build_order_from_web in server.py) so obviously-invalid input is caught
+// before a network round trip — the server remains the source of truth
+// for every actual accept/reject decision.
+function validateForm(o){
+  var ok = true;
+  document.getElementById("field-symbol").classList.remove("invalid");
+  document.getElementById("trailError").parentElement.classList.remove("invalid");
 
-  const warnEl = document.getElementById("confirmMsg");
-  const looksLikeOption = /\d(\.\d+)?(CE|PE)$/.test(o.symbol) || o.symbol.endsWith("FUT");
-  if(looksLikeOption && !o.security_id){
-    show("confirmMsg", "err",
-      "⚠️ You typed this symbol without picking it from the dropdown. " +
-      "For weekly options, several expiries can share this exact name — " +
-      "pick the result from the search list to guarantee the right contract.");
-  } else {
-    warnEl.className = "msg"; warnEl.textContent = "";
+  if (!o.symbol){
+    document.getElementById("field-symbol").classList.add("invalid");
+    ok = false;
+  }
+  if (o.trailing_sl_points && !o.sl_trigger_price){
+    document.getElementById("trailError").parentElement.classList.add("invalid");
+    ok = false;
+  }
+  return ok;
+}
+
+// Live review panel — updates as fields change, debounced. This is a
+// pure client-side preview of what payload() currently holds; it does
+// NOT call the server (that only happens on explicit "Review order" tap,
+// which still hits /trade/preview exactly as before).
+function scheduleReviewUpdate(){
+  if (previewDebounce) clearTimeout(previewDebounce);
+  previewDebounce = setTimeout(renderLiveReview, 150);
+}
+function renderLiveReview(){
+  var o = payload();
+  var emptyEl = document.getElementById("reviewEmpty");
+  var contentEl = document.getElementById("reviewContent");
+  if (!o.symbol || !o.quantity){
+    emptyEl.classList.remove("hidden");
+    contentEl.classList.add("hidden");
+    return;
+  }
+  emptyEl.classList.add("hidden");
+  contentEl.classList.remove("hidden");
+  var priceLine = o.order_type === "MARKET" ? "Market" : ("Limit @ ₹" + o.limit_price);
+  var rows =
+    '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:12px">' +
+    '<span class="badge ' + (o.side === "BUY" ? "badge-buy" : "badge-sell") + '">' + o.side + '</span>' +
+    '<span class="title-m data">' + o.symbol + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Quantity</span><span class="review-v data">' + o.quantity + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Price</span><span class="review-v">' + priceLine + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Product</span><span class="review-v">' + o.product + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Exchange</span><span class="review-v">' + o.exchange + '</span></div>';
+  if (o.sl_trigger_price) rows += '<div class="review-row"><span class="review-k">SL</span><span class="review-v data">₹' + o.sl_trigger_price + '</span></div>';
+  if (o.tgt_trigger_price) rows += '<div class="review-row"><span class="review-k">Target</span><span class="review-v data">₹' + o.tgt_trigger_price + '</span></div>';
+  if (o.trailing_sl_points) rows += '<div class="review-row"><span class="review-k">Trailing SL</span><span class="review-v data">' + o.trailing_sl_points + ' pts</span></div>';
+  contentEl.innerHTML = rows;
+}
+
+async function preview(){
+  hideBanner("formMsg");
+  var o = payload();
+  if (!validateForm(o)) return;
+
+  [["previewBtn","previewBtnLabel","previewSpinner"],["previewBtnDesktop","previewBtnLabelDesktop","previewSpinnerDesktop"]].forEach(function(ids){
+    document.getElementById(ids[0]).disabled = true;
+    document.getElementById(ids[1]).textContent = "Reviewing…";
+    document.getElementById(ids[2]).classList.remove("hidden");
+  });
+
+  try {
+    var r = await fetch("/trade/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) });
+    var d = await r.json();
+    if (!r.ok){ showBanner("formMsg", "banner-error", d.error || ("Error " + r.status)); return; }
+    renderSummary(d);
+    window._order = o;
+    document.getElementById("confirmCard").classList.remove("hidden");
+    document.getElementById("confirmCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) {
+    showBanner("formMsg", "banner-error", String(e));
+  } finally {
+    [["previewBtn","previewBtnLabel","previewSpinner"],["previewBtnDesktop","previewBtnLabelDesktop","previewSpinnerDesktop"]].forEach(function(ids){
+      document.getElementById(ids[0]).disabled = false;
+      document.getElementById(ids[1]).textContent = "Review order";
+      document.getElementById(ids[2]).classList.add("hidden");
+    });
   }
 }
 
-function back(){ document.getElementById("confirmCard").style.display="none";
-  document.getElementById("formCard").style.display="block"; show("confirmMsg","",""); }
+function renderSummary(d){
+  var o = window._order || payload();
+  document.getElementById("sumSide").textContent = o.side;
+  document.getElementById("sumSide").className = "badge " + (o.side === "BUY" ? "badge-buy" : "badge-sell");
+  document.getElementById("sumSym").textContent = o.symbol;
+  document.getElementById("sumName").textContent = selected && selected.name ? selected.name : "";
+  var priceLine = o.order_type === "MARKET" ? "Market (auto-LIMIT @ live price)" : ("Limit @ ₹" + o.limit_price);
+  var rows =
+    '<div class="review-row"><span class="review-k">Quantity</span><span class="review-v data">' + o.quantity + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Price</span><span class="review-v">' + priceLine + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Product</span><span class="review-v">' + o.product + '</span></div>' +
+    '<div class="review-row"><span class="review-k">Exchange</span><span class="review-v">' + o.exchange + '</span></div>';
+  if (o.expiry) rows += '<div class="review-row"><span class="review-k">Expiry</span><span class="review-v">' + formatExpiry(o.expiry) + '</span></div>';
+  if (o.sl_trigger_price) rows += '<div class="review-row"><span class="review-k">SL</span><span class="review-v data">trigger ₹' + o.sl_trigger_price + (o.sl_limit_price ? " / limit ₹" + o.sl_limit_price : "") + '</span></div>';
+  if (o.tgt_trigger_price) rows += '<div class="review-row"><span class="review-k">Target</span><span class="review-v data">trigger ₹' + o.tgt_trigger_price + (o.tgt_limit_price ? " / limit ₹" + o.tgt_limit_price : "") + '</span></div>';
+  if (o.trailing_sl_points) rows += '<div class="review-row"><span class="review-k">Trailing SL</span><span class="review-v data">' + o.trailing_sl_points + ' points (bot-managed)</span></div>';
+  document.getElementById("sumGrid").innerHTML = rows;
 
-function escapeHtml(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+  hideBanner("confirmMsg");
+  var looksLikeOption = /\d(\.\d+)?(CE|PE)$/.test(o.symbol) || o.symbol.endsWith("FUT");
+  if (looksLikeOption && !o.security_id){
+    showBanner("confirmMsg", "banner-error",
+      "You typed this symbol without picking it from the dropdown. For weekly options, several expiries can share this exact name — pick the result from the search list to guarantee the right contract.");
+  }
+}
+
+function back(){
+  document.getElementById("confirmCard").classList.add("hidden");
+  hideBanner("confirmMsg");
+  document.getElementById("formCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function escapeHtml(s){ var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
 async function place(){
-  const btn=document.getElementById("placeBtn"); btn.disabled=true; btn.textContent="Placing…";
-  try{
-    const r=await fetch("/trade/place",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(window._order)});
-    const d=await r.json();
-    if(r.ok && d.status==="ok"){
-      const el=document.getElementById("confirmMsg");
-      el.className="msg ok";
-      el.innerHTML = "✅ Order placed. ID: "+escapeHtml(d.order_id||"—")+"<br>Status: "+escapeHtml(d.order_status||"submitted")+
-        '<br><a href="/positions" style="color:inherit;font-weight:700;text-decoration:underline">View in positions →</a>';
-      btn.style.display="none";
+  [["placeBtn","placeBtnLabel","placeSpinner"],["placeBtnDesktop","placeBtnLabelDesktop","placeSpinnerDesktop"]].forEach(function(ids){
+    document.getElementById(ids[0]).disabled = true;
+    document.getElementById(ids[1]).textContent = "Placing…";
+    document.getElementById(ids[2]).classList.remove("hidden");
+  });
+  try {
+    var r = await fetch("/trade/place", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(window._order) });
+    var d = await r.json();
+    if (r.ok && d.status === "ok"){
+      var el = document.getElementById("confirmMsg");
+      el.className = "banner banner-success";
+      el.innerHTML = '<i data-lucide="check-circle" class="icon"></i><span>Order placed. ID: <span class="data">' + escapeHtml(d.order_id || "—") +
+        '</span><br>Status: ' + escapeHtml(d.order_status || "submitted") +
+        '<br><a href="/positions" style="color:inherit;font-weight:700;text-decoration:underline">View in positions →</a></span>';
+      if (window.lucide) lucide.createIcons();
+      ["placeBtn", "placeBtnDesktop"].forEach(function(id){ document.getElementById(id).classList.add("hidden"); });
+    } else {
+      showBanner("confirmMsg", "banner-error", d.error || d.message || d.order_status || "Rejected");
+      [["placeBtn","placeBtnLabel","placeSpinner"],["placeBtnDesktop","placeBtnLabelDesktop","placeSpinnerDesktop"]].forEach(function(ids){
+        document.getElementById(ids[0]).disabled = false;
+        document.getElementById(ids[1]).textContent = "Confirm & place order";
+        document.getElementById(ids[2]).classList.add("hidden");
+      });
     }
-    else { show("confirmMsg","err","❌ "+(d.error || d.message || d.order_status || "Rejected")); btn.disabled=false; btn.textContent="✅ Confirm & place order"; }
-  }catch(e){ show("confirmMsg","err", String(e)); btn.disabled=false; btn.textContent="✅ Confirm & place order"; }
+  } catch (e) {
+    showBanner("confirmMsg", "banner-error", String(e));
+    [["placeBtn","placeBtnLabel","placeSpinner"],["placeBtnDesktop","placeBtnLabelDesktop","placeSpinnerDesktop"]].forEach(function(ids){
+      document.getElementById(ids[0]).disabled = false;
+      document.getElementById(ids[1]).textContent = "Confirm & place order";
+      document.getElementById(ids[2]).classList.add("hidden");
+    });
+  }
 }
 </script>
 </body>
