@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+{shared_head}
 <style>
 :root {
   --bg:         #09090b;
@@ -41,9 +42,12 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+}
+.login-center {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 100vh;
   padding: 24px;
 }
 
@@ -286,6 +290,9 @@ input:focus {
 </style>
 </head>
 <body>
+<div class="page-shell">
+{nav}
+<div class="page-shell-content login-center">
 <div class="card" id="main-card">
 
   <div class="masthead">
@@ -331,6 +338,8 @@ input:focus {
     {guest_btn}
   </div>
 
+</div>
+</div>
 </div>
 
 <script>

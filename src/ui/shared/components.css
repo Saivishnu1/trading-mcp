@@ -1,0 +1,361 @@
+/*
+  Shared component primitives — the component library from PRODUCT_DESIGN.md
+  §12. Every page consumes these instead of redefining .card/.btn/.msg per
+  file. Depends on tokens.css being loaded first.
+*/
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-body-m);
+  line-height: var(--leading-normal);
+  background: var(--surface-0);
+  color: var(--content-primary);
+  min-height: 100vh;
+  overflow-x: hidden; /* no horizontal scroll, ever — Phase 6 requirement */
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Every interactive element gets a visible focus ring on keyboard focus
+   only (:focus-visible, not :focus — a mouse click never shows this). */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Numeric/data role — the one rule every page must follow: every
+   money/quantity/id value uses this class, never plain body text. ── */
+.data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.data-l { font-size: var(--text-data-l); font-weight: var(--weight-semibold); }
+.data-m { font-size: var(--text-data-m); font-weight: var(--weight-regular); }
+.data-s { font-size: var(--text-data-s); font-weight: var(--weight-regular); }
+
+.caption {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+  color: var(--content-tertiary);
+}
+
+.title-l { font-size: var(--text-title-l); font-weight: var(--weight-semibold); letter-spacing: -0.01em; }
+.title-m { font-size: var(--text-title-m); font-weight: var(--weight-semibold); }
+.title-s { font-size: var(--text-title-s); font-weight: var(--weight-semibold); }
+
+.text-secondary { color: var(--content-secondary); }
+.text-tertiary  { color: var(--content-tertiary); }
+
+/* Directional text — always paired with a glyph in markup, never color-only
+   (see .dir-up/.dir-down glyph classes below). */
+.buy-color  { color: var(--buy); }
+.sell-color { color: var(--sell); }
+
+/* ── Button ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target-min);
+  padding: var(--space-3) var(--space-5);
+  font-family: inherit;
+  font-size: var(--text-body-m);
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-sm);
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  transition: opacity var(--dur-micro) var(--ease-standard),
+              transform var(--dur-micro) var(--ease-standard),
+              background var(--dur-micro) var(--ease-standard),
+              border-color var(--dur-micro) var(--ease-standard);
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+.btn-primary   { background: var(--accent); color: var(--content-inverse); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-strong); }
+
+.btn-secondary { background: transparent; color: var(--content-primary); border-color: var(--border-strong); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+.btn-ghost     { background: transparent; color: var(--content-secondary); border-color: transparent; }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--content-primary); }
+
+.btn-sell      { background: transparent; color: var(--sell); border-color: var(--sell); }
+.btn-sell:hover:not(:disabled) { background: var(--sell-surface); }
+.btn-sell-filled { background: var(--sell); color: #fff; }
+
+.btn-buy       { background: transparent; color: var(--buy); border-color: var(--buy); }
+.btn-buy:hover:not(:disabled) { background: var(--buy-surface); }
+.btn-buy-filled { background: var(--buy); color: #fff; }
+
+.btn-sm  { min-height: 36px; padding: var(--space-2) var(--space-4); font-size: var(--text-body-s); }
+.btn-lg  { min-height: 52px; padding: var(--space-4) var(--space-6); font-size: var(--text-body-l); }
+.btn-icon { padding: var(--space-2); width: var(--touch-target-min); }
+.btn-block { width: 100%; }
+
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  opacity: 0.85;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Segmented control (BUY/SELL toggle) ── */
+.segmented { display: flex; gap: var(--space-2); }
+.segmented .btn { flex: 1; }
+.segmented .btn-buy.on  { background: var(--buy-surface); border-color: var(--buy); color: var(--buy); }
+.segmented .btn-sell.on { background: var(--sell-surface); border-color: var(--sell); color: var(--sell); }
+
+/* ── Card / panel shell ── */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.card-pad { padding: var(--space-5); }
+
+/* ── Data Card — the atomic unit for a position/order/search result.
+   Collapses to a table row at Expanded width via .as-row (opt-in per
+   page, since not every Data Card list becomes a table). ── */
+.data-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  transition: border-color var(--dur-transition) var(--ease-standard);
+}
+.data-card + .data-card { margin-top: var(--space-3); }
+
+/* ── Input ── */
+label {
+  display: block;
+  font-size: var(--text-body-s);
+  font-weight: var(--weight-medium);
+  color: var(--content-secondary);
+  margin-bottom: var(--space-2);
+}
+input, select, textarea {
+  width: 100%;
+  min-height: var(--touch-target-min);
+  padding: var(--space-3) var(--space-4);
+  font-family: inherit;
+  font-size: var(--text-body-l);
+  background: var(--surface-2);
+  color: var(--content-primary);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--dur-micro) var(--ease-standard);
+}
+input::placeholder, textarea::placeholder { color: var(--content-tertiary); }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+/* Numeric/price inputs render their value in the data type role too. */
+input[type="number"], input.data-input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.field { margin-bottom: var(--space-4); }
+.field-error {
+  font-size: var(--text-body-s);
+  color: var(--sell);
+  margin-top: var(--space-1);
+}
+.field.has-error input { border-color: var(--sell); }
+
+/* ── Badge — one shape, semantic color mappings ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge-buy     { background: var(--buy-surface); color: var(--buy); }
+.badge-sell    { background: var(--sell-surface); color: var(--sell); }
+.badge-info    { background: var(--status-info-surface); color: var(--status-info); }
+.badge-warning { background: var(--status-warning-surface); color: var(--status-warning); }
+.badge-caution { background: var(--status-caution-surface); color: var(--status-caution); }
+.badge-neutral { background: var(--surface-2); color: var(--content-secondary); border-color: var(--border-subtle); }
+
+/* ── Banner — inline success/error/info feedback, one shell everywhere ── */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-body-s);
+  line-height: var(--leading-normal);
+  border: 1px solid transparent;
+}
+.banner-error   { background: var(--sell-surface); color: var(--sell); border-color: var(--sell); }
+.banner-success { background: var(--buy-surface); color: var(--buy); border-color: var(--buy); }
+.banner-info    { background: var(--status-info-surface); color: var(--status-info); border-color: var(--status-info); }
+.banner-actions { margin-top: var(--space-2); display: flex; gap: var(--space-2); }
+
+/* ── Directional glyph — color is never the only signal ── */
+.dir-up::before   { content: "▲ "; }
+.dir-down::before { content: "▼ "; }
+
+/* ── Connection/live status dot ── */
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--content-tertiary);
+  flex-shrink: 0;
+}
+.status-dot.live { background: var(--buy); animation: pulse 2.2s ease infinite; }
+.status-dot.down { background: var(--sell); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .status-dot.live { animation: none; } }
+
+/* ── Live Value — a number that updates over the WebSocket. Owns its own
+   flash-on-change (JS toggles .flash briefly) and staleness dimming. ── */
+.live-value { transition: color var(--dur-transition) var(--ease-standard); }
+.live-value.flash { animation: value-flash var(--dur-flash) var(--ease-out); }
+.live-value.stale { opacity: 0.45; }
+@keyframes value-flash {
+  0%   { background: var(--accent-surface); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .live-value.flash { animation: none; } }
+
+/* ── Skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-1) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; opacity: 0.6; } }
+.skel-line { height: 14px; margin-bottom: var(--space-2); }
+.skel-line-lg { height: 28px; }
+
+/* ── Empty state ── */
+.empty-state {
+  text-align: center;
+  padding: var(--space-8) var(--space-5);
+  color: var(--content-secondary);
+}
+.empty-state .title-m { color: var(--content-primary); margin-bottom: var(--space-2); }
+.empty-state p { margin: 0 0 var(--space-4); font-size: var(--text-body-m); }
+
+/* ── Modal / Sheet ──
+   Compact: full-screen. Medium/Expanded: centered dialog.
+   Bottom-sheet variant (.sheet-bottom) used for Modify — anchors to the
+   bottom edge regardless of shape-class, per UX_BLUEPRINT.md §4.6/§19. */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: var(--surface-3);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+.modal-backdrop.open { display: flex; }
+.modal {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: var(--space-5);
+  animation: modal-in var(--dur-transition) var(--ease-out);
+}
+.modal-backdrop.sheet-bottom { align-items: flex-end; padding: 0; }
+.modal-backdrop.sheet-bottom .modal {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  max-width: 640px;
+  animation: sheet-in var(--dur-transition) var(--ease-out);
+}
+@keyframes modal-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes sheet-in  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .modal { animation: none; }
+  .modal-backdrop.sheet-bottom .modal { animation: none; }
+}
+.modal h2 { margin: 0 0 var(--space-4); font-size: var(--text-title-m); font-weight: var(--weight-semibold); }
+.modal-row { display: flex; gap: var(--space-3); }
+.modal-row > * { flex: 1; min-width: 0; }
+
+@media (max-width: 599px) {
+  .modal-backdrop:not(.sheet-bottom) { align-items: flex-end; padding: 0; }
+  .modal-backdrop:not(.sheet-bottom) .modal {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 92vh;
+  }
+}
+
+/* ── Layout shells ── */
+.page-shell {
+  min-height: 100vh;
+  display: flex;
+}
+/* .page-shell-content: the flex sizing every page's own content wrapper
+   needs to sit correctly beside the nav rail. Pairs with each page's own
+   existing padding/max-width class (e.g. "page", "positions-content") —
+   deliberately does NOT set padding/max-width itself, so Phase 1 never
+   overrides a page's current spacing before its own redesign phase. */
+.page-shell-content {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: calc(var(--bottom-nav-height) + var(--space-5));
+}
+@media (min-width: 600px) {
+  .page-shell-content { padding-bottom: 0; }
+}
+
+/* Generic content padding utility, opt-in via .page-content, for any
+   future page that has no bespoke wrapper class of its own yet. */
+.page-content {
+  padding: var(--space-5) var(--space-4);
+}
+@media (min-width: 600px) {
+  .page-content { padding: var(--space-6) var(--space-5); }
+}
+@media (min-width: 1024px) {
+  .page-content { padding: var(--space-7) var(--space-6); max-width: 1200px; margin: 0 auto; }
+}
+@media (min-width: 1600px) {
+  .page-content { max-width: 1440px; }
+}
+
+.section-gap { margin-top: var(--space-6); }
+.stack > * + * { margin-top: var(--space-4); }
+
+/* Utility row for two-up card grids (positions tablet, home cards) */
+.grid-2 { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+@media (min-width: 600px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+
+.hidden { display: none !important; }
+@media (max-width: 599px)  { .hide-compact  { display: none !important; } }
+@media (min-width: 600px)  { .show-compact-only { display: none !important; } }

@@ -1,0 +1,98 @@
+/*
+  Navigation — one component, two renderings selected by shape-class.
+  Compact (<600px): bottom tab bar. Medium/Expanded (>=600px): side rail,
+  icon-only until Expanded (>=1024px) where labels appear.
+  See PRODUCT_DESIGN.md §10, UX_BLUEPRINT.md cross-page checklist item 1.
+*/
+
+.nav-rail {
+  display: none;
+}
+@media (min-width: 600px) {
+  .nav-rail {
+    display: flex;
+    flex-direction: column;
+    width: var(--nav-rail-width);
+    flex-shrink: 0;
+    background: var(--surface-1);
+    border-right: 1px solid var(--border-subtle);
+    padding: var(--space-4) 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+  .nav-rail-brand {
+    padding: 0 var(--space-3) var(--space-5);
+    font-weight: var(--weight-semibold);
+    font-size: var(--text-title-s);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .nav-rail-items { display: flex; flex-direction: column; gap: var(--space-1); flex: 1; }
+  .nav-rail-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: var(--touch-target-min);
+    padding: var(--space-2) var(--space-3);
+    margin: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    color: var(--content-secondary);
+    text-decoration: none;
+    font-size: var(--text-body-m);
+    font-weight: var(--weight-medium);
+    white-space: nowrap;
+    overflow: hidden;
+    transition: background var(--dur-micro) var(--ease-standard), color var(--dur-micro) var(--ease-standard);
+  }
+  .nav-rail-item:hover { background: var(--surface-2); color: var(--content-primary); text-decoration: none; }
+  .nav-rail-item.on { background: var(--accent-surface); color: var(--accent); font-weight: var(--weight-semibold); }
+  .nav-rail-icon { flex-shrink: 0; width: 20px; text-align: center; }
+  .nav-rail-label { display: none; }
+  .nav-rail-session {
+    margin: var(--space-3) var(--space-2) 0;
+    padding: var(--space-2) var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+    padding-top: var(--space-4);
+    font-size: var(--text-body-s);
+    color: var(--content-tertiary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}
+@media (min-width: 1024px) {
+  .nav-rail { width: var(--nav-rail-width-expanded); padding: var(--space-5) 0; }
+  .nav-rail-brand { padding: 0 var(--space-5) var(--space-6); }
+  .nav-rail-item { gap: var(--space-3); padding: var(--space-3) var(--space-4); margin: 0 var(--space-3); }
+  .nav-rail-label { display: inline; }
+  .nav-rail-session { margin: var(--space-4) var(--space-3) 0; padding: var(--space-3) var(--space-4); }
+}
+
+/* Bottom tab bar — Compact only */
+.tab-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: var(--bottom-nav-height);
+  display: flex;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border-subtle);
+  z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@media (min-width: 600px) { .tab-bar { display: none; } }
+.tab-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--touch-target-min);
+  color: var(--content-tertiary);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+}
+.tab-bar-item.on { color: var(--accent); font-weight: var(--weight-semibold); }
+.tab-bar-icon { font-size: 20px; line-height: 1; }

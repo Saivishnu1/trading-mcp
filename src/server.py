@@ -288,6 +288,41 @@ _http_app = mcp.streamable_http_app()
 
 
 _UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
+_SHARED_DIR = os.path.join(_UI_DIR, "shared")
+
+# Design-system Phase 1 (2026-07-12) — shared tokens/components/nav/JS,
+# loaded once and injected into every page template via {shared_head}/{nav}
+# string substitution, the exact same pattern already used for
+# {tool_count}. Additive only: no existing route, API, or business logic
+# changes. See PRODUCT_DESIGN.md / UX_BLUEPRINT.md for the design rationale.
+_SHARED_CSS = (
+    open(os.path.join(_SHARED_DIR, "tokens.css"), encoding="utf-8").read()
+    + "\n"
+    + open(os.path.join(_SHARED_DIR, "components.css"), encoding="utf-8").read()
+    + "\n"
+    + open(os.path.join(_SHARED_DIR, "nav.css"), encoding="utf-8").read()
+)
+_SHARED_JS = open(os.path.join(_SHARED_DIR, "app.js"), encoding="utf-8").read()
+_NAV_PARTIAL = open(os.path.join(_SHARED_DIR, "nav.html"), encoding="utf-8").read()
+_SHARED_HEAD_TAG = '<link rel="stylesheet" href="/ui/shared.css">\n<script src="/ui/shared.js"></script>'
+
+
+def _nav_html(active: str) -> str:
+    """Render the shared nav partial with `active` page's item marked
+    class="on". `active` is one of home/positions/trade/login."""
+    html = _NAV_PARTIAL
+    for name in ("home", "positions", "trade", "login"):
+        html = html.replace("{active_" + name + "}", "on" if name == active else "")
+    return html
+
+
+def _with_shared(html: str, active: str) -> str:
+    """Inject the shared CSS/JS <link>/<script> tags and the rendered nav
+    partial into a page template. Every GET-HTML route calls this after
+    its own {tool_count}-style substitutions."""
+    return html.replace("{shared_head}", _SHARED_HEAD_TAG).replace("{nav}", _nav_html(active))
+
+
 _LOGIN_TEMPLATE     = open(os.path.join(_UI_DIR, "login.html"),     encoding="utf-8").read()
 _HOME_TEMPLATE      = open(os.path.join(_UI_DIR, "home.html"),      encoding="utf-8").read()
 _TRADE_TEMPLATE     = open(os.path.join(_UI_DIR, "trade.html"),     encoding="utf-8").read()
@@ -498,13 +533,14 @@ def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> 
         )
     else:
         guest_btn = ""
-    return (
+    html = (
         _LOGIN_TEMPLATE
         .replace("{prefill_user_id}", prefill_user_id)
         .replace("{message}", message)
         .replace("{guest_btn}", guest_btn)
         .replace('action="/login"', f'action="{action}"')
     )
+    return _with_shared(html, "login")
 
 
 async def _handle_login_get(scope, send) -> None:
@@ -797,7 +833,26 @@ async def _app(scope, receive, send):
 
         if path == "/" or path == "":
             html = _HOME_TEMPLATE.replace("{tool_count}", str(_TOOL_COUNT))
+            html = _with_shared(html, "home")
             await _send_html(send, 200, html)
+            return
+
+        if path == "/ui/shared.css":
+            body = _SHARED_CSS.encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"text/css; charset=utf-8"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"cache-control", b"public, max-age=300"]]})
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        if path == "/ui/shared.js":
+            body = _SHARED_JS.encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/javascript; charset=utf-8"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"cache-control", b"public, max-age=300"]]})
+            await send({"type": "http.response.body", "body": body})
             return
 
         if path == "/health":
@@ -1038,7 +1093,7 @@ async def _app(scope, receive, send):
         # order"). These sit before the MCP fall-through and never touch
         # current_user — TRADE_PIN is the sole gate.
         if path == "/trade" and method == "GET":
-            await _send_html(send, 200, _TRADE_TEMPLATE)
+            await _send_html(send, 200, _with_shared(_TRADE_TEMPLATE, "trade"))
             return
 
         if path == "/trade/symbols" and method == "GET":
@@ -1154,7 +1209,7 @@ async def _app(scope, receive, send):
         # modify an existing SL/target. Read-only /positions/data is also the
         # source for the home page's live P&L card (see /positions/summary).
         if path == "/positions" and method == "GET":
-            await _send_html(send, 200, _POSITIONS_TEMPLATE)
+            await _send_html(send, 200, _with_shared(_POSITIONS_TEMPLATE, "positions"))
             return
 
         if path == "/positions/data" and method == "GET":

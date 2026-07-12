@@ -1,0 +1,63 @@
+<!-- Shared navigation partial, injected server-side into every page.
+     Two renderings from one markup: nav-rail (side, >=600px) and
+     tab-bar (bottom, <600px) — CSS in nav.css picks which one shows. -->
+<nav class="nav-rail">
+  <div class="nav-rail-brand">Zerodha</div>
+  <div class="nav-rail-items">
+    <a class="nav-rail-item {active_home}" href="/">
+      <span class="nav-rail-icon">⌂</span><span class="nav-rail-label">Home</span>
+    </a>
+    <a class="nav-rail-item {active_positions}" href="/positions">
+      <span class="nav-rail-icon">▤</span><span class="nav-rail-label">Positions</span>
+    </a>
+    <a class="nav-rail-item {active_trade}" href="/trade">
+      <span class="nav-rail-icon">⇄</span><span class="nav-rail-label">Trade</span>
+    </a>
+    <a class="nav-rail-item {active_login}" href="/login">
+      <span class="nav-rail-icon">◐</span><span class="nav-rail-label">Session</span>
+    </a>
+  </div>
+  <div class="nav-rail-session">
+    <span class="status-dot" id="navSessionDot"></span>
+    <span class="nav-rail-label" id="navSessionText">Checking…</span>
+  </div>
+</nav>
+
+<nav class="tab-bar">
+  <a class="tab-bar-item {active_home}" href="/">
+    <span class="tab-bar-icon">⌂</span>Home
+  </a>
+  <a class="tab-bar-item {active_positions}" href="/positions">
+    <span class="tab-bar-icon">▤</span>Positions
+  </a>
+  <a class="tab-bar-item {active_trade}" href="/trade">
+    <span class="tab-bar-icon">⇄</span>Trade
+  </a>
+  <a class="tab-bar-item {active_login}" href="/login">
+    <span class="tab-bar-icon">◐</span>Session
+  </a>
+</nav>
+
+<script>
+  // Session indicator — same /auth/status check every page already
+  // performs independently today; centralized here so all 4 pages show
+  // identical session state without 4 copies of this fetch.
+  (function () {
+    function getCookie(n) {
+      var m = document.cookie.match('(?:^|; )' + n + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+    var dot = document.getElementById('navSessionDot');
+    var text = document.getElementById('navSessionText');
+    if (!dot || !text) return;
+    fetch('/auth/status').then(function (r) { return r.json(); }).then(function (d) {
+      var uid = d.user_id || getCookie('mcp_uid');
+      if (d.authenticated || uid) {
+        dot.classList.add('live');
+        text.textContent = uid ? uid : 'Signed in';
+      } else {
+        text.textContent = 'Guest';
+      }
+    }).catch(function () { text.textContent = 'Offline'; });
+  })();
+</script>

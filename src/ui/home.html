@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+{shared_head}
 <style>
 /* ── Design tokens ── */
 :root {
@@ -397,7 +398,9 @@ pre.code {
 </style>
 </head>
 <body>
-<div class="page">
+<div class="page-shell">
+{nav}
+<div class="page-shell-content page">
 
   <!-- Hero -->
   <div class="hero a1">
@@ -722,6 +725,7 @@ pre.code {
     <span>No Kite Connect subscription</span>
   </div>
 
+</div>
 </div>
 <script>
   var origin = window.location.origin;

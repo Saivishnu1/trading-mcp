@@ -1,0 +1,200 @@
+/*
+  Design tokens — single source of truth for color, type, spacing, motion,
+  and radius across the whole product. See PRODUCT_DESIGN.md §4-6, §13 and
+  UX_BLUEPRINT.md's mood board for the rationale behind every choice below.
+
+  Two fully-realized themes (dark default, light equally complete — never
+  an afterthought media query). Theme is controlled by [data-theme="dark"]
+  or [data-theme="light"] on <html>; falls back to prefers-color-scheme
+  when no explicit preference has been chosen yet.
+*/
+
+:root {
+  color-scheme: dark light;
+
+  /* ── Typography ── */
+  --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Consolas', monospace;
+
+  --text-display: 2.25rem;   /* 36px — landing hero only, used once per product */
+  --text-title-l: 1.375rem;  /* 22px — page titles */
+  --text-title-m: 1.0625rem; /* 17px — section headings, card titles */
+  --text-title-s: 0.9375rem; /* 15px — sub-section headings */
+  --text-body-l:  0.9375rem; /* 15px */
+  --text-body-m:  0.875rem;  /* 14px — default */
+  --text-body-s:  0.8125rem; /* 13px — secondary/meta */
+  --text-caption: 0.6875rem; /* 11px — uppercase eyebrow labels */
+  --text-data-l:  1.75rem;   /* 28px — hero numbers (P&L totals) */
+  --text-data-m:  0.9375rem; /* 15px — inline numbers (list prices) */
+  --text-data-s:  0.8125rem; /* 13px — dense table/list numeric cells */
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:  1.25;
+  --leading-normal: 1.5;
+  --leading-loose:  1.7;
+
+  --tracking-caption: 0.06em;
+
+  /* ── Spacing (4px base unit, see PRODUCT_DESIGN.md §6) ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ── Radius (scales with component size, not one fixed value) ── */
+  --radius-sm: 8px;   /* controls: inputs, small buttons, badges */
+  --radius-md: 12px;  /* cards, panels */
+  --radius-lg: 18px;  /* modals, sheets */
+  --radius-full: 999px;
+
+  /* ── Motion (see PRODUCT_DESIGN.md §13 — four categories, nothing else) ── */
+  --dur-micro: 120ms;       /* press/hover feedback */
+  --dur-transition: 220ms;  /* tab switch, panel open, orientation changes */
+  --dur-entrance: 360ms;    /* one-time entrance moments only */
+  --dur-flash: 420ms;       /* live-tick value flash */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* ── Elevation (felt, not seen — see mood board) ── */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.10), 0 2px 4px rgba(16, 24, 40, 0.06);
+  --shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.16);
+
+  /* ── Layout ── */
+  --nav-rail-width: 72px;
+  --nav-rail-width-expanded: 220px;
+  --bottom-nav-height: 64px;
+  --touch-target-min: 44px;
+
+  /* ── Breakpoints (referenced in comments; media queries can't consume
+       custom properties directly, kept here as the documented source) ──
+       compact: up to 599px · medium: 600-1023px · expanded: 1024px+
+       ultrawide bonus column: 1600px+ */
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   DARK THEME — default. Tuned for long viewing sessions: near-black
+   surfaces (never pure #000, which halates against bright numbers),
+   soft off-white text (never pure #fff).
+   ══════════════════════════════════════════════════════════════════════ */
+:root,
+:root[data-theme="dark"] {
+  --surface-0: #0a0a0d;
+  --surface-1: #131318;
+  --surface-2: #1b1b22;
+  --surface-3: rgba(0, 0, 0, 0.6); /* overlay scrim */
+
+  --content-primary:   #f4f4f6;
+  --content-secondary: #a3a3ad;
+  --content-tertiary:  #5c5c66;
+  --content-inverse:   #0a0a0d;
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --accent:         #5b8def;
+  --accent-surface: rgba(91, 141, 239, 0.14);
+  --accent-strong:  #7ba3f5;
+
+  --buy:         #34d399;
+  --buy-surface: rgba(52, 211, 153, 0.12);
+  --sell:         #f8716b;
+  --sell-surface: rgba(248, 113, 107, 0.12);
+
+  --status-info:            #7dabf7;
+  --status-info-surface:    rgba(125, 171, 247, 0.12);
+  --status-warning:         #f0b354;
+  --status-warning-surface: rgba(240, 179, 84, 0.12);
+  --status-caution:         #c99df0;
+  --status-caution-surface: rgba(201, 157, 240, 0.12);
+
+  --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.45);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LIGHT THEME — fully realized, not a bolt-on. Tuned for bright-screen
+   legibility: soft off-white surfaces (never stark #fff, reduces glare),
+   deepened buy/sell colors (pure saturated green/red on white reads as
+   garish, not premium).
+   ══════════════════════════════════════════════════════════════════════ */
+:root[data-theme="light"] {
+  --surface-0: #f6f7f9;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: rgba(15, 18, 25, 0.4);
+
+  --content-primary:   #14161a;
+  --content-secondary: #5b6070;
+  --content-tertiary:  #9aa1af;
+  --content-inverse:   #ffffff;
+
+  --border-subtle: #e5e7eb;
+  --border-strong: #c7cdd6;
+
+  --accent:         #2d5fd9;
+  --accent-surface: rgba(45, 95, 217, 0.08);
+  --accent-strong:  #234ab3;
+
+  --buy:         #158f5f;
+  --buy-surface: #e7f8ee;
+  --sell:         #d1392a;
+  --sell-surface: #fdecea;
+
+  --status-info:            #2d5fd9;
+  --status-info-surface:    rgba(45, 95, 217, 0.08);
+  --status-warning:         #b45309;
+  --status-warning-surface: #fff4e0;
+  --status-caution:         #8b3fc9;
+  --status-caution-surface: rgba(139, 63, 201, 0.08);
+
+  --focus-ring: 0 0 0 3px rgba(45, 95, 217, 0.35);
+}
+
+/* Respect OS-level preference only when the user hasn't made an explicit
+   in-app choice yet (no [data-theme] attribute set at all). */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --surface-0: #f6f7f9;
+    --surface-1: #ffffff;
+    --surface-2: #ffffff;
+    --surface-3: rgba(15, 18, 25, 0.4);
+    --content-primary:   #14161a;
+    --content-secondary: #5b6070;
+    --content-tertiary:  #9aa1af;
+    --content-inverse:   #ffffff;
+    --border-subtle: #e5e7eb;
+    --border-strong: #c7cdd6;
+    --accent:         #2d5fd9;
+    --accent-surface: rgba(45, 95, 217, 0.08);
+    --accent-strong:  #234ab3;
+    --buy:         #158f5f;
+    --buy-surface: #e7f8ee;
+    --sell:         #d1392a;
+    --sell-surface: #fdecea;
+    --status-info:            #2d5fd9;
+    --status-info-surface:    rgba(45, 95, 217, 0.08);
+    --status-warning:         #b45309;
+    --status-warning-surface: #fff4e0;
+    --status-caution:         #8b3fc9;
+    --status-caution-surface: rgba(139, 63, 201, 0.08);
+    --focus-ring: 0 0 0 3px rgba(45, 95, 217, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-micro: 0ms;
+    --dur-transition: 0ms;
+    --dur-entrance: 0ms;
+    --dur-flash: 0ms;
+  }
+}

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Positions</title>
+{shared_head}
 <style>
   :root {
     color-scheme: light dark;
@@ -29,13 +30,6 @@
   }
   h1 { font-size: 1.25rem; font-weight: 700; margin: 4px 0 4px; letter-spacing: -0.01em; }
   .subtitle { font-size: .82rem; color: var(--muted); margin-bottom: 16px; }
-
-  .top-nav { display: flex; gap: 6px; margin-bottom: 14px; }
-  .top-nav a {
-    flex: 1; text-align: center; padding: 9px; border-radius: 9px; font-size: .84rem;
-    font-weight: 700; text-decoration: none; border: 1.5px solid var(--border); color: var(--muted);
-  }
-  .top-nav a.on { color: var(--accent); border-color: var(--accent); background: rgba(45,108,223,.08); }
 
   .card {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
@@ -130,10 +124,9 @@
 </style>
 </head>
 <body>
-<div class="top-nav">
-  <a href="/trade">📲 Trade</a>
-  <a class="on" href="/positions">📊 Positions</a>
-</div>
+<div class="page-shell">
+{nav}
+<div class="page-shell-content page-content">
 <h1>📊 Positions</h1>
 <div class="subtitle">Live prices via WebSocket — no polling.</div>
 
@@ -189,6 +182,8 @@
   </div>
 </div>
 
+</div>
+</div>
 <script>
 let positions = [];
 let ws = null;

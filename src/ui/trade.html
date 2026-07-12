@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Place Order</title>
+{shared_head}
 <style>
   :root {
     color-scheme: light dark;
@@ -122,19 +123,12 @@
   .hint { font-size: .74rem; color: var(--muted); margin-top: 10px; line-height: 1.5; }
   .hint.warn { color: var(--sell); }
 
-  .top-nav { display: flex; gap: 6px; margin-bottom: 14px; }
-  .top-nav a {
-    flex: 1; text-align: center; padding: 9px; border-radius: 9px; font-size: .84rem;
-    font-weight: 700; text-decoration: none; border: 1.5px solid var(--border); color: var(--muted);
-  }
-  .top-nav a.on { color: var(--accent); border-color: var(--accent); background: rgba(45,108,223,.08); }
 </style>
 </head>
 <body>
-<div class="top-nav">
-  <a class="on" href="/trade">📲 Trade</a>
-  <a href="/positions">📊 Positions</a>
-</div>
+<div class="page-shell">
+{nav}
+<div class="page-shell-content page-content">
 <h1>📲 Place Order</h1>
 
 <div class="card" id="formCard">
@@ -237,6 +231,8 @@
   <div class="msg" id="confirmMsg"></div>
 </div>
 
+</div>
+</div>
 <script>
 let side = "BUY";
 let selected = null;   // {symbol, name, exchange, segment} once chosen from the dropdown
