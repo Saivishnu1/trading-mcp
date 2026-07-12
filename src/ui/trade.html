@@ -307,6 +307,7 @@ function payload(){
     pin: currentPin(),
     symbol: symbolText,
     security_id: pick ? pick.security_id : null,
+    segment: pick ? pick.segment : null,
     expiry: pick ? pick.expiry : null,
     side: side,
     quantity: parseInt(document.getElementById("qty").value,10),

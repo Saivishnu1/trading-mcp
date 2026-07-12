@@ -32,9 +32,15 @@ from dataclasses import dataclass
 
 from src.brokers.models import OrderRequest
 
-# Option symbols: a strike (digits, optional decimal) immediately before CE/PE,
-# e.g. NIFTY24200CE, BANKNIFTY52000PE, NIFTY24500.5CE. Futures end in FUT.
-_OPTION_RE = re.compile(r"\d(\.\d+)?(CE|PE)$")
+# Option symbols: a strike (digits, optional decimal) before CE/PE, either
+# immediately adjacent (Telegram's compact typed format: NIFTY24200CE,
+# BANKNIFTY52000PE, NIFTY24500.5CE) or hyphen-separated (INDstocks' own
+# TRADING_SYMBOL for index options: NIFTY-JUL2026-24250-CE — confirmed bug,
+# 2026-07-12: the web dropdown's picked segment is now trusted directly
+# instead of relying on this regex, but a free-typed hyphenated symbol
+# without picking from the dropdown still falls through to here). Futures
+# end in FUT.
+_OPTION_RE = re.compile(r"\d(\.\d+)?-?(CE|PE)$")
 
 
 def _is_derivative_symbol(symbol: str) -> bool:

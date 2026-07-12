@@ -347,6 +347,21 @@ def _build_order_from_web(data: dict):
     INDmoneyBroker.search_instruments/resolve_security_id). If absent, the
     caller (server.py's /trade/place route) falls back to symbol-text
     resolution, which is ambiguous for those contracts.
+
+    ``segment`` is trusted the same way, for the same reason: a dropdown pick
+    carries the segment INDstocks itself reported (search_symbols tags each
+    result "DERIVATIVE"/"EQUITY" by which instrument-master source it came
+    from — see src/execution/service.py::search_symbols). Confirmed bug
+    (2026-07-12): the fallback here, _is_derivative_symbol, was written for
+    Telegram's compact typed format ("NIFTY24200CE") and its regex requires
+    the strike digit immediately adjacent to CE/PE — it never matches
+    INDstocks' actual hyphenated TRADING_SYMBOL for index options
+    ("NIFTY-JUL2026-24250-CE"), so every option order placed via the web
+    dropdown was silently misclassified as segment="EQUITY" and rejected by
+    INDstocks with an opaque 512 Internal Server Error, regardless of
+    AMO/market-hours. Trusting the dropdown's segment fixes the real cause;
+    the regex only still matters when the user free-types a symbol without
+    picking from the dropdown.
     """
     from src.brokers.models import OrderRequest
     from src.telegram_admin.order_parser import _is_derivative_symbol
@@ -357,6 +372,9 @@ def _build_order_from_web(data: dict):
     product = str(data.get("product", "INTRADAY")).strip().upper()
     exchange = str(data.get("exchange", "NSE")).strip().upper()
     security_id = str(data.get("security_id", "")).strip()
+    segment = str(data.get("segment", "")).strip().upper()
+    if segment not in ("DERIVATIVE", "EQUITY"):
+        segment = "DERIVATIVE" if _is_derivative_symbol(symbol) else "EQUITY"
     if not symbol:
         return None, "Symbol is required."
     if side not in ("BUY", "SELL"):
@@ -385,7 +403,7 @@ def _build_order_from_web(data: dict):
     req = OrderRequest(
         security_id=security_id,
         exchange=exchange,
-        segment="DERIVATIVE" if _is_derivative_symbol(symbol) else "EQUITY",
+        segment=segment,
         transaction_type=side,
         quantity=qty,
         order_type=order_type,
