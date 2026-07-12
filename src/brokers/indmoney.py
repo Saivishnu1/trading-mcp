@@ -379,6 +379,17 @@ class INDmoneyBroker(BrokerAdapter):
                     and isinstance(body, dict)
                     and body.get("status") == "success"
                 )
+                if not ok:
+                    # A 4xx/5xx status alone doesn't say which INDstocks
+                    # validation failed (e.g. "LimitPriceMustBeAboveZero") —
+                    # only the response body does, and the outgoing-payload
+                    # log line added 2026-07-12 doesn't capture it. Logged at
+                    # warning since this is the caller's signal something
+                    # rejected, not a bug in this broker adapter.
+                    logger.warning(
+                        "INDmoneyBroker.place_order rejected (status=%s): %s",
+                        r.status_code, body,
+                    )
                 return {
                     "status": "ok" if ok else "error",
                     "status_code": r.status_code,
