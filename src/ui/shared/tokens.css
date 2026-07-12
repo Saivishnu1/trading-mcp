@@ -9,6 +9,28 @@
   when no explicit preference has been chosen yet.
 */
 
+/* Self-hosted webfonts (2026-07-12 perf pass) — were previously loaded
+   render-blocking from fonts.googleapis.com/fonts.gstatic.com. Both files
+   are variable fonts (one file spans the full weight range used here), so
+   only two font-face rules are needed. The ?v= query param below is a
+   template placeholder substituted at import time in server.py, so the
+   URL changes whenever the underlying font file does — this is what
+   makes the long-lived immutable cache-control on /ui/fonts/* safe. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/ui/fonts/inter-var.woff2?v={inter_font_v}') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('/ui/fonts/jbmono-var.woff2?v={jbmono_font_v}') format('woff2');
+}
+
 :root {
   color-scheme: dark light;
 

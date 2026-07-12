@@ -4,6 +4,28 @@
   Loaded once, used by every page. No page-specific logic lives here.
 */
 
+/* ── Icon rendering ──
+   Lucide is now loaded via <script defer> (perf pass, 2026-07-12) rather
+   than a blocking <head> script, so it may not be ready yet when a page's
+   own bottom inline script runs (inline scripts without src ignore defer
+   and execute immediately during parsing, before deferred scripts fire).
+   renderIcons() retries for a couple of frames instead of silently
+   no-op'ing, so first paint never ships with blank icon slots. */
+function renderIcons() {
+  if (window.lucide) { lucide.createIcons(); return; }
+  if (!renderIcons._tries) renderIcons._tries = 0;
+  if (renderIcons._tries++ < 40) setTimeout(renderIcons, 25);
+}
+
+/* ── Auth-status cache invalidation ──
+   The nav's session indicator (nav.html) caches /auth/status in
+   sessionStorage for 45s to avoid refetching on every navigation. Call
+   this immediately before any action that changes auth state (login,
+   logout) so the next page load doesn't show stale session info. */
+function invalidateAuthStatusCache() {
+  try { sessionStorage.removeItem('zerodha_auth_status_cache'); } catch (e) {}
+}
+
 /* ── Theme ── */
 (function () {
   var KEY = "zerodha_theme";

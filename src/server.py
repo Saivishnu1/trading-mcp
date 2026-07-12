@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 import logging
@@ -289,14 +290,38 @@ _http_app = mcp.streamable_http_app()
 
 _UI_DIR = os.path.join(os.path.dirname(__file__), "ui")
 _SHARED_DIR = os.path.join(_UI_DIR, "shared")
+_VENDOR_DIR = os.path.join(_SHARED_DIR, "vendor")
+_FONTS_DIR = os.path.join(_SHARED_DIR, "fonts")
+
+# Performance pass (2026-07-12) — Lucide and both webfonts are self-hosted
+# same-origin (were previously unpkg.com/fonts.googleapis.com, unversioned
+# and render-blocking). Static bytes loaded once at import time, same
+# pattern as _SHARED_CSS/_SHARED_JS below.
+_LUCIDE_JS = open(os.path.join(_VENDOR_DIR, "lucide.js"), encoding="utf-8").read()
+_FONT_INTER = open(os.path.join(_FONTS_DIR, "inter-var.woff2"), "rb").read()
+_FONT_JBMONO = open(os.path.join(_FONTS_DIR, "jbmono-var.woff2"), "rb").read()
+
+
+def _content_hash(data) -> str:
+    raw = data.encode("utf-8") if isinstance(data, str) else data
+    return hashlib.sha256(raw).hexdigest()[:10]
+
+
+_FONT_INTER_V = _content_hash(_FONT_INTER)
+_FONT_JBMONO_V = _content_hash(_FONT_JBMONO)
 
 # Design-system Phase 1 (2026-07-12) — shared tokens/components/nav/JS,
 # loaded once and injected into every page template via {shared_head}/{nav}
 # string substitution, the exact same pattern already used for
 # {tool_count}. Additive only: no existing route, API, or business logic
 # changes. See PRODUCT_DESIGN.md / UX_BLUEPRINT.md for the design rationale.
+# tokens.css's own {inter_font_v}/{jbmono_font_v} placeholders are resolved
+# here, before _SHARED_CSS's own content hash is computed below, so a font
+# file change also busts the shared.css URL.
 _SHARED_CSS = (
     open(os.path.join(_SHARED_DIR, "tokens.css"), encoding="utf-8").read()
+    .replace("{inter_font_v}", _FONT_INTER_V)
+    .replace("{jbmono_font_v}", _FONT_JBMONO_V)
     + "\n"
     + open(os.path.join(_SHARED_DIR, "components.css"), encoding="utf-8").read()
     + "\n"
@@ -304,7 +329,24 @@ _SHARED_CSS = (
 )
 _SHARED_JS = open(os.path.join(_SHARED_DIR, "app.js"), encoding="utf-8").read()
 _NAV_PARTIAL = open(os.path.join(_SHARED_DIR, "nav.html"), encoding="utf-8").read()
-_SHARED_HEAD_TAG = '<link rel="stylesheet" href="/ui/shared.css">\n<script src="/ui/shared.js"></script>'
+
+# Content-hashed query strings let /ui/* static assets be cached
+# indefinitely by the browser: the URL itself changes whenever the file
+# does, so there is no staleness risk from a long max-age.
+_SHARED_CSS_V = _content_hash(_SHARED_CSS)
+_SHARED_JS_V = _content_hash(_SHARED_JS)
+_LUCIDE_JS_V = _content_hash(_LUCIDE_JS)
+
+_SHARED_HEAD_TAG = (
+    '<link rel="stylesheet" href="/ui/shared.css?v={css_v}">\n'
+    '<link rel="preload" as="font" type="font/woff2" crossorigin '
+    'href="/ui/fonts/inter-var.woff2?v={inter_v}">\n'
+    '<script src="/ui/lucide.js?v={lucide_v}" defer></script>\n'
+    '<script src="/ui/shared.js?v={js_v}" defer></script>'
+).format(
+    css_v=_SHARED_CSS_V, js_v=_SHARED_JS_V,
+    lucide_v=_LUCIDE_JS_V, inter_v=_FONT_INTER_V,
+)
 
 
 def _nav_html(active: str) -> str:
@@ -842,7 +884,7 @@ async def _app(scope, receive, send):
             await send({"type": "http.response.start", "status": 200,
                         "headers": [[b"content-type", b"text/css; charset=utf-8"],
                                     [b"content-length", str(len(body)).encode()],
-                                    [b"cache-control", b"public, max-age=300"]]})
+                                    [b"cache-control", b"public, max-age=31536000, immutable"]]})
             await send({"type": "http.response.body", "body": body})
             return
 
@@ -851,8 +893,33 @@ async def _app(scope, receive, send):
             await send({"type": "http.response.start", "status": 200,
                         "headers": [[b"content-type", b"application/javascript; charset=utf-8"],
                                     [b"content-length", str(len(body)).encode()],
-                                    [b"cache-control", b"public, max-age=300"]]})
+                                    [b"cache-control", b"public, max-age=31536000, immutable"]]})
             await send({"type": "http.response.body", "body": body})
+            return
+
+        if path == "/ui/lucide.js":
+            body = _LUCIDE_JS.encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"application/javascript; charset=utf-8"],
+                                    [b"content-length", str(len(body)).encode()],
+                                    [b"cache-control", b"public, max-age=31536000, immutable"]]})
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        if path == "/ui/fonts/inter-var.woff2":
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"font/woff2"],
+                                    [b"content-length", str(len(_FONT_INTER)).encode()],
+                                    [b"cache-control", b"public, max-age=31536000, immutable"]]})
+            await send({"type": "http.response.body", "body": _FONT_INTER})
+            return
+
+        if path == "/ui/fonts/jbmono-var.woff2":
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [[b"content-type", b"font/woff2"],
+                                    [b"content-length", str(len(_FONT_JBMONO)).encode()],
+                                    [b"cache-control", b"public, max-age=31536000, immutable"]]})
+            await send({"type": "http.response.body", "body": _FONT_JBMONO})
             return
 
         if path == "/health":

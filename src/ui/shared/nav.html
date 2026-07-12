@@ -42,15 +42,23 @@
   // Session indicator — same /auth/status check every page already
   // performs independently today; centralized here so all 4 pages show
   // identical session state without 4 copies of this fetch.
+  //
+  // Perf pass (2026-07-12): cached in sessionStorage with a 45s TTL so
+  // clicking between nav items doesn't refire this on every single page
+  // load — a stale-for-45s session indicator is an acceptable trade for
+  // one fewer round trip per navigation.
   (function () {
+    var CACHE_KEY = 'zerodha_auth_status_cache';
+    var TTL_MS = 45000;
+
     function getCookie(n) {
       var m = document.cookie.match('(?:^|; )' + n + '=([^;]*)');
       return m ? decodeURIComponent(m[1]) : null;
     }
-    var dot = document.getElementById('navSessionDot');
-    var text = document.getElementById('navSessionText');
-    if (!dot || !text) return;
-    fetch('/auth/status').then(function (r) { return r.json(); }).then(function (d) {
+    function render(d) {
+      var dot = document.getElementById('navSessionDot');
+      var text = document.getElementById('navSessionText');
+      if (!dot || !text) return;
       var uid = d.user_id || getCookie('mcp_uid');
       if (d.authenticated || uid) {
         dot.classList.add('live');
@@ -58,6 +66,42 @@
       } else {
         text.textContent = 'Guest';
       }
-    }).catch(function () { text.textContent = 'Offline'; });
+    }
+    function renderOffline() {
+      var text = document.getElementById('navSessionText');
+      if (text) text.textContent = 'Offline';
+    }
+
+    var cached = null;
+    try { cached = JSON.parse(sessionStorage.getItem(CACHE_KEY)); } catch (e) {}
+    if (cached && Date.now() - cached.t < TTL_MS) {
+      render(cached.d);
+      return;
+    }
+
+    fetch('/auth/status').then(function (r) { return r.json(); }).then(function (d) {
+      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), d: d })); } catch (e) {}
+      render(d);
+    }).catch(renderOffline);
+  })();
+
+  // Prefetch the destination page on hover/focus of a nav link — by the
+  // time a real click lands, the next page's HTML is often already in
+  // the HTTP cache. One <link rel="prefetch"> per URL, deduped, since
+  // this fires on every hover and nav items get hovered repeatedly.
+  (function () {
+    var done = {};
+    function prefetch(href) {
+      if (!href || done[href] || href === location.pathname) return;
+      done[href] = true;
+      var link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.href = href;
+      document.head.appendChild(link);
+    }
+    document.querySelectorAll('.nav-rail-item, .tab-bar-item').forEach(function (a) {
+      a.addEventListener('mouseenter', function () { prefetch(a.getAttribute('href')); });
+      a.addEventListener('focus', function () { prefetch(a.getAttribute('href')); });
+    });
   })();
 </script>

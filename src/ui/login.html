@@ -4,10 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — Zerodha</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lucide@latest"></script>
 {shared_head}
 <style>
   /* ── Login-page-specific layout only — tokens/components/nav come from
@@ -279,7 +275,7 @@
     btn.innerHTML = showing
       ? '<i data-lucide="eye" class="icon icon-sm"></i>'
       : '<i data-lucide="eye-off" class="icon icon-sm"></i>';
-    if (window.lucide) lucide.createIcons();
+    renderIcons();
   });
 
   // Inline validation feedback — required fields + TOTP digit pattern.
@@ -321,6 +317,7 @@
   // read here unchanged.
   (function () {
     if (!document.querySelector('.alert.ok')) return;
+    invalidateAuthStatusCache();
 
     var apiKey = '';
     var keyEl = document.getElementById('api-key');
@@ -408,7 +405,7 @@
       '<button type="button" class="btn btn-secondary btn-block done-btn" onclick="window.close()">Done — close this tab</button>',
     ].join('\n');
 
-    if (window.lucide) lucide.createIcons();
+    renderIcons();
 
     var toggleBtn = document.getElementById('ai-setup-toggle');
     var panel = document.getElementById('ai-setup-panel');
@@ -427,7 +424,7 @@
         eyeBtn.innerHTML = showing
           ? '<i data-lucide="eye-off" class="icon icon-sm"></i>'
           : '<i data-lucide="eye" class="icon icon-sm"></i>';
-        if (window.lucide) lucide.createIcons();
+        renderIcons();
       });
     }
     var copyKeyBtn = document.getElementById('copy-key-btn');
@@ -438,7 +435,7 @@
     }
   })();
 
-  if (window.lucide) lucide.createIcons();
+  renderIcons();
 </script>
 </body>
 </html>

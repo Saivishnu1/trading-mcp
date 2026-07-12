@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Positions — Zerodha</title>
-<script src="https://unpkg.com/lucide@latest"></script>
 {shared_head}
 <style>
   /* ── Positions-page-specific layout only — tokens/components/nav from
@@ -298,7 +297,7 @@ function renderPositions(){
       '</div>';
     tableEl.innerHTML = emptyHtml;
     listEl.innerHTML = emptyHtml;
-    if (window.lucide) lucide.createIcons();
+    renderIcons();
     return;
   }
 
@@ -348,7 +347,7 @@ function renderPositions(){
 
   // Mobile/tablet cards
   listEl.innerHTML = order.map(function(i){ return posCard(positions[i], i); }).join("");
-  if (window.lucide) lucide.createIcons();
+  renderIcons();
 
   function posCard(p, i){
     var pnlClass = (p.pnl || 0) >= 0 ? "buy-color" : "sell-color";
@@ -539,7 +538,7 @@ async function saveModify(){
   }
 }
 
-if (window.lucide) lucide.createIcons();
+renderIcons();
 </script>
 </body>
 </html>

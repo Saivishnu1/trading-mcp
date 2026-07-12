@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Trade — Zerodha</title>
-<script src="https://unpkg.com/lucide@latest"></script>
 {shared_head}
 <style>
   /* ── Trade-page-specific layout only — tokens/components/nav from the
@@ -482,7 +481,7 @@ function setSymbolStatus(kind, text){
   var el = document.getElementById("symbolStatus");
   el.className = "symbol-status " + kind;
   el.innerHTML = kind === "ok" ? '<i data-lucide="check" class="icon icon-sm"></i>' + text : text;
-  if (window.lucide) lucide.createIcons();
+  renderIcons();
 }
 
 function closeDropdown(){
@@ -511,7 +510,7 @@ function renderDropdown(results){
   }).join("");
   dd.classList.add("open");
   document.getElementById("symbol").setAttribute("aria-expanded", "true");
-  if (window.lucide) lucide.createIcons();
+  renderIcons();
 }
 
 function formatExpiry(raw){
@@ -693,7 +692,7 @@ document.addEventListener("DOMContentLoaded", function(){
     el.addEventListener("change", scheduleReviewUpdate);
   });
 
-  if (window.lucide) lucide.createIcons();
+  renderIcons();
 });
 
 function highlightActive(){
@@ -869,7 +868,7 @@ async function place(){
       el.innerHTML = '<i data-lucide="check-circle" class="icon"></i><span>Order placed. ID: <span class="data">' + escapeHtml(d.order_id || "—") +
         '</span><br>Status: ' + escapeHtml(d.order_status || "submitted") +
         '<br><a href="/positions" style="color:inherit;font-weight:700;text-decoration:underline">View in positions →</a></span>';
-      if (window.lucide) lucide.createIcons();
+      renderIcons();
       ["placeBtn", "placeBtnDesktop"].forEach(function(id){ document.getElementById(id).classList.add("hidden"); });
     } else {
       showBanner("confirmMsg", "banner-error", d.error || d.message || d.order_status || "Rejected");

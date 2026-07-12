@@ -4,10 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Home — Zerodha</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lucide@latest"></script>
 {shared_head}
 <style>
   /* ── Home-page-specific layout only — tokens/components/nav come from
@@ -597,7 +593,7 @@
     window.doLogout = function() {
       if (!confirm('Log out of Zerodha MCP?')) return;
       fetch('/logout', { method: 'POST' })
-        .then(function(r) { r.ok ? location.reload() : alert('Logout failed.'); })
+        .then(function(r) { invalidateAuthStatusCache(); r.ok ? location.reload() : alert('Logout failed.'); })
         .catch(function() { alert('Logout failed.'); });
     };
 
@@ -624,7 +620,7 @@
       .catch(function() { status.textContent = 'Could not reach server'; });
   })();
 
-  if (window.lucide) lucide.createIcons();
+  renderIcons();
 </script>
 </body>
 </html>
