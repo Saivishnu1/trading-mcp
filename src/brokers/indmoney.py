@@ -610,10 +610,22 @@ class INDmoneyBroker(BrokerAdapter):
             name = str(row.get("INSTRUMENT_NAME") or row.get("SYMBOL_NAME") or sym).strip()
             exch = str(row.get("EXCH") or "NSE").strip().upper()
             expiry = str(row.get("EXPIRY_DATE") or "").strip()
+            # LOT_UNITS confirmed 2026-07-12 from a real instrument-master row
+            # (SENSEX PE: 'LOT_UNITS': '20', matching the exchange-published
+            # lot size exactly) — the exchange-mandated multiple an order's
+            # qty must be a whole multiple of. Absent/unparseable for equity
+            # rows (no lot concept there), which is the correct signal for
+            # the UI to fall back to raw share quantity.
+            lot_raw = row.get("LOT_UNITS")
+            try:
+                lot_size = int(float(lot_raw)) if lot_raw not in (None, "") else None
+            except (TypeError, ValueError):
+                lot_size = None
             entry = {
                 "symbol": sym, "name": name, "exchange": exch,
                 "segment": row.get("SEGMENT", ""), "expiry": expiry,
                 "security_id": sec_id or None,
+                "lot_size": lot_size,
             }
             (starts if sym.startswith(target) else contains).append(entry)
 
