@@ -357,6 +357,11 @@ class INDmoneyBroker(BrokerAdapter):
         if req.is_smart_order:
             return await self._place_smart_order(req)
         payload = req.to_indstocks_payload()
+        # Logged unconditionally (not just on error) — a 512/InternalServerException
+        # from INDstocks (2026-07-12) gave no way to tell after the fact whether
+        # is_amo/validity actually reached them as intended vs. our own logic
+        # never setting it. No secrets in this payload (auth is header-only).
+        logger.info("INDmoneyBroker.place_order payload: %s", payload)
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.post(

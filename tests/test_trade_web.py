@@ -11,7 +11,7 @@ import os
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from src.server import _app
+from src.server import _app, _is_market_session_open_safe
 
 
 async def _call(path, method="GET", body=b"", headers=None, query_string=b""):
@@ -115,6 +115,16 @@ async def test_preview_invalid_fields():
         )
     assert status == 400
     assert "error" in json.loads(body)
+
+
+@pytest.mark.anyio
+async def test_is_market_session_open_safe_defaults_closed_on_error():
+    # A calendar-provider fetch failure must not silently read as "market
+    # open" — that reproduces the exact 512 Internal Server Error bug from
+    # INDstocks this check exists to prevent (confirmed 2026-07-12).
+    with patch("src.market.calendar.is_market_session_open", side_effect=RuntimeError("boom")):
+        result = await _is_market_session_open_safe()
+    assert result is False
 
 
 @pytest.mark.anyio
