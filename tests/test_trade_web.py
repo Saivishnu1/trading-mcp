@@ -241,6 +241,37 @@ async def test_place_with_client_security_id_skips_ambiguous_resolve():
     sub.assert_awaited_once()
     placed_req = sub.call_args.args[0]
     assert placed_req.security_id == "222"
+    # Confirmed bug (2026-07-12): with no explicit segment in the request,
+    # this falls back to _is_derivative_symbol(symbol) — which must
+    # recognize INDstocks' hyphenated TRADING_SYMBOL format, or every option
+    # order gets silently misclassified as segment="EQUITY".
+    assert placed_req.segment == "DERIVATIVE"
+
+
+@pytest.mark.anyio
+async def test_place_trusts_client_sent_segment_from_dropdown():
+    # Confirmed bug (2026-07-12): the web dropdown already knows the correct
+    # segment (search_symbols tags each result by which instrument-master
+    # source it came from), but the client never sent it and the server
+    # re-derived it from a regex that doesn't match INDstocks' hyphenated
+    # option symbols — misclassifying every option order as segment="EQUITY"
+    # and getting rejected by INDstocks with a 512 Internal Server Error.
+    # The client-sent segment must now be trusted, same as security_id.
+    placed = {"status": "ok", "order_id": "DRV-43", "order_status": "O-PENDING"}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.market.calendar.is_market_session_open", return_value=True), \
+         patch("src.execution.service.resolve_symbol", AsyncMock()) as resolve, \
+         patch("src.execution.service.submit_order", AsyncMock(return_value=placed)) as sub:
+        status, body = await _call(
+            "/trade/place", method="POST",
+            body=_json_body(pin="1234", symbol="NIFTY-JUL2026-27500-PE",
+                            security_id="222", segment="DERIVATIVE", side="BUY", quantity=75),
+        )
+    assert status == 200
+    resolve.assert_not_awaited()
+    sub.assert_awaited_once()
+    placed_req = sub.call_args.args[0]
+    assert placed_req.segment == "DERIVATIVE"
 
 
 # ---------------------------------------------------------------------------

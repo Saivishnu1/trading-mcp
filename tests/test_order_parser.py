@@ -133,3 +133,13 @@ class TestDerivativeDetection:
 
     def test_futures(self):
         assert _is_derivative_symbol("NIFTYNXT50FUT")
+
+    def test_hyphenated_index_option_symbols(self):
+        # Confirmed bug (2026-07-12): INDstocks' own TRADING_SYMBOL for index
+        # options is hyphenated ("NIFTY-JUL2026-24250-CE"), not the compact
+        # Telegram-typed format this regex was originally written for. Every
+        # option order placed via the web dropdown was silently misclassified
+        # as segment="EQUITY" and rejected by INDstocks with an opaque 512
+        # Internal Server Error as a result.
+        assert _is_derivative_symbol("NIFTY-JUL2026-24250-CE")
+        assert _is_derivative_symbol("NIFTY-JUL2026-27500-PE")
