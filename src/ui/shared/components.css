@@ -22,6 +22,8 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+h1, h2, h3, h4, h5, h6, p { margin: 0; }
+
 /* Every interactive element gets a visible focus ring on keyboard focus
    only (:focus-visible, not :focus — a mouse click never shows this). */
 :focus-visible {
