@@ -379,6 +379,17 @@ class INDmoneyBroker(BrokerAdapter):
                     and isinstance(body, dict)
                     and body.get("status") == "success"
                 )
+                if not ok:
+                    # A 4xx/5xx status alone doesn't say which INDstocks
+                    # validation failed (e.g. "LimitPriceMustBeAboveZero") —
+                    # only the response body does, and the outgoing-payload
+                    # log line added 2026-07-12 doesn't capture it. Logged at
+                    # warning since this is the caller's signal something
+                    # rejected, not a bug in this broker adapter.
+                    logger.warning(
+                        "INDmoneyBroker.place_order rejected (status=%s): %s",
+                        r.status_code, body,
+                    )
                 return {
                     "status": "ok" if ok else "error",
                     "status_code": r.status_code,
@@ -576,6 +587,7 @@ class INDmoneyBroker(BrokerAdapter):
 
         starts, contains = [], []
         seen = set()
+        logged_raw_row = False
         for row in rows:
             sym = str(row.get("TRADING_SYMBOL") or row.get("SYMBOL_NAME") or "").strip().upper()
             if not sym:
@@ -587,6 +599,14 @@ class INDmoneyBroker(BrokerAdapter):
             if dedup_key in seen:
                 continue
             seen.add(dedup_key)
+            if not logged_raw_row:
+                # One-time discovery log (2026-07-12) — need the real column
+                # name INDstocks uses for lot size (for per-contract "lots"
+                # UI support) before wiring anything up; guessing a field
+                # name here would repeat the exact mistake the segment bug
+                # already cost us. Logged once per search call, not per row.
+                logger.info("INDmoneyBroker.search_instruments raw row sample (%s): %s", source, row)
+                logged_raw_row = True
             name = str(row.get("INSTRUMENT_NAME") or row.get("SYMBOL_NAME") or sym).strip()
             exch = str(row.get("EXCH") or "NSE").strip().upper()
             expiry = str(row.get("EXPIRY_DATE") or "").strip()
