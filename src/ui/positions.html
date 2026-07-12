@@ -139,7 +139,8 @@
 
 <div class="card" id="pinCard">
   <label>PIN</label>
-  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••" onkeyup="if(event.key==='Enter')load()">
+  <input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••"
+         onkeyup="if(event.key==='Enter')load()" oninput="onPinInput()">
   <div class="conn-row"><span class="conn-dot" id="connDot"></span><span id="connText">Not connected</span></div>
   <div class="msg" id="pinMsg"></div>
 </div>
@@ -193,8 +194,18 @@ let positions = [];
 let ws = null;
 let wsRetryMs = 1000;
 let modifyTarget = null; // {symbol, broker_order_id}
+let pinAutoLoaded = false; // fires load() once the PIN looks complete, so a
+                           // mobile keyboard's "Done" button (which doesn't
+                           // fire a keyup Enter like a desktop Return key
+                           // does) isn't the only way to connect — the
+                           // explicit Connect button covers the rest.
 
 function currentPin(){ return document.getElementById("pin").value.trim(); }
+function onPinInput(){
+  const pin = currentPin();
+  if(pin.length >= 4 && !pinAutoLoaded){ pinAutoLoaded = true; load(); }
+  if(pin.length < 4){ pinAutoLoaded = false; }
+}
 function show(id,cls,txt){ const e=document.getElementById(id); e.className="msg "+cls; e.textContent=txt; }
 function fmtMoney(v){ return (v>=0?"+":"") + "₹" + Math.abs(v).toLocaleString(undefined,{maximumFractionDigits:0}) * (v<0?-1:1); }
 
