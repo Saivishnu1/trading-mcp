@@ -146,6 +146,7 @@ class MarketConditions:
         minutes_since_last_fire: float | None,
         min_delta: float,
         min_minutes: float,
+        require_both: bool = False,
     ) -> bool:
         """Priority B3 (2026-07-11) — near-duplicate re-fire guard, distinct
         from the coarser cooldown floor: only allow a re-fire if the value
@@ -156,12 +157,23 @@ class MarketConditions:
 
         True (allowed to fire) when there is no prior fired value/time (first
         fire ever), when the delta exceeds min_delta, OR when enough time has
-        passed since the last fire — matches the spec's explicit OR."""
+        passed since the last fire — matches the spec's explicit OR.
+
+        require_both=True switches to AND semantics: confirmed live
+        (2026-07-13) that the OR form lets pure time-passing alone re-fire a
+        condition that hasn't actually changed (PINNING_RISK/MACRO_CRUDE
+        re-announcing on a ~30min cadence with no meaningful move) — time
+        passing becomes a floor that must ALSO be met, not an independent
+        bypass. Default False preserves the exact original OR behavior for
+        existing callers (e.g. wall-hold reminders, where re-announcing a
+        standing condition periodically is the intended behavior)."""
         if last_fired_value is None or minutes_since_last_fire is None:
             return True
-        if abs(current_value - last_fired_value) > min_delta:
-            return True
-        return minutes_since_last_fire > min_minutes
+        delta_exceeded = abs(current_value - last_fired_value) > min_delta
+        time_exceeded = minutes_since_last_fire > min_minutes
+        if require_both:
+            return delta_exceeded and time_exceeded
+        return delta_exceeded or time_exceeded
 
     def check_session_close_risk(
         self,

@@ -316,6 +316,46 @@ class TestMarketConditions:
         ) is False
 
     # -----------------------------------------------------------------
+    # Dedup gate — require_both / strict AND semantics (2026-07-13)
+    # Confirmed live: the OR form let pure time-passing re-fire
+    # PINNING_RISK/MACRO_CRUDE/PCR_SHIFT with no meaningful value change.
+    # -----------------------------------------------------------------
+
+    def test_dedup_gate_strict_blocks_when_only_time_passed_no_value_move(self):
+        # Under OR semantics this would be True (time exceeded) — the whole
+        # point of require_both is that time alone must no longer suffice.
+        assert self.cond.check_dedup_gate(
+            current_value=1.21, last_fired_value=1.21, minutes_since_last_fire=45,
+            min_delta=0.1, min_minutes=15, require_both=True,
+        ) is False
+
+    def test_dedup_gate_strict_blocks_when_only_value_moved_not_enough_time(self):
+        assert self.cond.check_dedup_gate(
+            current_value=1.5, last_fired_value=1.21, minutes_since_last_fire=5,
+            min_delta=0.1, min_minutes=15, require_both=True,
+        ) is False
+
+    def test_dedup_gate_strict_allows_when_both_conditions_met(self):
+        assert self.cond.check_dedup_gate(
+            current_value=1.5, last_fired_value=1.21, minutes_since_last_fire=20,
+            min_delta=0.1, min_minutes=15, require_both=True,
+        ) is True
+
+    def test_dedup_gate_strict_still_allows_first_fire_ever(self):
+        assert self.cond.check_dedup_gate(
+            current_value=1.21, last_fired_value=None, minutes_since_last_fire=None,
+            min_delta=0.1, min_minutes=15, require_both=True,
+        ) is True
+
+    def test_dedup_gate_default_require_both_false_preserves_or_semantics(self):
+        # Backward compatibility check: omitting require_both must behave
+        # exactly as before for existing callers (e.g. wall-break dedup).
+        assert self.cond.check_dedup_gate(
+            current_value=1.22, last_fired_value=1.21, minutes_since_last_fire=45,
+            min_delta=0.5, min_minutes=30,
+        ) is True
+
+    # -----------------------------------------------------------------
     # Session-close risk (Priority B7, 2026-07-11)
     # -----------------------------------------------------------------
 
@@ -1862,3 +1902,104 @@ class TestOnIndexTick:
         ]
         assert "oi_call_wall_break" in confirmed_types
         assert state["call_wall_break_confirmed"] is True
+
+
+# ---------------------------------------------------------------------------
+# get_recent_alerts / get_market_alerts — delivered-only filtering (2026-07-13)
+#
+# Confirmed root cause of "OI_WALL_BREAK fires on first touch": the raw
+# touch-log row check_oi_walls() saves with delivered=False (logged for
+# backtesting, never pushed to Telegram — see market_intelligence.py) was
+# never filtered out of either tool's results, so a momentary wick showed
+# up indistinguishably from a genuine hold-confirmed, actually-sent alert.
+# The scheduler's hold-duration gating itself was already correct.
+# ---------------------------------------------------------------------------
+
+class TestGetRecentAlertsDeliveredFilter:
+    def _tools(self):
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+        from src.tools import monitor as monitor_tools
+
+        mcp = _FastMCP("test")
+        monitor_tools.register(mcp)
+        return {t.name: t for t in mcp._tool_manager.list_tools()}
+
+    def _alerts(self):
+        return [
+            {"alert_type": "oi_call_wall_break", "delivered": False, "message": "touch, reverted"},
+            {"alert_type": "oi_call_wall_break", "delivered": True, "message": "held 60s+, confirmed"},
+        ]
+
+    @pytest.mark.anyio
+    async def test_excludes_undelivered_touch_logs_by_default(self):
+        tools = self._tools()
+        mock_repo = AsyncMock()
+        mock_repo.get_active_users.return_value = [{"id": "u1"}]
+        mock_repo.get_recent_alerts.return_value = self._alerts()
+
+        with patch("src.tools.monitor.MonitorRepository", return_value=mock_repo):
+            result = await tools["get_recent_alerts"].fn()
+
+        alerts = result["data"]["alerts"]
+        assert len(alerts) == 1
+        assert alerts[0]["delivered"] is True
+
+    @pytest.mark.anyio
+    async def test_include_undelivered_flag_returns_both(self):
+        tools = self._tools()
+        mock_repo = AsyncMock()
+        mock_repo.get_active_users.return_value = [{"id": "u1"}]
+        mock_repo.get_recent_alerts.return_value = self._alerts()
+
+        with patch("src.tools.monitor.MonitorRepository", return_value=mock_repo):
+            result = await tools["get_recent_alerts"].fn(include_undelivered=True)
+
+        assert len(result["data"]["alerts"]) == 2
+
+
+class TestGetMarketAlertsDeliveredFilter:
+    def _tools(self):
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+        from src.tools import monitor as monitor_tools
+
+        mcp = _FastMCP("test")
+        monitor_tools.register(mcp)
+        return {t.name: t for t in mcp._tool_manager.list_tools()}
+
+    @pytest.mark.anyio
+    async def test_excludes_undelivered_wall_touch_by_default(self):
+        tools = self._tools()
+        mock_repo = AsyncMock()
+        mock_repo.get_active_users.return_value = [{"id": "u1"}]
+        mock_repo.get_recent_alerts.return_value = [
+            {"alert_type": "oi_call_wall_break", "delivered": False, "message": "touch, reverted"},
+            {"alert_type": "oi_call_wall_break", "delivered": True, "message": "held 60s+, confirmed"},
+        ]
+
+        with patch("src.tools.monitor.MonitorRepository", return_value=mock_repo):
+            result = await tools["get_market_alerts"].fn()
+
+        alerts = result["data"]["alerts"]
+        assert len(alerts) == 1
+        assert alerts[0]["delivered"] is True
+
+    @pytest.mark.anyio
+    async def test_includes_oi_wall_rejection_and_pinning_risk_types(self):
+        # Both were missing from _MARKET_ALERT_TYPES entirely — a real OI
+        # wall rejection or pinning-risk alert would silently never show up
+        # in get_market_alerts() even though it's genuinely a market
+        # intelligence alert type.
+        tools = self._tools()
+        mock_repo = AsyncMock()
+        mock_repo.get_active_users.return_value = [{"id": "u1"}]
+        mock_repo.get_recent_alerts.return_value = [
+            {"alert_type": "oi_wall_rejection", "delivered": True, "message": "reverted"},
+            {"alert_type": "pinning_risk", "delivered": True, "message": "pinned"},
+            {"alert_type": "trailing_sl_hit", "delivered": True, "message": "per-position, excluded"},
+        ]
+
+        with patch("src.tools.monitor.MonitorRepository", return_value=mock_repo):
+            result = await tools["get_market_alerts"].fn()
+
+        types = {a["alert_type"] for a in result["data"]["alerts"]}
+        assert types == {"oi_wall_rejection", "pinning_risk"}

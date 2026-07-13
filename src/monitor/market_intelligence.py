@@ -68,6 +68,15 @@ class MarketIntelligence:
                 "symbol": "CRUDE",
                 "message": reason,
                 "cooldown_key": "cooldown_macro",
+                # Confirmed live (2026-07-13): fired 3x in ~61 min with no
+                # dedup at all — only re-fire once >=15 min have passed AND
+                # crude's % move has shifted by more than 0.5% from the last
+                # actually-fired reading.
+                "dedup_key": "last_fired_crude_pct",
+                "value": crude_change,
+                "dedup_strict": True,
+                "dedup_min_delta": 0.5,
+                "dedup_min_minutes": 15,
             })
 
         triggered, reason = self.conditions.check_asset_move("Gold", gold_change, gold_threshold)
@@ -261,6 +270,18 @@ class MarketIntelligence:
                 f"OI concentration."
             ),
             "cooldown_key": "cooldown_pinning",
+            # Confirmed live (2026-07-13): fired 3x in ~65 min with no dedup
+            # at all — only re-fire once >=15 min have passed AND EITHER the
+            # max-pain strike itself changed (dedup_extra_*) or spot's
+            # distance from it has moved by more than 15 points from the
+            # last actually-fired reading.
+            "dedup_key": "last_fired_pinning_distance",
+            "value": result["distance_points"],
+            "dedup_strict": True,
+            "dedup_min_delta": 15,
+            "dedup_min_minutes": 15,
+            "dedup_extra_key": "last_fired_pinning_max_pain",
+            "dedup_extra_value": max_pain,
         }]
 
     def check_pcr_shift(self, current_pcr: float | None, open_pcr: float | None, settings: dict) -> list[dict]:
@@ -278,8 +299,15 @@ class MarketIntelligence:
             "cooldown_key": "cooldown_pcr",
             # Priority B3 (2026-07-11) — dedup key/value so the scheduler can
             # gate on "differs from the last FIRED value", not just cooldown.
+            # Tightened (2026-07-13): the original OR semantics let pure
+            # time-passing re-fire this on its own even with no PCR movement
+            # — now strict (AND), plus the delta threshold raised from the
+            # generic 0.05 default to the requested >0.1 PCR move.
             "dedup_key": "last_fired_pcr",
             "value": current_pcr,
+            "dedup_strict": True,
+            "dedup_min_delta": 0.1,
+            "dedup_min_minutes": 15,
         }]
 
     async def run_all_checks(self, market_data: dict, session_state: dict, settings: dict) -> tuple[list[dict], dict]:

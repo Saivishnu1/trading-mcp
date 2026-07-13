@@ -179,6 +179,73 @@ class TestINDmoneyBroker:
         result = await b.get_funds()
         assert result == []
 
+    @pytest.mark.anyio
+    async def test_get_funds_exposes_segment_breakdown_verbatim(self):
+        # Confirmed bug (2026-07-13): "available" under-reported real F&O
+        # buying power — segment_breakdown lets a caller see every real key
+        # instead of trusting the single option_buy/eq_cnc guess.
+        b = self._broker()
+        payload = {
+            "status": "success",
+            "data": {
+                "sod_balance": 4996.47,
+                "detailed_avl_balance": {
+                    "option_buy": 4449.65,
+                    "eq_cnc": 2980.40,
+                    "some_other_derivative_limit": 15230.0,
+                },
+                "realized_pnl": -751.92,
+            },
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            funds = await b.get_funds()
+        assert funds[0].segment_breakdown == {
+            "option_buy": 4449.65, "eq_cnc": 2980.40, "some_other_derivative_limit": 15230.0,
+        }
+
+    @pytest.mark.anyio
+    async def test_get_funds_segment_param_overrides_default_key(self):
+        b = self._broker()
+        payload = {
+            "status": "success",
+            "data": {
+                "sod_balance": 4996.47,
+                "detailed_avl_balance": {
+                    "option_buy": 4449.65,
+                    "eq_cnc": 2980.40,
+                    "some_other_derivative_limit": 15230.0,
+                },
+                "realized_pnl": -751.92,
+            },
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            funds = await b.get_funds(segment="some_other_derivative_limit")
+        assert funds[0].available == 15230.0
+
+    @pytest.mark.anyio
+    async def test_get_funds_unknown_segment_falls_back_to_default_chain(self):
+        b = self._broker()
+        payload = {
+            "status": "success",
+            "data": {
+                "sod_balance": 4996.47,
+                "detailed_avl_balance": {"option_buy": 4449.65, "eq_cnc": 2980.40},
+                "realized_pnl": -751.92,
+            },
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            funds = await b.get_funds(segment="does_not_exist")
+        assert funds[0].available == 4449.65
+
     # --- get_positions ---
 
     @pytest.mark.anyio
@@ -609,6 +676,35 @@ class TestUnifiedTools:
         data = result["data"]
         assert data["total"] == 1
         assert data["combined"][0]["available"] == 50000.0
+
+    @pytest.mark.anyio
+    async def test_get_unified_funds_segment_reaches_indmoney_only(self):
+        # Confirmed bug (2026-07-13): under-reported F&O buying power fix —
+        # `segment` must reach INDmoneyBroker.get_funds(), and must NOT be
+        # passed to Zerodha (whose margins() segment vocabulary is
+        # unrelated — "equity"/"commodity", not INDmoney's balance keys).
+        from mcp.server.fastmcp import FastMCP as _FastMCP
+        from src.tools import brokers as brokers_tools
+        from src.brokers.models import Fund
+
+        mcp = _FastMCP("test")
+        brokers_tools.register(mcp)
+        tools = {t.name: t for t in mcp._tool_manager.list_tools()}
+
+        fund = Fund(available=15230.0, used=0.0, total=15230.0, broker="indmoney")
+        with patch("src.tools.brokers.ZerodhaBroker") as MockZ, \
+             patch("src.tools.brokers.INDmoneyBroker") as MockI:
+            MockZ.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockZ.return_value.get_funds = AsyncMock(return_value=[])
+            MockI.return_value.is_authenticated = AsyncMock(return_value=True)
+            MockI.return_value.get_funds = AsyncMock(return_value=[fund])
+
+            result = await tools["get_unified_funds"].fn(broker="all", segment="some_other_derivative_limit")
+
+            MockI.return_value.get_funds.assert_awaited_once_with(segment="some_other_derivative_limit")
+            MockZ.return_value.get_funds.assert_awaited_once_with()
+
+        assert result["data"]["combined"][0]["available"] == 15230.0
 
     @pytest.mark.anyio
     async def test_get_broker_status_tool(self):

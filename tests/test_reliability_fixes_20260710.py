@@ -356,6 +356,22 @@ class TestMonitorPinningRiskAlert:
         )
         assert alerts == []
 
+    def test_pinning_risk_alert_carries_dedup_fields(self):
+        # Confirmed live (2026-07-13): fired 3x in ~65 min with no dedup at
+        # all — the scheduler needs these fields to gate near-duplicate
+        # re-fires against the last actually-FIRED distance/max_pain.
+        alerts = self.mi.check_pinning_risk(
+            spot=24205.0, max_pain=24200.0, is_expiry_week=True, settings={},
+        )
+        alert = alerts[0]
+        assert alert["dedup_key"] == "last_fired_pinning_distance"
+        assert alert["value"] == 5.0
+        assert alert["dedup_strict"] is True
+        assert alert["dedup_min_delta"] == 15
+        assert alert["dedup_min_minutes"] == 15
+        assert alert["dedup_extra_key"] == "last_fired_pinning_max_pain"
+        assert alert["dedup_extra_value"] == 24200.0
+
 
 # ---------------------------------------------------------------------------
 # Priority 4 — trade-count and cost visibility

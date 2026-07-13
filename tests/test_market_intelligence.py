@@ -138,6 +138,19 @@ class TestMacroSignals:
     def test_empty_pulse_yields_no_alerts(self):
         assert self.mi.check_macro_signals({}, _settings()) == []
 
+    def test_macro_crude_alert_carries_dedup_fields(self):
+        # Confirmed live (2026-07-13): fired 3x in ~61 min with no dedup at
+        # all — only cooldown_macro (30 min) gated it, and consecutive polls
+        # spaced ~31 min apart trivially cleared that with no value check.
+        pulse = {"assets": {"crude_oil": {"change_pct": 3.0}, "gold": {"change_pct": 0.2}, "sp500": {"change_pct": 0.1}}}
+        alerts = self.mi.check_macro_signals(pulse, _settings())
+        crude_alert = next(a for a in alerts if a["type"] == "macro_crude")
+        assert crude_alert["dedup_key"] == "last_fired_crude_pct"
+        assert crude_alert["value"] == 3.0
+        assert crude_alert["dedup_strict"] is True
+        assert crude_alert["dedup_min_delta"] == 0.5
+        assert crude_alert["dedup_min_minutes"] == 15
+
 
 class TestVixCheck:
     def setup_method(self):
@@ -342,6 +355,15 @@ class TestPcrShiftCheck:
         alerts = self.mi.check_pcr_shift(current_pcr=1.5, open_pcr=1.0, settings=_settings())
         assert alerts[0]["dedup_key"] == "last_fired_pcr"
         assert alerts[0]["value"] == 1.5
+
+    def test_pcr_shift_alert_carries_strict_dedup_thresholds(self):
+        # Tightened (2026-07-13): OR semantics let pure time-passing re-fire
+        # this with no PCR movement — now strict (AND), with the delta
+        # threshold raised from the generic 0.05 default to the requested >0.1.
+        alerts = self.mi.check_pcr_shift(current_pcr=1.5, open_pcr=1.0, settings=_settings())
+        assert alerts[0]["dedup_strict"] is True
+        assert alerts[0]["dedup_min_delta"] == 0.1
+        assert alerts[0]["dedup_min_minutes"] == 15
 
     def test_pcr_no_shift_no_alert(self):
         alerts = self.mi.check_pcr_shift(current_pcr=1.1, open_pcr=1.0, settings=_settings())
@@ -554,6 +576,131 @@ class TestSchedulerCheckMarketConditions:
         self.monitor.alerter.send_macro_alert.assert_awaited()
         saved_state = self.monitor.repo.save_session_state.call_args.args[1]
         assert saved_state["last_fired_pcr"] == 1.50
+
+    @pytest.mark.anyio
+    async def test_macro_crude_suppressed_on_repeat_poll_with_no_meaningful_move(self):
+        """Confirmed live (2026-07-13): MACRO_CRUDE fired 3x in ~61 min with
+        no dedup at all — cooldown_macro (default 1800s=30min) alone let it
+        re-fire every ~31min since consecutive polls happened to be spaced
+        just past that window, regardless of whether crude actually moved."""
+        self.monitor.repo.get_user_settings.return_value = _settings()
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
+            "last_fired_crude_pct": 3.0,
+        }
+        # Cooldown (1800s=30min) has cleared (31 min passed) — under the old
+        # code this alone was enough to re-fire.
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {"assets": {
+                "crude_oil": {"change_pct": 3.1},  # 0.1 delta — below the 0.5 threshold
+                "gold": {"change_pct": 0.2}, "sp500": {"change_pct": 0.1},
+            }},
+            "vix": 0.0, "nifty_spot": 24400, "sensex_spot": 80000,
+            "nifty_pcr": None, "nifty_call_wall": None, "nifty_put_wall": None,
+        })
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
+        self.monitor.repo.save_alert.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_macro_crude_refires_when_move_genuinely_shifts(self):
+        self.monitor.repo.get_user_settings.return_value = _settings()
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
+            "last_fired_crude_pct": 3.0,
+        }
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {"assets": {
+                "crude_oil": {"change_pct": 4.0},  # 1.0 delta — past the 0.5 threshold
+                "gold": {"change_pct": 0.2}, "sp500": {"change_pct": 0.1},
+            }},
+            "vix": 0.0, "nifty_spot": 24400, "sensex_spot": 80000,
+            "nifty_pcr": None, "nifty_call_wall": None, "nifty_put_wall": None,
+        })
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_awaited()
+        saved_state = self.monitor.repo.save_session_state.call_args.args[1]
+        assert saved_state["last_fired_crude_pct"] == 4.0
+
+    @pytest.mark.anyio
+    async def test_pinning_risk_suppressed_on_repeat_poll_same_max_pain_and_distance(self):
+        """Confirmed live (2026-07-13): PINNING_RISK fired 3x in ~65 min with
+        no dedup at all."""
+        self.monitor.repo.get_user_settings.return_value = _settings()
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
+            "last_fired_pinning_distance": 5.0,
+            "last_fired_pinning_max_pain": 24200.0,
+        }
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {}, "vix": 0.0,
+            "nifty_spot": 24206, "sensex_spot": 80000,  # distance 6 — same max_pain, <15pt move
+            "nifty_pcr": None, "nifty_call_wall": None, "nifty_put_wall": None,
+            "nifty_max_pain": 24200.0, "nifty_is_expiry_week": True,
+        })
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_not_awaited()
+        self.monitor.repo.save_alert.assert_not_awaited()
+
+    @pytest.mark.anyio
+    async def test_pinning_risk_refires_when_max_pain_strike_changes(self):
+        # Distance stays ~identical, but the max-pain strike itself moved —
+        # this alone must be enough to re-fire (the OR condition the user
+        # explicitly asked for).
+        self.monitor.repo.get_user_settings.return_value = _settings()
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
+            "last_fired_pinning_distance": 5.0,
+            "last_fired_pinning_max_pain": 24200.0,
+        }
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {}, "vix": 0.0,
+            "nifty_spot": 24255, "sensex_spot": 80000,  # distance ~5 again, but...
+            "nifty_pcr": None, "nifty_call_wall": None, "nifty_put_wall": None,
+            "nifty_max_pain": 24250.0, "nifty_is_expiry_week": True,  # ...max_pain shifted
+        })
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_awaited()
+
+    @pytest.mark.anyio
+    async def test_pinning_risk_refires_when_distance_moves_enough(self):
+        self.monitor.repo.get_user_settings.return_value = _settings()
+        self.monitor.repo.get_session_state.return_value = {
+            "open_vix": None, "last_nifty_spot": 24400, "last_sensex_spot": 80000,
+            "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
+            "last_fired_pinning_distance": 5.0,
+            "last_fired_pinning_max_pain": 24200.0,
+        }
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor._get_market_intelligence_data = AsyncMock(return_value={
+            "global_pulse": {}, "vix": 0.0,
+            "nifty_spot": 24230, "sensex_spot": 80000,  # distance 30 — >15pt move, same max_pain
+            "nifty_pcr": None, "nifty_call_wall": None, "nifty_put_wall": None,
+            "nifty_max_pain": 24200.0, "nifty_is_expiry_week": True,
+        })
+        self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
+
+        await self.monitor.check_market_conditions({"id": "u1"})
+
+        self.monitor.alerter.send_macro_alert.assert_awaited()
 
 
 # ---------------------------------------------------------------------------

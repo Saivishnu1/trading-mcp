@@ -470,6 +470,15 @@ class MarketMonitor:
             # has moved meaningfully from what was last actually FIRED (not
             # the session-open reference the underlying check compares
             # against), or enough time has passed regardless of delta.
+            # Tightened (2026-07-13): per-alert-type thresholds/strictness
+            # now come from the alert dict itself (set where each alert type
+            # is defined, in market_intelligence.py) when a settings-column
+            # override isn't present, instead of one generic 0.05/30
+            # fallback for every type — confirmed live that the generic
+            # defaults plus OR semantics let PINNING_RISK/MACRO_CRUDE (which
+            # had no dedup_key at all) and PCR_SHIFT (OR let pure
+            # time-passing re-fire it) all repeat every ~30min with no
+            # meaningful value change.
             dedup_key = alert.get("dedup_key")
             if dedup_key is not None:
                 last_fired_value = session_state.get(dedup_key)
@@ -477,15 +486,34 @@ class MarketMonitor:
                     (datetime.now(last_sent.tzinfo) - last_sent).total_seconds() / 60
                     if last_sent is not None else None
                 )
-                if not self.conditions.check_dedup_gate(
+                min_delta = settings.get(f"{alert['type']}_dedup_min_delta", alert.get("dedup_min_delta", 0.05))
+                min_minutes = settings.get(f"{alert['type']}_dedup_min_minutes", alert.get("dedup_min_minutes", 30))
+                require_both = bool(alert.get("dedup_strict", False))
+                gate_ok = self.conditions.check_dedup_gate(
                     current_value=alert["value"],
                     last_fired_value=last_fired_value,
                     minutes_since_last_fire=minutes_since_last_fire,
-                    min_delta=settings.get(f"{alert['type']}_dedup_min_delta", 0.05),
-                    min_minutes=settings.get(f"{alert['type']}_dedup_min_minutes", 30),
-                ):
+                    min_delta=min_delta,
+                    min_minutes=min_minutes,
+                    require_both=require_both,
+                )
+
+                extra_key = alert.get("dedup_extra_key")
+                if not gate_ok and extra_key is not None and last_fired_value is not None:
+                    # OR: an independent field changing (e.g. pinning_risk's
+                    # max-pain strike itself) also counts as "meaningfully
+                    # different", subject to the same time floor as the
+                    # primary value when require_both is set.
+                    extra_changed = session_state.get(extra_key) != alert.get("dedup_extra_value")
+                    time_floor_met = minutes_since_last_fire is None or minutes_since_last_fire >= min_minutes
+                    if extra_changed and (not require_both or time_floor_met):
+                        gate_ok = True
+
+                if not gate_ok:
                     continue
                 dedup_updates[dedup_key] = alert["value"]
+                if extra_key is not None:
+                    dedup_updates[extra_key] = alert.get("dedup_extra_value")
 
             delivered = await self.alerter.send_macro_alert(user, alert["type"], alert["message"])
             await self.repo.save_alert(user["id"], {

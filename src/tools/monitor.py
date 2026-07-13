@@ -138,11 +138,19 @@ def register(mcp: FastMCP) -> None:
         ))
 
     @mcp.tool()
-    async def get_recent_alerts(hours: int = 24) -> dict:
+    async def get_recent_alerts(hours: int = 24, include_undelivered: bool = False) -> dict:
         """Return WhatsApp alerts sent in the last N hours by the position monitor.
 
         Args:
             hours: lookback window in hours (default 24).
+            include_undelivered: also include raw touch-log rows that were
+                never actually pushed (e.g. a wall-hold that reverted before
+                confirmation — see check_oi_walls). Confirmed bug
+                (2026-07-13): these were always included with no way to
+                filter them out, making OI_WALL_BREAK look like it fires on
+                first touch even though the scheduler only pushes it to
+                Telegram after a sustained hold. Default False now matches
+                this tool's own docstring ("alerts sent").
 
         No authentication required.
         """
@@ -156,6 +164,8 @@ def register(mcp: FastMCP) -> None:
                 source="monitor.users",
             ))
         alerts = await repo.get_recent_alerts(users[0]["id"], hours=hours)
+        if not include_undelivered:
+            alerts = [a for a in alerts if a.get("delivered")]
         return _meta.wrap({"alerts": alerts}, _meta.build_meta(
             type_=_meta.TYPE_FACT,
             validation_status=_meta.VALIDATION_VERIFIED,
@@ -166,19 +176,25 @@ def register(mcp: FastMCP) -> None:
     _MARKET_ALERT_TYPES = {
         "macro_crude", "macro_gold", "macro_vix", "macro_risk_off",
         "index_move_nifty", "index_move_sensex",
-        "oi_call_wall_break", "oi_put_wall_break",
-        "pcr_shift",
+        "oi_call_wall_break", "oi_put_wall_break", "oi_wall_rejection",
+        "pinning_risk", "pcr_shift",
     }
 
     @mcp.tool()
-    async def get_market_alerts(hours: int = 24) -> dict:
+    async def get_market_alerts(hours: int = 24, include_undelivered: bool = False) -> dict:
         """Return market intelligence alerts sent in the last N hours —
         macro (crude/gold/VIX/risk-off), NIFTY/SENSEX index moves, OI wall
-        breaks, and PCR shifts. Excludes per-position alerts (trailing SL,
-        profit milestones); use get_recent_alerts for those.
+        breaks/rejections, pinning risk, and PCR shifts. Excludes
+        per-position alerts (trailing SL, profit milestones); use
+        get_recent_alerts for those.
 
         Args:
             hours: lookback window in hours (default 24).
+            include_undelivered: also include raw touch-log rows never
+                actually pushed to Telegram (see get_recent_alerts). Confirmed
+                bug (2026-07-13): these were always included with no way to
+                filter them out, making OI_WALL_BREAK look like it fires on
+                first touch instead of only after a sustained hold.
 
         No authentication required.
         """
@@ -193,6 +209,8 @@ def register(mcp: FastMCP) -> None:
             ))
         all_alerts = await repo.get_recent_alerts(users[0]["id"], hours=hours)
         market_alerts = [a for a in all_alerts if a.get("alert_type") in _MARKET_ALERT_TYPES]
+        if not include_undelivered:
+            market_alerts = [a for a in market_alerts if a.get("delivered")]
         return _meta.wrap({"alerts": market_alerts}, _meta.build_meta(
             type_=_meta.TYPE_FACT,
             validation_status=_meta.VALIDATION_VERIFIED,

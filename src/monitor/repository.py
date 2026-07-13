@@ -244,6 +244,9 @@ class MonitorRepository:
                     last_fired_pcr=state.get("last_fired_pcr"),
                     last_fired_call_wall_break_spot=state.get("last_fired_call_wall_break_spot"),
                     last_fired_put_wall_break_spot=state.get("last_fired_put_wall_break_spot"),
+                    last_fired_crude_pct=state.get("last_fired_crude_pct"),
+                    last_fired_pinning_distance=state.get("last_fired_pinning_distance"),
+                    last_fired_pinning_max_pain=state.get("last_fired_pinning_max_pain"),
                     session_date=state.get("session_date", _today_ist()),
                     last_morning_brief=state.get("last_morning_brief"),
                     last_eod_summary=state.get("last_eod_summary"),
@@ -274,6 +277,9 @@ class MonitorRepository:
                 row.last_fired_pcr = state.get("last_fired_pcr", row.last_fired_pcr)
                 row.last_fired_call_wall_break_spot = state.get("last_fired_call_wall_break_spot", row.last_fired_call_wall_break_spot)
                 row.last_fired_put_wall_break_spot = state.get("last_fired_put_wall_break_spot", row.last_fired_put_wall_break_spot)
+                row.last_fired_crude_pct = state.get("last_fired_crude_pct", row.last_fired_crude_pct)
+                row.last_fired_pinning_distance = state.get("last_fired_pinning_distance", row.last_fired_pinning_distance)
+                row.last_fired_pinning_max_pain = state.get("last_fired_pinning_max_pain", row.last_fired_pinning_max_pain)
                 row.session_date = state.get("session_date", row.session_date)
                 row.last_morning_brief = state.get("last_morning_brief", row.last_morning_brief)
                 row.last_eod_summary = state.get("last_eod_summary", row.last_eod_summary)
