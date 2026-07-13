@@ -39,9 +39,9 @@ class ZerodhaBroker(BrokerAdapter):
             logger.debug("ZerodhaBroker.get_profile error: %s", exc)
             return {}
 
-    async def get_funds(self) -> list[Fund]:
+    async def get_funds(self, segment: str | None = None) -> list[Fund]:
         try:
-            data = self._get_broker().margins(segment="equity")
+            data = self._get_broker().margins(segment=segment or "equity")
             if not data:
                 return []
             # margins() returns a dict with keys like: net, available, utilised, etc.

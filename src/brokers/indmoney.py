@@ -78,7 +78,28 @@ class INDmoneyBroker(BrokerAdapter):
             logger.debug("INDmoneyBroker.get_profile error: %s", exc)
             return {}
 
-    async def get_funds(self) -> list[Fund]:
+    async def get_funds(self, segment: str | None = None) -> list[Fund]:
+        """Confirmed under-reporting bug (2026-07-13): this account's real
+        F&O buying power (15,000+, confirmed by a successful ~12,941 options
+        buy in the INDmoney app) came back as 6852.35 here — `available` was
+        reading only the equity/cash balance. `option_buy` was picked as
+        "the broadest" segment limit by assumption, never independently
+        confirmed against a real response (same class of guess that broke
+        `segment`/lot size earlier) — if that key doesn't actually exist in
+        INDstocks' real payload, this silently fell through to `eq_cnc`
+        (equity only), which matches the observed under-report exactly.
+
+        Not fixed blind: `segment_breakdown` now carries detailed_avl_balance
+        verbatim so a caller can see every real key instead of trusting one
+        guess, and the raw response is logged once so the correct key name
+        can be confirmed from production rather than guessed again.
+
+        Args:
+            segment: optional key to read directly out of detailed_avl_balance
+                instead of the default option_buy/eq_cnc/sod_balance chain
+                (e.g. pass whatever key segment_breakdown reveals is actually
+                the F&O limit once confirmed).
+        """
         if not self._token:
             return []
         try:
@@ -93,9 +114,12 @@ class INDmoneyBroker(BrokerAdapter):
                 if not body:
                     return []
                 data = body.get("data", body)
+                logger.info("INDmoneyBroker.get_funds raw data: %s", data)
                 # detailed_avl_balance is a dict of segment-wise limits; use option_buy as the broadest
                 avl = data.get("detailed_avl_balance") or {}
-                if isinstance(avl, dict):
+                if segment and isinstance(avl, dict) and segment in avl:
+                    available = float(avl.get(segment) or 0)
+                elif isinstance(avl, dict):
                     available = float(avl.get("option_buy") or avl.get("eq_cnc") or data.get("sod_balance") or 0)
                 else:
                     available = float(avl or data.get("sod_balance") or 0)
@@ -108,6 +132,7 @@ class INDmoneyBroker(BrokerAdapter):
                     used=used,
                     total=total,
                     broker="indmoney",
+                    segment_breakdown=avl if isinstance(avl, dict) else None,
                 )]
         except Exception as exc:
             logger.debug("INDmoneyBroker.get_funds error: %s", exc)

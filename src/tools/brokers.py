@@ -43,11 +43,15 @@ async def _check_zerodha_connected() -> bool:
         return False
 
 
-async def _fetch_broker_data(adapter, method_name: str) -> dict:
-    """Call adapter.<method_name>() and return a broker result envelope."""
+async def _fetch_broker_data(adapter, method_name: str, **method_kwargs) -> dict:
+    """Call adapter.<method_name>(**method_kwargs) and return a broker result
+    envelope. method_kwargs is empty for every existing caller (positions/
+    orders/holdings) — get_unified_funds is the only one that passes
+    `segment` (2026-07-13), and only both broker adapters' get_funds()
+    accept it, so this stays a true no-op for everything else."""
     try:
         method = getattr(adapter, method_name)
-        items = await method()
+        items = await method(**method_kwargs)
         return {
             "data": [i.to_dict() for i in items],
             "status": "ok",
@@ -56,8 +60,15 @@ async def _fetch_broker_data(adapter, method_name: str) -> dict:
         return {"status": "error", "message": str(exc)}
 
 
-async def _unified(method_name: str, broker: str) -> dict:
-    """Core helper for all unified tools."""
+async def _unified(method_name: str, broker: str, *, indmoney_kwargs: dict | None = None) -> dict:
+    """Core helper for all unified tools.
+
+    indmoney_kwargs (2026-07-13): passed only to the INDmoney adapter call,
+    never Zerodha — get_unified_funds' `segment` is INDmoney's
+    detailed_avl_balance vocabulary (e.g. "option_buy"), which has no
+    equivalent meaning for Zerodha's margins() segment ("equity"/
+    "commodity"); passing the same string to both would silently do the
+    wrong thing for Zerodha rather than nothing at all."""
     brokers_result: dict = {}
     combined: list = []
 
@@ -83,7 +94,7 @@ async def _unified(method_name: str, broker: str) -> dict:
         except Exception:
             auth = False
         if auth:
-            brokers_result["indmoney"] = await _fetch_broker_data(ind, method_name)
+            brokers_result["indmoney"] = await _fetch_broker_data(ind, method_name, **(indmoney_kwargs or {}))
             if brokers_result["indmoney"]["status"] == "ok":
                 combined.extend(brokers_result["indmoney"]["data"])
         else:
@@ -178,15 +189,26 @@ def register(mcp: FastMCP) -> None:
         return await _unified("get_positions", broker)
 
     @mcp.tool()
-    async def get_unified_funds(broker: str = "all") -> dict:
+    async def get_unified_funds(broker: str = "all", segment: str | None = None) -> dict:
         """Returns available funds from zerodha, indmoney, or both brokers combined.
 
         Args:
             broker: "zerodha" | "indmoney" | "all" (default "all")
+            segment: INDmoney only — read a specific key straight out of the
+                account's detailed_avl_balance instead of the default
+                option_buy/eq_cnc/sod_balance chain. Confirmed bug
+                (2026-07-13): the default "available" figure under-reported
+                real F&O buying power (returned 6852.35 vs the INDmoney
+                app's confirmed 15,000+). Every fund entry's
+                "segment_breakdown" field carries the account's real
+                detailed_avl_balance verbatim — check that first to find the
+                correct key name for your account before passing it here;
+                the right key isn't independently confirmed yet (see
+                INDmoneyBroker.get_funds' docstring for why).
 
         Returns a unified response with per-broker status and a combined list.
         """
-        return await _unified("get_funds", broker)
+        return await _unified("get_funds", broker, indmoney_kwargs={"segment": segment} if segment else None)
 
     @mcp.tool()
     async def get_unified_orders(broker: str = "all") -> dict:

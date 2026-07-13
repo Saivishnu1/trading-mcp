@@ -29,8 +29,13 @@ class BrokerAdapter(ABC):
         ...
 
     @abstractmethod
-    async def get_funds(self) -> list[Fund]:
-        """Return available fund balances. Return [] on error."""
+    async def get_funds(self, segment: str | None = None) -> list[Fund]:
+        """Return available fund balances. Return [] on error.
+
+        segment: optional broker-specific segment hint (e.g. INDmoney's
+        detailed_avl_balance key, Zerodha's "equity"/"commodity"). None
+        preserves each adapter's existing default behavior.
+        """
         ...
 
     @abstractmethod

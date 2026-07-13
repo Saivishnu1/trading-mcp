@@ -418,6 +418,12 @@ try:
         last_fired_pcr: Mapped[float | None]                    = mapped_column(Float)
         last_fired_call_wall_break_spot: Mapped[float | None]   = mapped_column(Float)
         last_fired_put_wall_break_spot: Mapped[float | None]    = mapped_column(Float)
+        # Dedup tightening (2026-07-13) — same "last actually FIRED value"
+        # pattern as last_fired_pcr above, for MACRO_CRUDE/PINNING_RISK
+        # (which previously had no dedup at all).
+        last_fired_crude_pct: Mapped[float | None]              = mapped_column(Float)
+        last_fired_pinning_distance: Mapped[float | None]       = mapped_column(Float)
+        last_fired_pinning_max_pain: Mapped[float | None]       = mapped_column(Float)
         session_date: Mapped[str]    = mapped_column(Text, nullable=False)
         # Liveness fields — let get_monitor_status() answer "is it alive?"
         # without SSHing into the Oracle VM.

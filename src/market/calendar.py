@@ -225,7 +225,7 @@ def _live_expiries() -> dict[str, str]:
     Priority 3 (BSE gaps): BSE options service available_expiries.
     """
     results: dict[str, str] = {}
-    today = date.today()
+    today = _today_ist()
 
     # Priority 1: Zerodha instruments CSV — NFO + BFO, no enctoken needed
     try:
@@ -388,6 +388,19 @@ def _fetch_bse_holidays_sync(year: int) -> list[str]:
     return []
 
 
+def _today_ist() -> date:
+    """IST calendar date — confirmed bug (2026-07-13): get_market_calendar()
+    and _live_expiries() both used date.today() (the OS/process-local date,
+    UTC on the Oracle VM). IST is UTC+5:30, so during IST 00:00-05:29 the
+    UTC date is still "yesterday" — date.today() reports a day behind the
+    real IST calendar date in that window, which is exactly what surfaced
+    as get_market_calendar() reporting Sunday when it was already Monday
+    IST. Mirrors the already-correct _today_ist() in
+    src/monitor/repository.py / src/monitor/scheduler.py, just not
+    previously applied here."""
+    return datetime.now(_IST).date()
+
+
 def is_market_session_open(calendar: dict | None = None) -> bool:
     """True if the NSE/BSE cash+F&O session is live right now: today is a
     trading day (not a weekend or holiday — via get_market_calendar()'s
@@ -414,7 +427,7 @@ def get_market_calendar() -> dict:
     """Return the canonical market calendar for today."""
     global _last_expiry_source
 
-    today = date.today()
+    today = _today_ist()
     cal_result = get_calendar_provider().fetch()
     holidays = cal_result.data
     holiday_name = holidays.get(today)

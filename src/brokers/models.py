@@ -43,6 +43,14 @@ class Fund:
     used: float
     total: float
     broker: str
+    # Segment-wise raw balances (2026-07-13) — additive, optional. INDmoney's
+    # /funds response nests a detailed_avl_balance dict whose exact key
+    # names for F&O vs equity buying power aren't independently confirmed
+    # (see INDmoneyBroker.get_funds' docstring — this exists specifically so
+    # a caller can see the real breakdown rather than trust a single
+    # possibly-wrong guessed field). None for brokers that don't expose this
+    # (e.g. Zerodha's margins() shape is flat, not segment-wise).
+    segment_breakdown: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
