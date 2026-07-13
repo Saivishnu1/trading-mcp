@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Trade — Zerodha</title>
 {shared_head}
+<!-- Candlestick chart (2026-07-12) — self-hosted same-origin, no CDN, same
+     asset strategy as shared.css/shared.js/lucide.js above. Only this page
+     loads it (not injected into {shared_head}, which every page gets). -->
+<script src="/ui/lightweight-charts.js?v={lightweight_charts_v}" defer></script>
 <style>
   /* ── Trade-page-specific layout only — tokens/components/nav from the
      shared design system (Phase 1). Backend contract is UNCHANGED: same
@@ -168,6 +172,16 @@
   .chart-placeholder .icon { width: 32px; height: 32px; opacity: 0.4; }
   .chart-placeholder-title { font-size: var(--text-body-m); font-weight: var(--weight-medium); color: var(--content-secondary); }
   .chart-placeholder-sub { font-size: var(--text-body-s); }
+
+  /* Candlestick chart (2026-07-12) — TradingView Lightweight Charts v5,
+     self-hosted (see /ui/lightweight-charts.js). Page-specific presentation
+     only; the chart instance itself is created/sized in JS. */
+  #chartContainer { width: 100%; height: 260px; }
+  #chartLoadingText { font-size: var(--text-body-s); color: var(--content-tertiary); margin-top: var(--space-2); visibility: hidden; }
+  .ohlcv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2) var(--space-4); }
+  .ohlcv-item { min-width: 0; }
+  .ohlcv-label { font-size: var(--text-caption); color: var(--content-tertiary); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 2px; }
+  .ohlcv-val { font-size: var(--text-body-m); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 
   /* Mobile guided flow */
   .mobile-only { display: block; }
@@ -389,19 +403,45 @@
       </div>
     </div>
 
-    <!-- Chart placeholder (desktop only — honest, not fake; no chart data
-         source exists in this app's web trading path today) -->
+    <!-- Candlestick chart (2026-07-12) — desktop only, same slot the
+         placeholder occupied. TradingView Lightweight Charts v5,
+         self-hosted. Historical data: GET /trade/candles (new, additive).
+         Live updates: reuses connectQuote()'s existing /ws/prices
+         connection — no second WebSocket. -->
     <div class="panel-chart desktop-only">
       <div class="card card-pad">
         <div class="panel-head">
           <i data-lucide="line-chart" class="icon"></i>
           <h2 class="title-m">Chart</h2>
+          <div class="seg-control" role="radiogroup" aria-label="Chart interval" id="chartIntervalControl" style="margin-left:auto">
+            <button type="button" class="seg-btn" data-chart-interval="1m" onclick="setChartInterval('1m')">1m</button>
+            <button type="button" class="seg-btn" data-chart-interval="5m" onclick="setChartInterval('5m')">5m</button>
+            <button type="button" class="seg-btn" data-chart-interval="15m" onclick="setChartInterval('15m')">15m</button>
+            <button type="button" class="seg-btn" data-chart-interval="30m" onclick="setChartInterval('30m')">30m</button>
+            <button type="button" class="seg-btn" data-chart-interval="1h" onclick="setChartInterval('1h')">1h</button>
+            <button type="button" class="seg-btn" data-chart-interval="1D" onclick="setChartInterval('1D')">1D</button>
+          </div>
         </div>
-        <div class="chart-placeholder">
+
+        <div id="chartEmptyState" class="chart-placeholder">
           <i data-lucide="bar-chart-3" class="icon"></i>
-          <div class="chart-placeholder-title">Chart coming soon</div>
-          <div class="chart-placeholder-sub">Reserved for future live chart integration</div>
+          <div class="chart-placeholder-title">Pick a symbol to see its chart</div>
         </div>
+
+        <div id="chartLoadingState" class="hidden">
+          <div class="skeleton" style="height:260px;border-radius:var(--radius-md)"></div>
+          <div id="chartLoadingText">Loading historical data&hellip;</div>
+        </div>
+
+        <div id="chartErrorState" class="banner banner-error hidden" role="alert">
+          <div style="font-weight:var(--weight-semibold)">Historical chart unavailable</div>
+          <div style="font-size:var(--text-body-s);margin-top:2px">Live prices remain active. Trading functionality is unaffected.</div>
+          <div class="banner-actions">
+            <button type="button" class="btn btn-secondary" onclick="retryChart()">Retry</button>
+          </div>
+        </div>
+
+        <div id="chartContainer" class="hidden"></div>
       </div>
     </div>
 
@@ -422,8 +462,21 @@
           <div>Pick a symbol to see its live price here.</div>
         </div>
         <div id="liveQuoteContent" class="hidden">
-          <div class="live-quote">
+          <div class="live-quote" id="liveQuoteLive">
             <span class="data live-quote-price live-value" id="liveQuotePrice">—</span>
+          </div>
+          <!-- Crosshair OHLCV overlay (2026-07-12) — shown instead of the
+               live price while hovering the chart; restored automatically
+               when the cursor leaves it (see onChartCrosshairMove). -->
+          <div id="liveQuoteCrosshair" class="hidden">
+            <div class="ohlcv-grid">
+              <div class="ohlcv-item"><div class="ohlcv-label">Open</div><div class="ohlcv-val" id="cxOpen">—</div></div>
+              <div class="ohlcv-item"><div class="ohlcv-label">High</div><div class="ohlcv-val" id="cxHigh">—</div></div>
+              <div class="ohlcv-item"><div class="ohlcv-label">Low</div><div class="ohlcv-val" id="cxLow">—</div></div>
+              <div class="ohlcv-item"><div class="ohlcv-label">Close</div><div class="ohlcv-val" id="cxClose">—</div></div>
+              <div class="ohlcv-item"><div class="ohlcv-label">Volume</div><div class="ohlcv-val" id="cxVolume">—</div></div>
+              <div class="ohlcv-item"><div class="ohlcv-label">Time</div><div class="ohlcv-val" id="cxTime" style="font-size:var(--text-body-s)">—</div></div>
+            </div>
           </div>
         </div>
       </div>
@@ -557,6 +610,7 @@ function pickSymbol(i){
   closeDropdown();
   updateQtyHint(r);
   connectQuote(r);
+  connectChart(r);
   scheduleReviewUpdate();
 }
 
@@ -566,6 +620,7 @@ async function onSymbolInput(){
   setSymbolStatus("", "");
   updateQtyHint(null);
   disconnectQuote();
+  disconnectChart();
   if (searchDebounce) clearTimeout(searchDebounce);
   if (q.length < 2){ closeDropdown(); return; }
   searchDebounce = setTimeout(function(){ runSearch(q); }, 200);
@@ -631,6 +686,9 @@ function connectQuote(pick){
     var priceEl = document.getElementById("liveQuotePrice");
     priceEl.textContent = "₹" + ltp.toLocaleString();
     flashValue(priceEl);
+    // Candlestick chart (2026-07-12) — same tick, same connection; no
+    // second WebSocket. No-op if the chart isn't loaded for this symbol.
+    applyChartTick(ltp);
   };
   quoteWs.onclose = function(){ dot.classList.remove("live"); badge.textContent = "Disconnected"; };
   quoteWs.onerror = function(){};
@@ -641,6 +699,244 @@ function disconnectQuote(){
   document.getElementById("quoteConnText").textContent = "No symbol";
   document.getElementById("liveQuoteEmpty").classList.remove("hidden");
   document.getElementById("liveQuoteContent").classList.add("hidden");
+}
+
+// ============================================================
+// Candlestick chart (2026-07-12) — TradingView Lightweight Charts v5,
+// self-hosted (/ui/lightweight-charts.js). Historical data from the new
+// GET /trade/candles route; live updates ride connectQuote()'s existing
+// /ws/prices connection (applyChartTick, called from its onmessage above)
+// — no second WebSocket is ever opened. The chart instance and its two
+// series are created once (ensureChart) and reused for every symbol/
+// interval change; only setData (full reload) or update (one candle) are
+// ever called, never chart teardown/recreate.
+// ============================================================
+var chartApi = null;
+var candleSeries = null;
+var volumeSeries = null;
+var chartPick = null;                 // {exchange, security_id, ...} currently charted
+var chartFetchSeq = 0;                // bumped on every load; stale fetch responses are dropped
+var chartSkeletonShownAt = 0;
+var chartSlowTimer = null;
+var chartClientCache = {};            // "EXCH|id|interval" -> {ts, candles}
+var chartCandlesByTime = null;        // time -> candle for the currently-loaded symbol/interval
+var chartLastCandleTime = null;       // time (seconds) of the active/last candle bucket
+var CHART_CACHE_TTL_MS = 60000;
+var CHART_INTERVAL_SECONDS = {"1m":60,"5m":300,"15m":900,"30m":1800,"1h":3600,"1D":86400};
+var chartInterval = (function(){
+  var saved = localStorage.getItem("chartInterval");
+  return (saved && CHART_INTERVAL_SECONDS.hasOwnProperty(saved)) ? saved : "1D";
+})();
+
+function chartThemeOptions(){
+  var s = getComputedStyle(document.documentElement);
+  var v = function(name, fallback){ var val = s.getPropertyValue(name).trim(); return val || fallback; };
+  return {
+    layout: {
+      background: { type: LightweightCharts.ColorType.Solid, color: "transparent" },
+      textColor: v("--content-secondary", "#6b7280"),
+    },
+    grid: {
+      vertLines: { color: v("--border-subtle", "#e3e6eb") },
+      horzLines: { color: v("--border-subtle", "#e3e6eb") },
+    },
+    rightPriceScale: { borderColor: v("--border-subtle", "#e3e6eb") },
+    timeScale: { borderColor: v("--border-subtle", "#e3e6eb"), timeVisible: true, secondsVisible: false },
+  };
+}
+
+function ensureChart(){
+  if (chartApi) return;
+  var container = document.getElementById("chartContainer");
+  var s = getComputedStyle(document.documentElement);
+  var buy = s.getPropertyValue("--buy").trim() || "#0a8f4f";
+  var sell = s.getPropertyValue("--sell").trim() || "#d1392a";
+  chartApi = LightweightCharts.createChart(container, Object.assign({ autoSize: true }, chartThemeOptions()));
+  candleSeries = chartApi.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: buy, downColor: sell, borderVisible: false,
+    wickUpColor: buy, wickDownColor: sell,
+  });
+  candleSeries.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.28 } });
+  volumeSeries = chartApi.addSeries(LightweightCharts.HistogramSeries, {
+    priceFormat: { type: "volume" }, priceScaleId: "volume",
+  });
+  chartApi.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+  chartApi.subscribeCrosshairMove(onChartCrosshairMove);
+
+  if (window.matchMedia){
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){
+      if (chartApi) chartApi.applyOptions(chartThemeOptions());
+    });
+  }
+}
+
+function showChartState(state){
+  // state: "empty" | "loading" | "error" | "chart"
+  document.getElementById("chartEmptyState").classList.toggle("hidden", state !== "empty");
+  document.getElementById("chartLoadingState").classList.toggle("hidden", state !== "loading");
+  document.getElementById("chartErrorState").classList.toggle("hidden", state !== "error");
+  document.getElementById("chartContainer").classList.toggle("hidden", state !== "chart");
+  if (state !== "loading"){
+    document.getElementById("chartLoadingText").style.visibility = "hidden";
+    if (chartSlowTimer){ clearTimeout(chartSlowTimer); chartSlowTimer = null; }
+  }
+}
+
+function chartCacheKey(pick, interval){ return pick.exchange + "|" + pick.security_id + "|" + interval; }
+
+function setChartInterval(interval){
+  if (!CHART_INTERVAL_SECONDS.hasOwnProperty(interval)) return;
+  chartInterval = interval;
+  localStorage.setItem("chartInterval", interval);
+  document.querySelectorAll("#chartIntervalControl .seg-btn").forEach(function(b){
+    b.classList.toggle("on", b.dataset.chartInterval === interval);
+  });
+  // Same symbol, different interval — preserve zoom.
+  loadChartData(chartPick, interval, true);
+}
+
+function connectChart(pick){
+  chartPick = (pick && pick.security_id) ? pick : null;
+  document.querySelectorAll("#chartIntervalControl .seg-btn").forEach(function(b){
+    b.classList.toggle("on", b.dataset.chartInterval === chartInterval);
+  });
+  // Genuine symbol change — do not preserve zoom.
+  loadChartData(chartPick, chartInterval, false);
+}
+
+function disconnectChart(){
+  chartPick = null;
+  chartFetchSeq++; // invalidate any in-flight fetch for the previous symbol
+  showChartState("empty");
+  if (candleSeries){ candleSeries.setData([]); }
+  if (volumeSeries){ volumeSeries.setData([]); }
+}
+
+function retryChart(){
+  if (!chartPick) return;
+  var key = chartCacheKey(chartPick, chartInterval);
+  delete chartClientCache[key];
+  loadChartData(chartPick, chartInterval, true);
+}
+
+async function loadChartData(pick, interval, preserveZoom){
+  var seq = ++chartFetchSeq;
+  if (!pick || !pick.security_id){ showChartState("empty"); return; }
+
+  var key = chartCacheKey(pick, interval);
+  var cached = chartClientCache[key];
+  if (cached && (Date.now() - cached.ts) < CHART_CACHE_TTL_MS){
+    renderCandles(cached.candles, preserveZoom);
+    return;
+  }
+
+  showChartState("loading");
+  chartSkeletonShownAt = Date.now();
+  if (chartSlowTimer) clearTimeout(chartSlowTimer);
+  chartSlowTimer = setTimeout(function(){
+    if (seq !== chartFetchSeq) return;
+    document.getElementById("chartLoadingText").style.visibility = "visible";
+  }, 2000);
+
+  var pin = currentPin();
+  try {
+    var url = "/trade/candles?pin=" + encodeURIComponent(pin) +
+      "&exchange=" + encodeURIComponent(pick.exchange) +
+      "&security_id=" + encodeURIComponent(pick.security_id) +
+      "&interval=" + encodeURIComponent(interval);
+    var r = await fetch(url);
+    var d = await r.json();
+    if (seq !== chartFetchSeq) return; // symbol/interval changed while this was in flight
+    if (!r.ok || d.status !== "ok" || !d.candles || !d.candles.length){
+      showChartState("error");
+      return;
+    }
+    chartClientCache[key] = { ts: Date.now(), candles: d.candles };
+    renderCandles(d.candles, preserveZoom);
+  } catch (e) {
+    if (seq !== chartFetchSeq) return;
+    showChartState("error");
+  }
+}
+
+function renderCandles(candles, preserveZoom){
+  var savedRange = (preserveZoom && chartApi) ? chartApi.timeScale().getVisibleRange() : null;
+  showChartState("chart");
+  ensureChart();
+  candleSeries.setData(candles.map(function(c){
+    return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
+  }));
+  var s = getComputedStyle(document.documentElement);
+  var buy = s.getPropertyValue("--buy").trim() || "#0a8f4f";
+  var sell = s.getPropertyValue("--sell").trim() || "#d1392a";
+  volumeSeries.setData(candles.map(function(c){
+    return { time: c.time, value: c.volume || 0, color: c.close >= c.open ? buy : sell };
+  }));
+  chartCandlesByTime = {};
+  candles.forEach(function(c){ chartCandlesByTime[c.time] = c; });
+  chartLastCandleTime = candles.length ? candles[candles.length - 1].time : null;
+  if (savedRange){
+    try { chartApi.timeScale().setVisibleRange(savedRange); } catch (e) { /* range no longer valid — ignore, chart still shows full data */ }
+  } else if (chartApi) {
+    chartApi.timeScale().fitContent();
+  }
+}
+
+function applyChartTick(ltp){
+  if (!candleSeries || !chartPick || chartLastCandleTime == null) return;
+  var bucketSeconds = CHART_INTERVAL_SECONDS[chartInterval];
+  var nowSec = Math.floor(Date.now() / 1000);
+  var bucketStart = Math.floor(nowSec / bucketSeconds) * bucketSeconds;
+
+  if (bucketStart > chartLastCandleTime){
+    // A tick crossed into the next interval bucket — start a new candle
+    // (open at this tick's price; volume unknown live, left at 0 until the
+    // next full history reload reports the exchange's true volume — never
+    // fabricated here).
+    var fresh = { time: bucketStart, open: ltp, high: ltp, low: ltp, close: ltp, volume: 0 };
+    chartCandlesByTime[bucketStart] = fresh;
+    chartLastCandleTime = bucketStart;
+    candleSeries.update(fresh);
+    return;
+  }
+  if (bucketStart < chartLastCandleTime) return; // stale/out-of-order tick — ignore
+
+  var bar = chartCandlesByTime[chartLastCandleTime];
+  if (!bar) return;
+  bar.high = Math.max(bar.high, ltp);
+  bar.low = Math.min(bar.low, ltp);
+  bar.close = ltp;
+  candleSeries.update(bar); // update only the latest candle — never setData here
+}
+
+function onChartCrosshairMove(param){
+  if (!param || param.time === undefined || !candleSeries){
+    restoreLiveQuoteView();
+    return;
+  }
+  var bar = param.seriesData.get(candleSeries);
+  if (!bar){ restoreLiveQuoteView(); return; }
+  var vol = volumeSeries ? param.seriesData.get(volumeSeries) : null;
+  showCrosshairView(bar, vol ? vol.value : null, param.time);
+}
+
+function showCrosshairView(bar, volume, time){
+  document.getElementById("liveQuoteLive").classList.add("hidden");
+  document.getElementById("liveQuoteCrosshair").classList.remove("hidden");
+  document.getElementById("cxOpen").textContent = "₹" + bar.open.toLocaleString();
+  document.getElementById("cxHigh").textContent = "₹" + bar.high.toLocaleString();
+  document.getElementById("cxLow").textContent = "₹" + bar.low.toLocaleString();
+  document.getElementById("cxClose").textContent = "₹" + bar.close.toLocaleString();
+  document.getElementById("cxVolume").textContent = (volume || volume === 0) ? volume.toLocaleString() : "—";
+  document.getElementById("cxTime").textContent = new Date(time * 1000).toLocaleString();
+}
+
+function restoreLiveQuoteView(){
+  var cx = document.getElementById("liveQuoteCrosshair");
+  if (cx.classList.contains("hidden")) return; // already showing live — nothing to do
+  cx.classList.add("hidden");
+  document.getElementById("liveQuoteLive").classList.remove("hidden");
 }
 
 function prefillFromQuery(){
@@ -662,6 +958,7 @@ function prefillFromQuery(){
     selected = { symbol: symbol, exchange: exchange, security_id: securityId, segment: segment, name: "" };
     setSymbolStatus("ok", exchange);
     connectQuote(selected);
+    connectChart(selected);
   }
   setSide("SELL");
   document.getElementById("protectionPanel").classList.add("open");
@@ -669,6 +966,9 @@ function prefillFromQuery(){
 }
 
 document.addEventListener("DOMContentLoaded", function(){
+  document.querySelectorAll("#chartIntervalControl .seg-btn").forEach(function(b){
+    b.classList.toggle("on", b.dataset.chartInterval === chartInterval);
+  });
   prefillFromQuery();
   var input = document.getElementById("symbol");
   input.addEventListener("input", onSymbolInput);

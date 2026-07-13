@@ -653,3 +653,102 @@ async def test_summary_aggregates_positions():
     assert data["total_positions"] == 2
     assert data["total_pnl"] == 60.0
     assert data["with_sl_or_target"] == 1
+
+
+# ---------------------------------------------------------------------------
+# /trade/candles — candlestick chart data (2026-07-12)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_candles_rejects_bad_pin():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock()) as fn:
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="0000", exchange="NSE", security_id="51381", interval="1D"),
+        )
+    assert status == 403
+    assert json.loads(body)["error"] == "invalid PIN"
+    fn.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_candles_success_returns_ok_payload():
+    result = {"status": "ok", "candles": [{"time": 1752000000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 0}], "cached": False}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock(return_value=result)) as fn:
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="1234", exchange="NSE", security_id="51381", interval="1D"),
+        )
+    assert status == 200
+    assert json.loads(body) == result
+    fn.assert_awaited_once()
+    assert fn.call_args.args == ("NSE", "51381", "1D")
+
+
+@pytest.mark.anyio
+async def test_candles_error_result_returns_502():
+    result = {"status": "error", "error": "no_data", "message": "No historical data available for this contract right now."}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock(return_value=result)):
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="1234", exchange="NSE", security_id="51381", interval="1D"),
+        )
+    assert status == 502
+    assert json.loads(body)["error"] == "no_data"
+
+
+@pytest.mark.anyio
+async def test_candles_invalid_security_id_error_passthrough():
+    result = {"status": "error", "error": "invalid_security_id", "message": "No contract selected — pick a symbol from the dropdown first."}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock(return_value=result)):
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="1234", exchange="", security_id="", interval="1D"),
+        )
+    assert status == 502
+    assert json.loads(body)["error"] == "invalid_security_id"
+
+
+@pytest.mark.anyio
+async def test_candles_unsupported_interval_error_passthrough():
+    result = {"status": "error", "error": "unsupported_interval", "message": "Unsupported interval '4h'."}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock(return_value=result)):
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="1234", exchange="NSE", security_id="51381", interval="4h"),
+        )
+    assert status == 502
+    assert json.loads(body)["error"] == "unsupported_interval"
+
+
+@pytest.mark.anyio
+async def test_candles_not_authenticated_error_passthrough():
+    # "Expired token" and "not configured" both surface as this same code —
+    # see chart_service.py's docstring for why get_historical_data() can't
+    # distinguish them further.
+    result = {"status": "error", "error": "not_authenticated", "message": "INDstocks isn't configured on the server right now."}
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock(return_value=result)):
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="1234", exchange="NSE", security_id="51381", interval="1D"),
+        )
+    assert status == 502
+    assert json.loads(body)["error"] == "not_authenticated"
+
+
+@pytest.mark.anyio
+async def test_candles_broker_exception_returns_broker_unavailable():
+    with patch.dict(os.environ, {"TRADE_PIN": "1234"}), \
+         patch("src.execution.chart_service.get_candles", AsyncMock(side_effect=RuntimeError("boom"))):
+        status, body = await _call(
+            "/trade/candles",
+            query_string=_qs(pin="1234", exchange="NSE", security_id="51381", interval="1D"),
+        )
+    assert status == 502
+    assert json.loads(body)["error"] == "broker_unavailable"
