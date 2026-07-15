@@ -791,6 +791,52 @@ class TestGetPositionsForWeb:
             result = await svc.get_positions_for_web()
         assert result == {"positions": [], "total": 0}
 
+    @pytest.mark.anyio
+    async def test_zero_quantity_position_is_dropped(self):
+        # A same-day position squared off to net_quantity=0 still comes back
+        # from INDstocks as a row (2026-07-15 bug) — it isn't sellable/
+        # modifiable and shouldn't clutter the positions page.
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[
+            self._position(symbol="RELIANCE", quantity=0, avg=0.0, ltp=0.0, pnl=0.0),
+            self._position(symbol="TCS", quantity=10),
+        ])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", AsyncMock(return_value="11536")), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["total"] == 1
+        assert result["positions"][0]["symbol"] == "TCS"
+
+    @pytest.mark.anyio
+    async def test_zero_quantity_holding_is_dropped(self):
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[])
+        adapter.get_holdings = AsyncMock(return_value=[
+            self._holding(symbol="TCS", quantity=0, avg=0.0, ltp=0.0, pnl=0.0),
+        ])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter):
+            result = await svc.get_positions_for_web()
+        assert result == {"positions": [], "total": 0}
+
+    @pytest.mark.anyio
+    async def test_negative_quantity_short_position_is_kept(self):
+        # quantity is signed (negative = short) — only exactly zero should
+        # be filtered, not falsy-but-nonzero short positions.
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position(quantity=-10)])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", AsyncMock(return_value="2885")), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["total"] == 1
+        assert result["positions"][0]["quantity"] == -10
+
 
 # ---------------------------------------------------------------------------
 # ExecutionRepository — SL/target active-order lookup (2026-07-12)
