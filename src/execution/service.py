@@ -27,10 +27,15 @@ async def resolve_symbol(symbol: str, *, exchange: str, segment: str) -> str | N
 
     Uses the fno instrument master for derivatives, equity otherwise.
     Returns None if unresolved.
+
+    Passes exchange through to resolve_security_id (2026-07-15) — without it,
+    a dual-listed symbol (NSE + BSE) resolves to whichever exchange's row the
+    instrument master lists first, which broke live pricing for BSE
+    positions on the /positions page (see resolve_security_id's docstring).
     """
     broker = get_broker_adapter("indmoney")
     source = "fno" if segment.upper() == "DERIVATIVE" else "equity"
-    return await broker.resolve_security_id(symbol, source=source)
+    return await broker.resolve_security_id(symbol, source=source, exchange=exchange)
 
 
 async def search_symbols(query: str, *, segment: str | None = None, limit: int = 15) -> list[dict]:

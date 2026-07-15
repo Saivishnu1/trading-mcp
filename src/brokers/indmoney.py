@@ -548,7 +548,9 @@ class INDmoneyBroker(BrokerAdapter):
         """
         await asyncio.gather(*(self._cached_instruments(s) for s in sources))
 
-    async def resolve_security_id(self, symbol: str, source: str = "equity") -> str | None:
+    async def resolve_security_id(
+        self, symbol: str, source: str = "equity", exchange: str | None = None,
+    ) -> str | None:
         """Resolve a trading symbol to its INDstocks ``security_id``.
 
         Uses the instrument-master CSV (``GET /market/instruments`` via
@@ -562,17 +564,34 @@ class INDmoneyBroker(BrokerAdapter):
         ``TRADING_SYMBOL`` (INDstocks renders that column month-granular, e.g.
         "NIFTY-JUL2026-27500-PE", for every Thursday in July) and differ only
         by ``EXPIRY_DATE``/``SECURITY_ID``. Matching on symbol text alone is
-        therefore AMBIGUOUS for those — this returns whichever row the CSV
-        lists first, which may not be the contract the caller intends. Prefer
-        resolving directly by security_id (returned by search_instruments)
-        whenever the caller already has a specific contract selected — this
-        symbol-text path exists for the Telegram /buy /sell flow where the
-        user can only type a symbol string.
+        therefore AMBIGUOUS for those — prefer resolving directly by
+        security_id (returned by search_instruments) whenever the caller
+        already has a specific contract selected — this symbol-text path
+        exists for the Telegram /buy /sell flow where the user can only type
+        a symbol string.
+
+        exchange (2026-07-15): the "equity" instrument master carries BOTH
+        NSE and BSE rows for any dual-listed stock, distinguished only by the
+        ``EXCH`` column — matching on symbol text alone with no exchange
+        filter silently returns whichever row the CSV lists first (in
+        practice usually the NSE row), a likely root cause of BSE
+        holdings/positions on the /positions page resolving the wrong
+        security_id and then never receiving a live-price tick (stuck/zero
+        LTP) — not yet confirmed against a real BSE position's raw EXCH
+        value, hence the one-time discovery log below. When given, rows are
+        filtered to an exact ``EXCH`` match first; only if no
+        exchange-matching row exists does this fall back to the first
+        symbol-text match (preserves prior behavior for callers that don't
+        pass an exchange, e.g. the Telegram /buy flow).
         """
         if not symbol:
             return None
         target = symbol.strip().upper()
+        want_exchange = exchange.strip().upper() if exchange else None
         rows = await self._cached_instruments(source)
+        fallback_sec_id: str | None = None
+        fallback_row: dict | None = None
+        exact_match_row: dict | None = None
         for row_up in rows:
             sym = str(
                 row_up.get("TRADING_SYMBOL")
@@ -580,10 +599,32 @@ class INDmoneyBroker(BrokerAdapter):
                 or row_up.get("CUSTOM_SYMBOL")
                 or ""
             ).strip().upper()
-            if sym == target:
-                sec_id = row_up.get("SECURITY_ID")
-                return str(sec_id) if sec_id else None
-        return None
+            if sym != target:
+                continue
+            sec_id = row_up.get("SECURITY_ID")
+            sec_id = str(sec_id) if sec_id else None
+            if fallback_sec_id is None:
+                fallback_sec_id = sec_id
+                fallback_row = row_up
+            if want_exchange is None:
+                return sec_id
+            row_exch = str(row_up.get("EXCH") or "").strip().upper()
+            if row_exch == want_exchange:
+                exact_match_row = row_up
+                return sec_id
+        if want_exchange is not None and exact_match_row is None and fallback_row is not None:
+            # No row's EXCH matched the requested exchange — either this
+            # symbol genuinely isn't listed there, or EXCH uses a different
+            # string than "NSE"/"BSE" than assumed. Logged once per call
+            # (not per row) so a real BSE position's actual EXCH value can be
+            # confirmed from live logs before assuming this fallback path is
+            # ever actually hit for a real dual-listed stock.
+            logger.info(
+                "INDmoneyBroker.resolve_security_id: no EXCH=%s row for symbol=%s (source=%s); "
+                "falling back to first match with EXCH=%r",
+                want_exchange, target, source, fallback_row.get("EXCH"),
+            )
+        return fallback_sec_id
 
     async def search_instruments(self, query: str, source: str = "equity", limit: int = 15) -> list[dict]:
         """Search the instrument master for symbols matching ``query`` — powers
