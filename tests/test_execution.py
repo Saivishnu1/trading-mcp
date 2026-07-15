@@ -339,6 +339,34 @@ class TestResolveSecurityId:
         assert await b.resolve_security_id("") is None
 
     @pytest.mark.anyio
+    async def test_exchange_filter_picks_matching_row_for_dual_listed_symbol(self):
+        # Same TRADING_SYMBOL listed on both NSE and BSE with different
+        # security_ids — without an exchange filter this used to always
+        # return whichever row came first (2026-07-15 bug: broke live
+        # pricing for BSE positions since the wrong security_id was used
+        # to build the WebSocket instrument key).
+        b = _broker()
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "2885"},
+            {"EXCH": "BSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "500325"},
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            assert await b.resolve_security_id("RELIANCE", exchange="BSE") == "500325"
+            assert await b.resolve_security_id("RELIANCE", exchange="NSE") == "2885"
+            # No exchange hint at all — preserves prior first-match behavior.
+            assert await b.resolve_security_id("RELIANCE") == "2885"
+
+    @pytest.mark.anyio
+    async def test_exchange_filter_falls_back_when_no_row_matches(self):
+        # Requested exchange isn't present at all (or EXCH uses an
+        # unexpected string) — fall back to the first symbol-text match
+        # rather than returning None outright.
+        b = _broker()
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "11536"}]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            assert await b.resolve_security_id("TCS", exchange="BSE") == "11536"
+
+    @pytest.mark.anyio
     async def test_caches_instrument_master(self):
         from src.brokers import indmoney as indmoney_module
         indmoney_module._instrument_cache.clear()  # isolate from other tests/process cache
@@ -619,6 +647,40 @@ class TestSearchSymbols:
         # threshold to avoid CI flakiness while still catching a regression
         # to sequential awaits.
         assert elapsed < 0.17, f"search_symbols took {elapsed:.3f}s — sources may be running sequentially"
+
+
+# ---------------------------------------------------------------------------
+# resolve_symbol (2026-07-15) — exchange threading through to
+# resolve_security_id, end to end (no mocking resolve_security_id itself).
+# ---------------------------------------------------------------------------
+
+class TestResolveSymbolExchangeThreading:
+
+    @pytest.mark.anyio
+    async def test_bse_position_resolves_bse_security_id_not_nse(self):
+        import src.execution.service as svc
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "2885"},
+            {"EXCH": "BSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "500325"},
+        ]
+        adapter = _broker()
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(adapter, "get_instruments", AsyncMock(return_value=rows)):
+            result = await svc.resolve_symbol("RELIANCE", exchange="BSE", segment="EQUITY")
+        assert result == "500325"
+
+    @pytest.mark.anyio
+    async def test_nse_position_still_resolves_nse_security_id(self):
+        import src.execution.service as svc
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "2885"},
+            {"EXCH": "BSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "500325"},
+        ]
+        adapter = _broker()
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(adapter, "get_instruments", AsyncMock(return_value=rows)):
+            result = await svc.resolve_symbol("RELIANCE", exchange="NSE", segment="EQUITY")
+        assert result == "2885"
 
 
 # ---------------------------------------------------------------------------
