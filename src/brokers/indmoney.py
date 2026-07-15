@@ -163,8 +163,12 @@ class INDmoneyBroker(BrokerAdapter):
                     pnl_pct = float(h.get("pnl_percent") or 0)
                     # exchange_segment is "NSE_EQ" — strip the suffix for display
                     exch = (h.get("exchange_segment") or "NSE").split("_")[0]
+                    trading_symbol = h.get("trading_symbol")
+                    sec_id = h.get("security_id")
+                    if not trading_symbol and sec_id:
+                        trading_symbol = await self.resolve_security_name(str(sec_id), source="equity")
                     result.append(Holding(
-                        symbol=h.get("trading_symbol") or h.get("security_id") or "",
+                        symbol=trading_symbol or (str(sec_id) if sec_id else ""),
                         exchange=exch,
                         quantity=qty,
                         avg_price=avg,
@@ -205,8 +209,12 @@ class INDmoneyBroker(BrokerAdapter):
                     ltp = float(p.get("last_traded_price") or 0)
                     pnl = float(p.get("pnl_absolute") or 0)
                     exch = (p.get("exchange_segment") or "NSE").split("_")[0]
+                    trading_symbol = p.get("trading_symbol")
+                    sec_id = p.get("security_id")
+                    if not trading_symbol and sec_id:
+                        trading_symbol = await self.resolve_security_name(str(sec_id), source="fno")
                     result.append(Position(
-                        symbol=p.get("trading_symbol") or p.get("security_id") or "",
+                        symbol=trading_symbol or (str(sec_id) if sec_id else ""),
                         exchange=exch,
                         product=p.get("position_type") or "",
                         quantity=qty,
@@ -625,6 +633,39 @@ class INDmoneyBroker(BrokerAdapter):
                 want_exchange, target, source, fallback_row.get("EXCH"),
             )
         return fallback_sec_id
+
+    async def resolve_security_name(self, security_id: str, source: str = "equity") -> str | None:
+        """Reverse of resolve_security_id — look up the instrument master's
+        display name for a bare ``security_id``.
+
+        get_positions()/get_holdings() (2026-07-15) fall back to this when
+        INDstocks' position/holding row omits ``trading_symbol`` (confirmed
+        on a same-day position that had already netted to zero — INDstocks
+        blanks the whole descriptive payload once a position is flat, not
+        just the quantity), so the /positions page shows a real name (e.g.
+        "SENSEX 16 JUL 77800 CE") instead of the raw numeric id. Tries both
+        the "fno" and "equity" instrument masters if the given source has no
+        match, since a holding/position's `source` guess (equity vs fno) can
+        be wrong for the same reason trading_symbol was missing. Returns
+        None if not found in either.
+        """
+        if not security_id:
+            return None
+        target = str(security_id).strip()
+        for src in (source, "fno" if source != "fno" else "equity"):
+            rows = await self._cached_instruments(src)
+            for row_up in rows:
+                sec_id = str(row_up.get("SECURITY_ID") or "").strip()
+                if sec_id != target:
+                    continue
+                name = (
+                    row_up.get("TRADING_SYMBOL")
+                    or row_up.get("SYMBOL_NAME")
+                    or row_up.get("CUSTOM_SYMBOL")
+                )
+                if name:
+                    return str(name)
+        return None
 
     async def search_instruments(self, query: str, source: str = "equity", limit: int = 15) -> list[dict]:
         """Search the instrument master for symbols matching ``query`` — powers

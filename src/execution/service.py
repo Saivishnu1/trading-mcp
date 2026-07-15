@@ -89,12 +89,23 @@ async def get_positions_for_web() -> dict:
     permanent "not available" stub), so a Zerodha-sourced position could be
     displayed but never actionable here — better to keep this view honest
     about what it can actually manage.
+
+    Zero-quantity rows are dropped (2026-07-15 bug): INDstocks' net_positions
+    keeps a row for a same-day position even after it's fully squared off,
+    with net_quantity=0/average_price=0 and — apparently, since a squared-off
+    position has no live tradingsymbol — trading_symbol absent, so it fell
+    back to displaying the raw security_id as the "symbol" (e.g. "824353")
+    with every figure showing ₹0. A qty-0 row isn't an open position and
+    can't be sold or have its SL/target modified, so it has no business on
+    this page.
     """
     broker = get_broker_adapter("indmoney")
     positions, holdings = await asyncio.gather(broker.get_positions(), broker.get_holdings())
 
     rows: list[dict] = []
     for entry, kind in [(p, "position") for p in positions] + [(h, "holding") for h in holdings]:
+        if not entry.quantity:
+            continue
         symbol = entry.symbol
         exchange = entry.exchange.upper()
         segment = "DERIVATIVE" if kind == "position" else "EQUITY"

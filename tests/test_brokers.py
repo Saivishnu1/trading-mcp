@@ -34,6 +34,17 @@ def _async_cm(return_value):
     return cm
 
 
+@pytest.fixture(autouse=True)
+def _clear_instrument_cache():
+    """resolve_security_name (like resolve_security_id/search_instruments)
+    shares a process-wide TTL cache keyed by source — isolate tests that
+    exercise it from each other and from other test files."""
+    from src.brokers import indmoney as indmoney_module
+    indmoney_module._instrument_cache.clear()
+    yield
+    indmoney_module._instrument_cache.clear()
+
+
 # ---------------------------------------------------------------------------
 # TestINDmoneyBroker
 # ---------------------------------------------------------------------------
@@ -116,6 +127,47 @@ class TestINDmoneyBroker:
         assert h.current_price == 1600.0
         assert h.pnl == 1000.0
         assert h.broker == "indmoney"
+
+    @pytest.mark.anyio
+    async def test_get_holdings_missing_trading_symbol_falls_back_to_resolved_name(self):
+        # A same-day-flat holding can omit trading_symbol entirely (2026-07-15
+        # bug) — rather than display the bare security_id, look up the real
+        # name from the instrument master.
+        b = self._broker()
+        payload = [
+            {
+                "security_id": "500325",
+                "exchange_segment": "BSE_EQ",
+                "quantity": 0,
+                "average_price": 0,
+                "last_traded_price": 0,
+                "pnl_absolute": 0,
+                "pnl_percent": 0,
+            }
+        ]
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        instrument_rows = [{"SECURITY_ID": "500325", "TRADING_SYMBOL": "RELIANCE"}]
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)), \
+             patch.object(b, "get_instruments", AsyncMock(return_value=instrument_rows)):
+            holdings = await b.get_holdings()
+        assert holdings[0].symbol == "RELIANCE"
+
+    @pytest.mark.anyio
+    async def test_get_holdings_missing_trading_symbol_and_unresolvable_falls_back_to_id(self):
+        b = self._broker()
+        payload = [{
+            "security_id": "999999", "exchange_segment": "BSE_EQ", "quantity": 0,
+            "average_price": 0, "last_traded_price": 0, "pnl_absolute": 0, "pnl_percent": 0,
+        }]
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)), \
+             patch.object(b, "get_instruments", AsyncMock(return_value=[])):
+            holdings = await b.get_holdings()
+        assert holdings[0].symbol == "999999"
 
     @pytest.mark.anyio
     async def test_get_holdings_empty_token(self):
@@ -279,6 +331,32 @@ class TestINDmoneyBroker:
         assert p.exchange == "NSE"
         assert p.quantity == 50
         assert p.broker == "indmoney"
+
+    @pytest.mark.anyio
+    async def test_get_positions_missing_trading_symbol_falls_back_to_resolved_name(self):
+        # A same-day squared-off position row (2026-07-15 bug) — INDstocks
+        # omits trading_symbol once net_quantity hits zero. The UI shouldn't
+        # show the bare security_id when a real name can be resolved.
+        b = self._broker()
+        payload = {
+            "status": "success",
+            "data": {
+                "net_positions": [{
+                    "security_id": "824353", "exchange_segment": "BSE_FNO",
+                    "net_quantity": 0, "average_price": 0, "last_traded_price": 0,
+                    "pnl_absolute": 0,
+                }],
+                "day_positions": [],
+            },
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        instrument_rows = [{"SECURITY_ID": "824353", "TRADING_SYMBOL": "SENSEX 16 JUL 77800 CE"}]
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)), \
+             patch.object(b, "get_instruments", AsyncMock(return_value=instrument_rows)):
+            positions = await b.get_positions()
+        assert positions[0].symbol == "SENSEX 16 JUL 77800 CE"
 
     # --- get_orders ---
 
