@@ -366,6 +366,44 @@ class TestResolveSecurityId:
         with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
             assert await b.resolve_security_id("TCS", exchange="BSE") == "11536"
 
+
+# ---------------------------------------------------------------------------
+# resolve_security_name (2026-07-15) — reverse of resolve_security_id, used
+# when INDstocks omits trading_symbol on a squared-off position/holding.
+# ---------------------------------------------------------------------------
+
+class TestResolveSecurityName:
+
+    @pytest.mark.anyio
+    async def test_resolves_name_from_matching_source(self):
+        b = _broker()
+        rows = [{"SECURITY_ID": "824353", "TRADING_SYMBOL": "SENSEX 16 JUL 77800 CE"}]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            assert await b.resolve_security_name("824353", source="fno") == "SENSEX 16 JUL 77800 CE"
+
+    @pytest.mark.anyio
+    async def test_falls_back_to_other_source_if_not_found(self):
+        # A holding might actually be an fno security_id or vice versa —
+        # try the other instrument master before giving up.
+        b = _broker()
+        async def fake_get_instruments(source):
+            if source == "fno":
+                return [{"SECURITY_ID": "500325", "TRADING_SYMBOL": "RELIANCE-EQ"}]
+            return []
+        with patch.object(b, "get_instruments", AsyncMock(side_effect=fake_get_instruments)):
+            assert await b.resolve_security_name("500325", source="equity") == "RELIANCE-EQ"
+
+    @pytest.mark.anyio
+    async def test_returns_none_when_not_found_anywhere(self):
+        b = _broker()
+        with patch.object(b, "get_instruments", AsyncMock(return_value=[])):
+            assert await b.resolve_security_name("000000", source="equity") is None
+
+    @pytest.mark.anyio
+    async def test_empty_security_id(self):
+        b = _broker()
+        assert await b.resolve_security_name("") is None
+
     @pytest.mark.anyio
     async def test_caches_instrument_master(self):
         from src.brokers import indmoney as indmoney_module
