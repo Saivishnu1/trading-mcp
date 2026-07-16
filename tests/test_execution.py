@@ -178,6 +178,9 @@ class TestPlaceOrder:
         assert result["status"] == "error"
         assert result["order_id"] is None
         assert result["status_code"] == 400
+        # 2026-07-16 bug: a clean rejection carried no "message" field at all,
+        # so the web UI's error banner had nothing to show the user.
+        assert result["message"] == "insufficient funds"
 
     @pytest.mark.anyio
     async def test_2xx_but_not_success_body(self):
@@ -264,6 +267,22 @@ class TestSmartOrder:
             result = await b.place_order(self._smart_req())
         assert result["status"] == "error"
         assert result["order_id"] is None
+        # 2026-07-16 bug: _place_smart_order's rejection branch populated
+        # neither "message" (UI has nothing to show) nor a log line (server
+        # logs had zero trace of why a smart order was rejected).
+        assert result["message"] == "invalid trigger"
+
+    @pytest.mark.anyio
+    async def test_smart_order_rejection_logs_the_response_body(self, caplog):
+        import logging
+        b = _broker()
+        resp = _make_httpx_response(400, {"status": "error", "message": "invalid trigger"})
+        client_mock = MagicMock()
+        client_mock.post = AsyncMock(return_value=resp)
+        with caplog.at_level(logging.WARNING, logger="src.brokers.indmoney"), \
+             patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            await b.place_order(self._smart_req())
+        assert any("rejected" in r.message and "invalid trigger" in r.message for r in caplog.records)
 
     @pytest.mark.anyio
     async def test_modify_smart_order_success(self):
@@ -300,6 +319,41 @@ class TestSmartOrder:
         args, kwargs = client_mock.post.call_args
         assert args[0].endswith("/smart/order/cancel")
         assert kwargs["json"]["order_id"] == "GTT-1"
+
+
+# ---------------------------------------------------------------------------
+# INDmoneyBroker._extract_error_message (2026-07-16)
+# ---------------------------------------------------------------------------
+
+class TestExtractErrorMessage:
+
+    def test_prefers_message_key(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        assert INDmoneyBroker._extract_error_message(
+            {"message": "insufficient funds", "error": "ignored"}
+        ) == "insufficient funds"
+
+    def test_falls_back_through_known_keys_in_order(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        assert INDmoneyBroker._extract_error_message({"error": "bad request"}) == "bad request"
+        assert INDmoneyBroker._extract_error_message({"errors": ["a", "b"]}) == "['a', 'b']"
+        assert INDmoneyBroker._extract_error_message({"reason": "expired token"}) == "expired token"
+        assert INDmoneyBroker._extract_error_message({"detail": "not found"}) == "not found"
+
+    def test_dict_with_no_known_keys_stringifies_whole_body(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        body = {"status": "error", "code": 42}
+        assert INDmoneyBroker._extract_error_message(body) == str(body)
+
+    def test_string_body(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        assert INDmoneyBroker._extract_error_message("Internal Server Error") == "Internal Server Error"
+
+    def test_empty_body_returns_generic_message(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        assert INDmoneyBroker._extract_error_message(None) == "Order rejected by broker."
+        assert INDmoneyBroker._extract_error_message("") == "Order rejected by broker."
+        assert INDmoneyBroker._extract_error_message({}) == "Order rejected by broker."
 
 
 # ---------------------------------------------------------------------------
