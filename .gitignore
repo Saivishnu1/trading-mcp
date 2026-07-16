@@ -14,3 +14,4 @@ htmlcov/
 journal.db*
 .vs
 .serena/
+ssh_config_oracle_vm

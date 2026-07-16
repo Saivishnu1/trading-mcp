@@ -81,6 +81,13 @@ whichever SPECIFIC strike+expiry is resolved at each entry signal (the
 nearest-ITM/ATM strike, current-week expiry, at signal time) — it is
 real traded premium for that one contract, not a full option chain.
 
+The underlying itself (for the ADX/DI signal) is ALSO fetched from
+Upstox on this path — via the regular (non-expired) V3 historical-candle
+endpoint for NSE_INDEX|Nifty 50, chunked into <=1-month requests — not
+yfinance. This is what lets --source upstox cover multi-month windows;
+yfinance's own ~60-day intraday history cap only applies to
+--source yfinance/indmoney.
+
 USAGE
 -----
     pip install yfinance pandas
@@ -320,6 +327,7 @@ class UpstoxDataSource:
         except ImportError:
             sys.exit("httpx is required for --source upstox:  pip install httpx")
         self._httpx = httpx
+        self._contract_cache: dict[str, list[dict]] = {}
 
     def _headers(self) -> dict:
         return {
@@ -328,23 +336,68 @@ class UpstoxDataSource:
             "Authorization": f"Bearer {self._token}",
         }
 
-    def _get(self, url: str, params: dict | None = None):
-        with self._httpx.Client(timeout=20) as client:
-            r = client.get(url, headers=self._headers(), params=params)
-        return r
+    def _get(self, url: str, params: dict | None = None, max_retries: int = 4):
+        """GET with retry/backoff on 429 (rate limit) and 5xx — a multi-month
+        backtest makes one live request per trade, so transient throttling
+        is expected, not exceptional."""
+        import time
+        last = None
+        for attempt in range(max_retries):
+            with self._httpx.Client(timeout=20) as client:
+                r = client.get(url, headers=self._headers(), params=params)
+            if r.status_code == 429 or r.status_code >= 500:
+                last = r
+                wait = min(2 ** attempt, 20)
+                retry_after = r.headers.get("retry-after")
+                if retry_after:
+                    try:
+                        wait = max(wait, float(retry_after))
+                    except ValueError:
+                        pass
+                print(f"  (upstox: HTTP {r.status_code}, retrying in {wait:.0f}s "
+                      f"[{attempt + 1}/{max_retries}])")
+                time.sleep(wait)
+                continue
+            return r
+        return last
+
+    def get_expiries(self) -> list[str]:
+        """List of NIFTY expiry dates Upstox has expired-instrument data for.
+        Per Upstox's own docs this covers "up to six months" of history, but
+        a live check against this account (2026-07-17) returned 94 expiries
+        spanning 2024-10-03 -> 2026-07-14 — actual coverage may exceed the
+        documented minimum. Always confirmed live rather than assumed."""
+        url = f"{UPSTOX_BASE}/expired-instruments/expiries"
+        r = self._get(url, params={"instrument_key": UPSTOX_NIFTY_INSTRUMENT_KEY})
+        if r is None:
+            sys.exit("Upstox get_expiries: exhausted retries with no response.")
+        if r.status_code in (401, 403):
+            sys.exit(f"Upstox get_expiries returned HTTP {r.status_code} — "
+                     f"requires Upstox Plus. Body: {r.text[:300]}")
+        if r.status_code != 200:
+            sys.exit(f"Upstox get_expiries HTTP {r.status_code}: {r.text[:300]}")
+        return sorted(r.json().get("data", []))
 
     def get_expired_option_contracts(self, expiry_date: str) -> list[dict]:
         """Step 1: resolve every strike/CE-PE instrument_key for one expiry.
 
         expiry_date: "YYYY-MM-DD". Returns the raw list of contract dicts
         from Upstox's `data` field (each has instrument_key, strike_price,
-        instrument_type, expiry, ...).
+        instrument_type, expiry, ...). Cached per expiry_date within this
+        instance's lifetime — the same expiry is looked up repeatedly
+        across every signal that falls in that expiry's week/month.
         """
+        if expiry_date in self._contract_cache:
+            return self._contract_cache[expiry_date]
+
         url = f"{UPSTOX_BASE}/expired-instruments/option/contract"
         r = self._get(url, params={
             "instrument_key": UPSTOX_NIFTY_INSTRUMENT_KEY,
             "expiry_date": expiry_date,
         })
+        if r is None:
+            sys.exit(f"Upstox contract lookup for {expiry_date}: exhausted "
+                     f"retries with no response.")
         if r.status_code == 401 or r.status_code == 403:
             sys.exit(
                 f"Upstox contract lookup returned HTTP {r.status_code} for "
@@ -362,6 +415,7 @@ class UpstoxDataSource:
             sys.exit(f"Upstox returned zero contracts for expiry "
                      f"{expiry_date} — either no expiry existed on that "
                      f"date, or the instrument_key/date format is wrong.")
+        self._contract_cache[expiry_date] = data
         return data
 
     def pick_contract(self, contracts: list[dict], spot: float,
@@ -387,6 +441,9 @@ class UpstoxDataSource:
         url = (f"{UPSTOX_BASE}/expired-instruments/historical-candle/"
                f"{key_enc}/{interval}/{to_date}/{from_date}")
         r = self._get(url)
+        if r is None:
+            sys.exit(f"Upstox historical-candle for {expired_instrument_key}: "
+                     f"exhausted retries with no response.")
         if r.status_code in (401, 403):
             sys.exit(
                 f"Upstox historical-candle returned HTTP {r.status_code} "
@@ -419,12 +476,63 @@ class UpstoxDataSource:
         df = pd.DataFrame(records).set_index("datetime").sort_index()
         return df
 
+    def get_underlying_candles(self, from_date: str, to_date: str,
+                               interval_minutes: int = 15) -> pd.DataFrame:
+        """Real NIFTY 50 INDEX 15-minute candles via Upstox's V3 historical
+        endpoint (NOT the expired-instruments API — the index itself never
+        expires). Confirmed live against this account (2026-07-17): V3
+        supports 15-minute intervals with no Plus-plan gate encountered,
+        but caps minute-level data at ~1 month per request — chunked here
+        so --from-date/--to-date can span many months, unlike yfinance's
+        hard ~60-day intraday ceiling.
 
-def load_yfinance_underlying_for_upstox() -> pd.DataFrame:
-    """The upstox path still needs the NIFTY underlying to compute the
-    ADX/DI entry signal and to pick the nearest-ATM strike — reuses the
-    plain yfinance loader rather than duplicating it."""
-    return load_yfinance()
+        Endpoint: GET /v3/historical-candle/{instrument_key}/minutes/{n}/
+                  {to_date}/{from_date}
+        """
+        key_enc = urllib.parse.quote(UPSTOX_NIFTY_INSTRUMENT_KEY, safe="")
+        start = pd.Timestamp(from_date)
+        end = pd.Timestamp(to_date)
+
+        all_records = []
+        chunk_start = start
+        while chunk_start <= end:
+            chunk_end = min(chunk_start + pd.Timedelta(days=29), end)
+            url = (f"{UPSTOX_BASE.replace('/v2', '/v3')}/historical-candle/"
+                   f"{key_enc}/minutes/{interval_minutes}/"
+                   f"{chunk_end.date()}/{chunk_start.date()}")
+            r = self._get(url)
+            if r is None:
+                sys.exit(f"Upstox underlying candles: exhausted retries "
+                         f"for chunk {chunk_start.date()}..{chunk_end.date()}.")
+            if r.status_code in (401, 403):
+                sys.exit(f"Upstox V3 underlying candles returned HTTP "
+                         f"{r.status_code}: {r.text[:300]}")
+            if r.status_code != 200:
+                print(f"  (upstox: chunk {chunk_start.date()}..{chunk_end.date()} "
+                      f"HTTP {r.status_code}, skipping this chunk)")
+                chunk_start = chunk_end + pd.Timedelta(days=1)
+                continue
+
+            body = r.json()
+            candles = body.get("data", {}).get("candles", [])
+            for c in candles:
+                if len(c) >= 5:
+                    all_records.append({
+                        "datetime": pd.to_datetime(c[0]),
+                        "open": float(c[1]), "high": float(c[2]),
+                        "low": float(c[3]), "close": float(c[4]),
+                    })
+            print(f"  (upstox underlying: {chunk_start.date()}..{chunk_end.date()} "
+                  f"-> {len(candles)} candles)")
+            chunk_start = chunk_end + pd.Timedelta(days=1)
+
+        if not all_records:
+            sys.exit("Upstox underlying candles: zero candles across the "
+                     "whole requested range — check --from-date/--to-date.")
+
+        df = pd.DataFrame(all_records).set_index("datetime").sort_index()
+        df = df[~df.index.duplicated(keep="first")]
+        return df
 
 
 # ---------------------------------------------------------------------------
@@ -516,8 +624,13 @@ def run_backtest(df: pd.DataFrame) -> Result:
 
 def _nearest_weekly_expiry(ts, expiries: list[str]) -> str | None:
     """Pick the nearest expiry on/after ts from a list of 'YYYY-MM-DD'
-    strings. Returns None if every expiry in the list is before ts."""
-    ts_date = pd.Timestamp(ts).normalize()
+    strings. Returns None if every expiry in the list is before ts.
+
+    ts may be tz-aware (Upstox's own candles carry +05:30 offsets) while
+    each `expiry` string is a bare date — compare on the plain date, not
+    the full timestamp, so tz-naive/aware never collide.
+    """
+    ts_date = pd.Timestamp(ts).tz_localize(None).normalize()
     candidates = [e for e in expiries if pd.Timestamp(e) >= ts_date]
     if not candidates:
         return None
@@ -607,6 +720,31 @@ def run_backtest_upstox(underlying_df: pd.DataFrame, expiries: list[str],
         # Manage the open trade against this contract's OWN real candles.
         if contract_df is None:
             continue
+
+        # Confirmed real bug (2026-07-17): a contract's candle series ends
+        # at its own expiry (Upstox has no data past that date, correctly,
+        # since the contract stops trading). `window.loc[index <= ts]`
+        # stays NON-EMPTY forever once ts passes the contract's last
+        # candle — it just keeps re-selecting that same last stale row,
+        # so `last_prem` freezes and never crosses target/stop again. The
+        # trade then NEVER exits, blocking every later signal (open_trade
+        # never becomes None again) for the rest of the whole backtest —
+        # a 6-month run produced trades only through the very first
+        # contract's expiry, then went dead silent for ~5 months. Checking
+        # `window.empty` alone (the original, wrong fix attempt) does not
+        # catch this, since window is never actually empty in this case —
+        # must explicitly compare `ts` against the contract's real last
+        # candle instead.
+        if ts > contract_df.index[-1]:
+            last_prem = float(contract_df.iloc[-1]["close"])
+            open_trade.exit_time = contract_df.index[-1]
+            open_trade.exit_underlying = row["close"]
+            open_trade.exit_reason = "CONTRACT_EXPIRED"
+            open_trade.premium_pnl_points = last_prem - entry_prem
+            res.add(open_trade)
+            open_trade, entry_prem, contract_df = None, None, None
+            continue
+
         window = contract_df.loc[contract_df.index >= open_trade.entry_time]
         window = window.loc[window.index <= ts]
         if window.empty:
@@ -729,32 +867,56 @@ def main() -> None:
                          "upstox needs UPSTOX_ACCESS_TOKEN + an Upstox Plus "
                          "plan, and replaces the delta-approx P&L with real "
                          "historical option premiums.")
-    ap.add_argument("--expiries", type=str, default="",
+    ap.add_argument("--expiries", type=str, default="auto",
                     help="Comma-separated list of NIFTY weekly/monthly "
-                         "expiry dates (YYYY-MM-DD) to search for contracts "
-                         "during the backtest window. Required for "
-                         "--source upstox — this script does not "
-                         "auto-discover the expiry calendar. Example: "
+                         "expiry dates (YYYY-MM-DD), or 'auto' (default) to "
+                         "fetch the real expiry calendar from Upstox and use "
+                         "every expiry that falls within --from-date/"
+                         "--to-date. Example: "
                          "2024-11-07,2024-11-14,2024-11-21,2024-11-28")
+    ap.add_argument("--from-date", type=str, default="",
+                    help="Backtest window start (YYYY-MM-DD). Required for "
+                         "--source upstox — the underlying is now fetched "
+                         "from Upstox's own V3 historical endpoint (chunked "
+                         "monthly), not yfinance, so multi-month windows "
+                         "are supported (yfinance's ~60-day intraday cap "
+                         "no longer applies on this path).")
+    ap.add_argument("--to-date", type=str, default="",
+                    help="Backtest window end (YYYY-MM-DD). Defaults to "
+                         "today if --from-date is given but this isn't.")
     args = ap.parse_args()
 
     if args.source == "upstox":
-        if not args.expiries:
-            sys.exit("--source upstox requires --expiries "
-                     "(comma-separated YYYY-MM-DD list).")
-        expiries = [e.strip() for e in args.expiries.split(",") if e.strip()]
+        if not args.from_date:
+            sys.exit("--source upstox requires --from-date (YYYY-MM-DD).")
+        to_date = args.to_date or pd.Timestamp.utcnow().strftime("%Y-%m-%d")
 
-        print("Loading NIFTY 15m underlying candles from yfinance "
-              "(needed for the ADX/DI signal and strike selection)...")
-        underlying_df = load_yfinance_underlying_for_upstox()
+        print("Connecting to Upstox...")
+        upstox = UpstoxDataSource()
+
+        print(f"Loading NIFTY 15m underlying candles from Upstox V3 "
+              f"({args.from_date} -> {to_date}, chunked monthly)...")
+        underlying_df = upstox.get_underlying_candles(args.from_date, to_date)
         print(f"Loaded {len(underlying_df)} underlying candles "
               f"({underlying_df.index[0]} -> {underlying_df.index[-1]}).\n")
 
-        print("Connecting to Upstox for real option premium data...")
-        upstox = UpstoxDataSource()
+        if args.expiries == "auto":
+            print("Fetching real NIFTY expiry calendar from Upstox...")
+            all_expiries = upstox.get_expiries()
+            expiries = [e for e in all_expiries
+                       if args.from_date <= e <= to_date]
+            print(f"{len(all_expiries)} total expiries available; "
+                  f"{len(expiries)} fall inside the backtest window.\n")
+            if not expiries:
+                sys.exit(f"No expiries found between {args.from_date} and "
+                         f"{to_date} — check the date range or Upstox's "
+                         f"available history (get_expiries() returned "
+                         f"{all_expiries[:3]}...{all_expiries[-3:] if all_expiries else []}).")
+        else:
+            expiries = [e.strip() for e in args.expiries.split(",") if e.strip()]
 
         print(f"Running backtest with REAL Upstox premiums across "
-              f"{len(expiries)} candidate expiry date(s): {expiries}\n")
+              f"{len(expiries)} expiry date(s).\n")
         res = run_backtest_upstox(underlying_df, expiries, upstox)
         report(res, real_premium=True)
         return
