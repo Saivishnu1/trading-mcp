@@ -322,3 +322,38 @@ def register(mcp: FastMCP) -> None:
         trades = await broker.get_trades(order_id=oid, segment=seg)
         m = _broker_meta(zerodha_connected=await _check_zerodha_connected())
         return _meta.wrap({"trades": trades, "total": len(trades)}, m)
+
+    @mcp.tool()
+    async def get_indmoney_raw_data(kind: str = "positions") -> dict:
+        """Diagnostic tool (2026-07-16) — returns the UNMODIFIED INDstocks
+        response body for a given endpoint, bypassing this app's own
+        Position/Holding/Fund normalization entirely.
+
+        Args:
+            kind: "positions" | "holdings" | "funds" | "orders"
+
+        Added to investigate a confirmed live discrepancy: a same-day BUY
+        order came back SUCCESS (confirmed filled, confirmed still open in
+        the INDmoney app itself) yet get_positions() reported quantity=0 for
+        it — i.e. get_positions()'s net_quantity/exchange_segment field
+        assumptions may not hold for every row shape INDstocks actually
+        returns. Use this to see the real JSON before changing that parsing
+        again, rather than guess a second time.
+        """
+        broker = INDmoneyBroker()
+        kind_norm = kind.strip().lower()
+        if kind_norm == "positions":
+            raw = await broker.get_raw_positions()
+        elif kind_norm == "holdings":
+            raw = await broker.get_raw_holdings()
+        elif kind_norm == "funds":
+            raw = await broker.get_raw_funds()
+        elif kind_norm == "orders":
+            raw = await broker.get_raw_order_book()
+        else:
+            return _meta.wrap(
+                {"error": f"unknown kind '{kind}' — use positions|holdings|funds|orders"},
+                _broker_meta(),
+            )
+        m = _broker_meta(zerodha_connected=await _check_zerodha_connected())
+        return _meta.wrap({"kind": kind_norm, "raw": raw}, m)

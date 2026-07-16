@@ -373,6 +373,30 @@ class INDmoneyBroker(BrokerAdapter):
             logger.debug("INDmoneyBroker.get_orders error: %s", exc)
             return []
 
+    @staticmethod
+    def _extract_error_message(body) -> str:
+        """Best-effort human-readable reason from a rejected INDstocks
+        response body (2026-07-16 bug: neither place_order nor
+        _place_smart_order populated any message on a clean rejection —
+        order_id/order_status are naturally absent too since nothing was
+        placed — so the web UI's `d.error || d.message || d.order_status ||
+        "Rejected"` fallback chain had nothing to show and the user got a
+        bare "Rejected" banner with no indication of why, e.g. after a
+        smart-order 400. The exact field INDstocks uses for the rejection
+        reason isn't confirmed against their docs, so this tries the common
+        shapes and falls back to the raw body rather than guess further."""
+        if isinstance(body, dict):
+            if not body:
+                return "Order rejected by broker."
+            for key in ("message", "error", "errors", "reason", "detail"):
+                val = body.get(key)
+                if val:
+                    return str(val)
+            return str(body)
+        if body:
+            return str(body)
+        return "Order rejected by broker."
+
     async def place_order(self, req: OrderRequest) -> dict:
         """Place an order via INDstocks.
 
@@ -423,13 +447,16 @@ class INDmoneyBroker(BrokerAdapter):
                         "INDmoneyBroker.place_order rejected (status=%s): %s",
                         r.status_code, body,
                     )
-                return {
+                result = {
                     "status": "ok" if ok else "error",
                     "status_code": r.status_code,
                     "order_id": data.get("order_id") if isinstance(data, dict) else None,
                     "order_status": data.get("order_status") if isinstance(data, dict) else None,
                     "body": body,
                 }
+                if not ok:
+                    result["message"] = self._extract_error_message(body)
+                return result
         except Exception as exc:
             logger.error("INDmoneyBroker.place_order failed: %s", exc)
             return {"status": "error", "message": str(exc)}
@@ -459,6 +486,15 @@ class INDmoneyBroker(BrokerAdapter):
                     and isinstance(body, dict)
                     and body.get("status") == "success"
                 )
+                if not ok:
+                    # Previously silent on rejection (2026-07-16 bug) — unlike
+                    # place_order's equivalent branch, this never logged the
+                    # response body, so a smart-order 400 left no trace of
+                    # *why* INDstocks rejected it anywhere in the server logs.
+                    logger.warning(
+                        "INDmoneyBroker._place_smart_order rejected (status=%s): %s",
+                        r.status_code, body,
+                    )
                 order_data = []
                 if isinstance(body, dict):
                     data = body.get("data", {})
@@ -466,7 +502,7 @@ class INDmoneyBroker(BrokerAdapter):
                         order_data = data.get("order_data") or []
                 first = order_data[0] if order_data and isinstance(order_data[0], dict) else {}
                 child = first.get("child_order_details") if isinstance(first, dict) else None
-                return {
+                result = {
                     "status": "ok" if ok else "error",
                     "status_code": r.status_code,
                     "order_id": first.get("order_id"),
@@ -475,6 +511,9 @@ class INDmoneyBroker(BrokerAdapter):
                     "child_order_status": child.get("order_status") if isinstance(child, dict) else None,
                     "body": body,
                 }
+                if not ok:
+                    result["message"] = self._extract_error_message(body)
+                return result
         except Exception as exc:
             logger.error("INDmoneyBroker._place_smart_order failed: %s", exc)
             return {"status": "error", "message": str(exc)}
@@ -504,7 +543,14 @@ class INDmoneyBroker(BrokerAdapter):
                     and isinstance(body, dict)
                     and body.get("status") == "success"
                 )
-                return {"status": "ok" if ok else "error", "status_code": r.status_code, "body": body}
+                result = {"status": "ok" if ok else "error", "status_code": r.status_code, "body": body}
+                if not ok:
+                    logger.warning(
+                        "INDmoneyBroker.modify_smart_order rejected (status=%s): %s",
+                        r.status_code, body,
+                    )
+                    result["message"] = self._extract_error_message(body)
+                return result
         except Exception as exc:
             logger.error("INDmoneyBroker.modify_smart_order failed: %s", exc)
             return {"status": "error", "message": str(exc)}
@@ -529,7 +575,14 @@ class INDmoneyBroker(BrokerAdapter):
                     and isinstance(body, dict)
                     and body.get("status") == "success"
                 )
-                return {"status": "ok" if ok else "error", "status_code": r.status_code, "body": body}
+                result = {"status": "ok" if ok else "error", "status_code": r.status_code, "body": body}
+                if not ok:
+                    logger.warning(
+                        "INDmoneyBroker.cancel_smart_order rejected (status=%s): %s",
+                        r.status_code, body,
+                    )
+                    result["message"] = self._extract_error_message(body)
+                return result
         except Exception as exc:
             logger.error("INDmoneyBroker.cancel_smart_order failed: %s", exc)
             return {"status": "error", "message": str(exc)}
@@ -823,6 +876,9 @@ class INDmoneyBroker(BrokerAdapter):
                 if not raw:
                     return []
                 # Response candles: [timestamp_ms, open, high, low, close, volume]
+                # — unconfirmed against a real INDstocks response body (this
+                # shape is a guess inherited from chart_awareness/
+                # data_fetcher.py's identical, equally-unconfirmed parsing).
                 candles = raw if isinstance(raw, list) else raw.get("data", [])
                 result = []
                 for c in candles:
@@ -835,9 +891,26 @@ class INDmoneyBroker(BrokerAdapter):
                             "close": c[4],
                             "volume": c[5],
                         })
+                if not result:
+                    # Confirmed bug (2026-07-16): a 200 OK with a non-empty
+                    # body still produced zero parsed candles for a live
+                    # request — logged at warning (not the debug level the
+                    # blanket except below uses) specifically so a genuine
+                    # shape mismatch is visible in production logs instead of
+                    # silently degrading to "no_data" with no trace of why.
+                    logger.warning(
+                        "INDmoneyBroker.get_historical_data: parsed 0 candles from a "
+                        "non-empty 200 response (symbol=%s interval=%s); raw sample: %s",
+                        symbol, interval, raw if isinstance(raw, list) else str(raw)[:500],
+                    )
                 return result
         except Exception as exc:
-            logger.debug("INDmoneyBroker.get_historical_data error: %s", exc)
+            # Was logger.debug — invisible at this deployment's default INFO
+            # level, so a genuine parsing exception here (as opposed to the
+            # empty-result case logged above) left zero trace when
+            # /trade/candles returned 502 despite the upstream call
+            # succeeding (2026-07-16).
+            logger.warning("INDmoneyBroker.get_historical_data error: %s", exc)
             return []
 
     async def get_instruments(self, source: str = "equity") -> list[dict]:

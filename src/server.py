@@ -405,6 +405,22 @@ async def _send_json(send, status: int, data: dict, extra_headers: list = []) ->
     await send({"type": "http.response.body", "body": body})
 
 
+def _order_response_status(result: dict) -> int:
+    """HTTP status for a place/sell/modify/cancel result dict.
+
+    Was always ``200 if ok else 502`` (2026-07-16 bug) — a clean broker
+    rejection (INDstocks responded, just said no — the result dict carries
+    ``status_code`` from that response) got reported as 502 Bad Gateway,
+    indistinguishable in logs from an actual failure to reach the broker at
+    all (the exception-path result, which has no ``status_code`` key).
+    """
+    if result.get("status") == "ok":
+        return 200
+    if "status_code" in result:
+        return 400
+    return 502
+
+
 def _trade_pin_ok(supplied: str) -> bool:
     """Constant-time compare of the supplied PIN against TRADE_PIN.
 
@@ -1220,7 +1236,7 @@ async def _app(scope, receive, send):
                     "message": f"Chart data fetch failed: {exc}",
                 })
                 return
-            status = 200 if result.get("status") == "ok" else 502
+            status = _order_response_status(result)
             await _send_json(send, status, result)
             return
 
@@ -1308,7 +1324,7 @@ async def _app(scope, receive, send):
                     return
                 req.security_id = sec_id
             result = await submit_order(req, source="web", user_id=os.environ.get("ZERODHA_USER_ID"))
-            status = 200 if result.get("status") == "ok" else 502
+            status = _order_response_status(result)
             await _send_json(send, status, result)
             return
 
@@ -1370,7 +1386,7 @@ async def _app(scope, receive, send):
                     return
                 req.security_id = sec_id
             result = await submit_order(req, source="web", user_id=os.environ.get("ZERODHA_USER_ID"))
-            status = 200 if result.get("status") == "ok" else 502
+            status = _order_response_status(result)
             await _send_json(send, status, result)
             return
 
@@ -1421,7 +1437,7 @@ async def _app(scope, receive, send):
             from src.brokers.factory import get_broker_adapter
             adapter = get_broker_adapter("indmoney")
             result = await adapter.modify_smart_order(order_id, **fields)
-            status = 200 if result.get("status") == "ok" else 502
+            status = _order_response_status(result)
             await _send_json(send, status, result)
             return
 

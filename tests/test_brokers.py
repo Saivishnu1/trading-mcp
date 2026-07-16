@@ -454,6 +454,25 @@ class TestINDmoneyBroker:
         result = await b.get_historical_data("NSE_2885", "1day", "2024-01-01", "2024-01-31")
         assert result == []
 
+    @pytest.mark.anyio
+    async def test_get_historical_data_unparseable_shape_logs_warning(self, caplog):
+        # 2026-07-16 bug: a 200 OK with a non-empty body that doesn't match
+        # the assumed [ts, o, h, l, c, v] list-of-lists shape silently
+        # produced zero candles (and, before this fix, zero trace of why —
+        # the /trade/candles route then reported a misleading 502 with no
+        # way to tell it apart from a genuine broker outage).
+        import logging
+        b = self._broker()
+        payload = {"data": [{"time": 1700000000000, "o": 100.0}]}  # not the assumed shape
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with caplog.at_level(logging.WARNING, logger="src.brokers.indmoney"), \
+             patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            candles = await b.get_historical_data("NSE_128673", "1day", "2024-01-01", "2024-01-31")
+        assert candles == []
+        assert any("parsed 0 candles" in r.message for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # TestZerodhaBroker
