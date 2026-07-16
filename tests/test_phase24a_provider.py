@@ -720,8 +720,14 @@ class TestCalendarProviderIntegration:
 
     def test_holiday_from_json_is_recognized(self):
         """A holiday from the JSON file is correctly identified as is_holiday=True."""
-        from src.market.calendar import get_market_calendar
-        today = date.today()
+        from src.market.calendar import get_market_calendar, _today_ist
+        # get_market_calendar() keys its holiday lookup on _today_ist(), not
+        # date.today() — using date.today() here made this test flaky on
+        # UTC CI runners during IST 00:00-05:29 (UTC still "yesterday"),
+        # exactly the day-boundary bug already fixed in calendar.py itself
+        # (see _today_ist()'s docstring, 2026-07-13). Match the production
+        # code's own notion of "today" instead of the OS/process-local date.
+        today = _today_ist()
         custom = {today: "Test Holiday Today"}
         with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
                    return_value=custom):
