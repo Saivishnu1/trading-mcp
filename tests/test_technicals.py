@@ -363,3 +363,56 @@ class TestCalculateAtrTool:
         result = atr_tool("INVALID")
         data = result.get("data", result)
         assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# _load_candles_tiered / _run_coro_blocking (2026-07-17)
+# ---------------------------------------------------------------------------
+
+class TestLoadCandlesTieredFromRunningLoop:
+    """Confirmed live bug: every MCP tool in this module is a plain `def`,
+    and FastMCP invokes sync tools inline on the server's own event loop
+    (not a worker thread) — so _load_candles_tiered's old bare
+    `asyncio.run(fetch_candles(...))` always raised "asyncio.run() cannot
+    be called from a running event loop" the moment it was reached from a
+    real tool call, silently caught by its own except clause. That meant
+    the tiered Zerodha -> INDmoney -> Yahoo fetcher had never actually run
+    even once in production — every indicator silently fell back to
+    yfinance-only. These tests call the (still synchronous)
+    _load_candles_tiered from *inside* an async test — i.e. from a thread
+    that already has a running event loop — the exact condition that
+    reproduced the crash, since a bare unit test on its own thread
+    wouldn't."""
+
+    @pytest.mark.anyio
+    async def test_succeeds_when_called_from_a_running_event_loop(self):
+        from unittest.mock import AsyncMock, patch
+        import src.tools.technicals as tech
+
+        fake_candles = [{
+            "datetime": "2026-01-01 00:00:00", "open": 100.0, "high": 102.0,
+            "low": 99.0, "close": 101.0, "volume": 1000,
+        }]
+        with patch(
+            "src.chart_awareness.data_fetcher.fetch_candles",
+            new=AsyncMock(return_value=(fake_candles, "indmoney")),
+        ):
+            candles, source = tech._load_candles_tiered("NIFTY", 10, "1d")
+
+        assert source == "indmoney"
+        assert len(candles) == 1
+        assert candles[0]["close"] == 101.0
+
+    @pytest.mark.anyio
+    async def test_propagates_fetch_failure_as_empty_result_not_a_crash(self):
+        from unittest.mock import AsyncMock, patch
+        import src.tools.technicals as tech
+
+        with patch(
+            "src.chart_awareness.data_fetcher.fetch_candles",
+            new=AsyncMock(side_effect=RuntimeError("upstream boom")),
+        ):
+            candles, source = tech._load_candles_tiered("NIFTY", 10, "1d")
+
+        assert candles == []
+        assert source == "none"
