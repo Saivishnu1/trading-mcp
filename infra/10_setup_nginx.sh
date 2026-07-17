@@ -73,6 +73,28 @@ server {
     proxy_send_timeout 3600;
     proxy_connect_timeout 10;
 
+    # WebSocket (the browser-facing live-price feed at /ws/prices) MUST come
+    # before the generic location / block below and forward the real
+    # Upgrade/Connection headers — confirmed bug (2026-07-17): the old config
+    # only had the generic block, which hardcodes "Connection ''" (needed for
+    # SSE) for every path including this one, silently stripping the
+    # WebSocket upgrade handshake. Every /ws/prices connection arrived at
+    # uvicorn as a plain GET instead of a WS upgrade, which our app correctly
+    # 404s (no HTTP route exists for that path, only a websocket-scope
+    # handler) — this looked like an application bug but was purely this
+    # nginx config never letting the upgrade through.
+    location /ws/prices {
+        proxy_pass http://127.0.0.1:${APP_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:${APP_PORT};
         proxy_http_version 1.1;

@@ -31,12 +31,34 @@ _YF_TO_CANONICAL_INTERVAL = {
 }
 
 
+def _run_coro_blocking(coro):
+    """Run an async coroutine to completion from synchronous code, safe to
+    call whether or not the calling thread already has a running event loop.
+
+    Confirmed bug (2026-07-17): every MCP tool in this module is a plain
+    ``def``, not ``async def`` — FastMCP invokes sync tools inline on the
+    server's own event loop rather than off-loading them to a worker
+    thread, so a bare ``asyncio.run()`` here always raised "asyncio.run()
+    cannot be called from a running event loop", silently swallowed by
+    _load_candles_tiered's except clause. That meant the entire tiered
+    Zerodha -> INDmoney -> Yahoo fetcher had never once actually run since
+    it was introduced — every indicator tool and the dashboard's
+    technicals section has always silently been yfinance-only. Runs the
+    coroutine on a fresh event loop in a dedicated thread instead, which
+    works regardless of what the calling thread is doing.
+    """
+    import asyncio
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 def _load_candles_tiered(symbol: str, lookback_days: int, interval: str) -> tuple[list[dict], str]:
     """Primary OHLCV fetch via the chart_awareness tiered fetcher
     (Zerodha, when authenticated -> INDmoney -> Yahoo). Returns
     (candles, source) — source is "zerodha"/"indmoney"/"yahoo"/"none".
     Never raises; returns ([], "none") on total failure."""
-    import asyncio
     from src.chart_awareness.data_fetcher import fetch_candles
 
     canonical_interval = _YF_TO_CANONICAL_INTERVAL.get(interval, "day")
@@ -45,7 +67,9 @@ def _load_candles_tiered(symbol: str, lookback_days: int, interval: str) -> tupl
     to_date = (today + timedelta(days=1)).isoformat()
 
     try:
-        candles, source = asyncio.run(fetch_candles(symbol, canonical_interval, from_date, to_date))
+        candles, source = _run_coro_blocking(
+            fetch_candles(symbol, canonical_interval, from_date, to_date)
+        )
     except Exception as exc:
         logger.warning("Tiered candle fetch failed for %s: %s", symbol, exc)
         return [], "none"
