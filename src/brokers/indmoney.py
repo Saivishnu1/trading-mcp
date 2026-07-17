@@ -189,6 +189,7 @@ class INDmoneyBroker(BrokerAdapter):
                         pnl=pnl,
                         pnl_percent=pnl_pct,
                         broker="indmoney",
+                        security_id=str(sec_id) if sec_id else None,
                     ))
                 return result
         except Exception as exc:
@@ -257,6 +258,7 @@ class INDmoneyBroker(BrokerAdapter):
                         current_price=ltp,
                         pnl=pnl,
                         broker="indmoney",
+                        security_id=str(sec_id) if sec_id else None,
                     ))
                 return result
         except Exception as exc:

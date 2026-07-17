@@ -17,6 +17,15 @@ class Holding:
     pnl: float
     pnl_percent: float
     broker: str
+    # The broker's own real security_id for this row, when the adapter has
+    # one on hand (2026-07-17). Previously always dropped — get_positions_for_web
+    # re-resolved it via resolve_symbol()'s ambiguous symbol-text search
+    # instead, which is a confirmed-wrong match for any weekly index option
+    # sharing a TRADING_SYMBOL string with other expiries in the same month
+    # (see resolve_security_id's own docstring) — the live-price WebSocket
+    # subscribed to a completely different contract's security_id than the
+    # one actually held, so its LTP never matched and stayed at ₹0 forever.
+    security_id: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -32,6 +41,8 @@ class Position:
     current_price: float
     pnl: float
     broker: str
+    # See Holding.security_id's docstring — same bug, same fix.
+    security_id: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
