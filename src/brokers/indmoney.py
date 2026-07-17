@@ -154,6 +154,19 @@ class INDmoneyBroker(BrokerAdapter):
                     return []
                 # Unwrap if response is wrapped under a key
                 items = raw if isinstance(raw, list) else raw.get("data", raw.get("holdings", []))
+                if items:
+                    # get_positions()'s equivalent field-name guesses (quantity,
+                    # average_price, exchange_segment, pnl_absolute,
+                    # trading_symbol) were all confirmed wrong 2026-07-16/17
+                    # against a real position via get_indmoney_raw_data — this
+                    # holdings parsing was written on the same unverified
+                    # basis and has never been checked against a real holding
+                    # (this account has had none so far). Logged once, at
+                    # warning so it survives at this deployment's level,
+                    # against the FIRST real row this ever sees, so that
+                    # parsing can be fixed from evidence instead of guessed
+                    # again the way positions' parsing was.
+                    logger.warning("INDmoneyBroker.get_holdings raw row sample: %s", items[0])
                 result = []
                 for h in items:
                     qty = int(h.get("quantity") or 0)
@@ -183,6 +196,28 @@ class INDmoneyBroker(BrokerAdapter):
             return []
 
     async def get_positions(self) -> list[Position]:
+        """Fetch open F&O positions.
+
+        Field names below are as confirmed 2026-07-16/17 via the
+        get_indmoney_raw_data diagnostic tool against a real, currently-open
+        position — NOT the earlier guessed schema (net_quantity,
+        average_price, exchange_segment, position_type, trading_symbol),
+        none of which exist in the real response. That mismatch meant every
+        position this app ever displayed silently read as quantity=0,
+        avg_price=0, exchange="NSE" (the hardcoded fallback, not a real
+        value), and product="" — i.e. get_positions() effectively never
+        worked correctly for any row, open or closed, until this fix.
+        Confirmed real per-row shape:
+          {"net_qty": 65, "avg_price": 44.25, "realized_profit": 0,
+           "exchange": "" (always empty in practice), "security_id": "57339",
+           "symbol": "NIFTY", "drv_instrument": "OPTIDX",
+           "drv_expiry_date": "07/21/2026 14:00", "drv_option_type": "PE",
+           "drv_strike_price": 23950, "product": "MARGIN", ...}
+        No live LTP field exists here at all (by design — live price comes
+        from the WS feed only); realized_profit is realized P&L, not the
+        live unrealized P&L the /positions page computes client-side from
+        WS ticks against avg_price.
+        """
         if not self._token:
             return []
         try:
@@ -196,27 +231,27 @@ class INDmoneyBroker(BrokerAdapter):
                 raw = r.json()
                 if not raw:
                     return []
-                # positions response: data.net_positions + data.day_positions
                 data = raw if isinstance(raw, list) else raw.get("data", raw)
-                if isinstance(data, dict):
-                    items = data.get("net_positions", []) + data.get("day_positions", [])
-                else:
-                    items = data
+                items = data if isinstance(data, list) else []
                 result = []
                 for p in items:
-                    qty = int(p.get("net_quantity") or 0)
-                    avg = float(p.get("average_price") or 0)
+                    qty = int(p.get("net_qty") or 0)
+                    avg = float(p.get("avg_price") or 0)
                     ltp = float(p.get("last_traded_price") or 0)
-                    pnl = float(p.get("pnl_absolute") or 0)
-                    exch = (p.get("exchange_segment") or "NSE").split("_")[0]
-                    trading_symbol = p.get("trading_symbol")
+                    pnl = float(p.get("realized_profit") or 0)
                     sec_id = p.get("security_id")
+                    trading_symbol = p.get("trading_symbol")
                     if not trading_symbol and sec_id:
                         trading_symbol = await self.resolve_security_name(str(sec_id), source="fno")
+                    exch = str(p.get("exchange") or "").strip().upper()
+                    if not exch and sec_id:
+                        exch = await self.resolve_security_exchange(str(sec_id), source="fno") or "NSE"
+                    elif not exch:
+                        exch = "NSE"
                     result.append(Position(
                         symbol=trading_symbol or (str(sec_id) if sec_id else ""),
                         exchange=exch,
-                        product=p.get("position_type") or "",
+                        product=p.get("product") or "",
                         quantity=qty,
                         avg_price=avg,
                         current_price=ltp,
@@ -225,7 +260,7 @@ class INDmoneyBroker(BrokerAdapter):
                     ))
                 return result
         except Exception as exc:
-            logger.debug("INDmoneyBroker.get_positions error: %s", exc)
+            logger.warning("INDmoneyBroker.get_positions error: %s", exc)
             return []
 
     async def _raw_get(self, path: str) -> dict:
@@ -691,16 +726,18 @@ class INDmoneyBroker(BrokerAdapter):
         """Reverse of resolve_security_id — look up the instrument master's
         display name for a bare ``security_id``.
 
-        get_positions()/get_holdings() (2026-07-15) fall back to this when
-        INDstocks' position/holding row omits ``trading_symbol`` (confirmed
-        on a same-day position that had already netted to zero — INDstocks
-        blanks the whole descriptive payload once a position is flat, not
-        just the quantity), so the /positions page shows a real name (e.g.
-        "SENSEX 16 JUL 77800 CE") instead of the raw numeric id. Tries both
-        the "fno" and "equity" instrument masters if the given source has no
-        match, since a holding/position's `source` guess (equity vs fno) can
-        be wrong for the same reason trading_symbol was missing. Returns
-        None if not found in either.
+        get_positions()/get_holdings() fall back to this for every row,
+        because ``GET /portfolio/positions`` never actually includes a
+        ``trading_symbol`` field at all (confirmed 2026-07-16/17 against a
+        real, currently-open position via the get_indmoney_raw_data
+        diagnostic tool — the original 2026-07-15 theory that this only
+        happened for already-flat positions was wrong; INDstocks' position
+        rows only carry ``symbol`` (bare underlying, e.g. "NIFTY") plus
+        ``drv_instrument``/``drv_expiry_date``/``drv_option_type``/
+        ``drv_strike_price`` for derivatives — no ready-made display string).
+        Tries both the "fno" and "equity" instrument masters if the given
+        source has no match, since a holding/position's `source` guess
+        (equity vs fno) can be wrong. Returns None if not found in either.
         """
         if not security_id:
             return None
@@ -718,6 +755,33 @@ class INDmoneyBroker(BrokerAdapter):
                 )
                 if name:
                     return str(name)
+        return None
+
+    async def resolve_security_exchange(self, security_id: str, source: str = "equity") -> str | None:
+        """Reverse-lookup a security_id's real exchange (the instrument
+        master's ``EXCH`` column).
+
+        Confirmed 2026-07-16/17 via get_indmoney_raw_data: ``GET
+        /portfolio/positions`` rows carry an ``exchange`` field, but it is
+        always an empty string in practice — every position this app has
+        ever inspected read as "NSE" purely because of that default, not
+        because it was actually correct (a SENSEX position looks identical
+        to a NIFTY one from this field alone). Same fallback-through-both-
+        sources strategy as resolve_security_name, since these two are
+        almost always called together for the same row.
+        """
+        if not security_id:
+            return None
+        target = str(security_id).strip()
+        for src in (source, "fno" if source != "fno" else "equity"):
+            rows = await self._cached_instruments(src)
+            for row_up in rows:
+                sec_id = str(row_up.get("SECURITY_ID") or "").strip()
+                if sec_id != target:
+                    continue
+                exch = row_up.get("EXCH")
+                if exch:
+                    return str(exch).strip().upper()
         return None
 
     async def search_instruments(self, query: str, source: str = "equity", limit: int = 15) -> list[dict]:

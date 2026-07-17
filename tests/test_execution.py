@@ -511,6 +511,42 @@ class TestResolveSecurityName:
 
 
 # ---------------------------------------------------------------------------
+# resolve_security_exchange (2026-07-17) — confirmed via get_indmoney_raw_data
+# that a position row's own "exchange" field is always empty in practice.
+# ---------------------------------------------------------------------------
+
+class TestResolveSecurityExchange:
+
+    @pytest.mark.anyio
+    async def test_resolves_exchange_from_matching_source(self):
+        b = _broker()
+        rows = [{"SECURITY_ID": "824353", "EXCH": "BSE"}]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            assert await b.resolve_security_exchange("824353", source="fno") == "BSE"
+
+    @pytest.mark.anyio
+    async def test_falls_back_to_other_source_if_not_found(self):
+        b = _broker()
+        async def fake_get_instruments(source):
+            if source == "fno":
+                return [{"SECURITY_ID": "500325", "EXCH": "NSE"}]
+            return []
+        with patch.object(b, "get_instruments", AsyncMock(side_effect=fake_get_instruments)):
+            assert await b.resolve_security_exchange("500325", source="equity") == "NSE"
+
+    @pytest.mark.anyio
+    async def test_returns_none_when_not_found_anywhere(self):
+        b = _broker()
+        with patch.object(b, "get_instruments", AsyncMock(return_value=[])):
+            assert await b.resolve_security_exchange("000000", source="equity") is None
+
+    @pytest.mark.anyio
+    async def test_empty_security_id(self):
+        b = _broker()
+        assert await b.resolve_security_exchange("") is None
+
+
+# ---------------------------------------------------------------------------
 # search_instruments (broker) / search_symbols (execution service)
 # ---------------------------------------------------------------------------
 
