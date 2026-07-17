@@ -817,15 +817,19 @@ class TestResolveSymbolExchangeThreading:
 
 class TestGetPositionsForWeb:
 
-    def _position(self, symbol="RELIANCE", exchange="NSE", quantity=1, avg=2800.0, ltp=2850.0, pnl=50.0):
+    def _position(self, symbol="RELIANCE", exchange="NSE", quantity=1, avg=2800.0, ltp=2850.0,
+                  pnl=50.0, security_id=None):
         from src.brokers.models import Position
         return Position(symbol=symbol, exchange=exchange, product="INTRADAY",
-                         quantity=quantity, avg_price=avg, current_price=ltp, pnl=pnl, broker="indmoney")
+                         quantity=quantity, avg_price=avg, current_price=ltp, pnl=pnl, broker="indmoney",
+                         security_id=security_id)
 
-    def _holding(self, symbol="TCS", exchange="NSE", quantity=5, avg=3500.0, ltp=3600.0, pnl=500.0):
+    def _holding(self, symbol="TCS", exchange="NSE", quantity=5, avg=3500.0, ltp=3600.0, pnl=500.0,
+                 security_id=None):
         from src.brokers.models import Holding
         return Holding(symbol=symbol, exchange=exchange, quantity=quantity, avg_price=avg,
-                        current_price=ltp, pnl=pnl, pnl_percent=2.85, broker="indmoney")
+                        current_price=ltp, pnl=pnl, pnl_percent=2.85, broker="indmoney",
+                        security_id=security_id)
 
     @pytest.mark.anyio
     async def test_combines_positions_and_holdings(self):
@@ -842,7 +846,9 @@ class TestGetPositionsForWeb:
         assert kinds == {"position", "holding"}
 
     @pytest.mark.anyio
-    async def test_resolves_security_id_per_row(self):
+    async def test_resolves_security_id_per_row_when_adapter_lacks_one(self):
+        # Fallback path only — the adapter's Position has no security_id
+        # (e.g. a non-INDmoney adapter, or the rare row without one).
         import src.execution.service as svc
         adapter = MagicMock()
         adapter.get_positions = AsyncMock(return_value=[self._position()])
@@ -854,6 +860,28 @@ class TestGetPositionsForWeb:
             result = await svc.get_positions_for_web()
         assert result["positions"][0]["security_id"] == "2885"
         resolve_mock.assert_awaited_once_with("RELIANCE", exchange="NSE", segment="DERIVATIVE")
+
+    @pytest.mark.anyio
+    async def test_uses_adapters_own_security_id_without_reresolving(self):
+        # 2026-07-17 bug: re-resolving via resolve_symbol()'s symbol-text
+        # search picked the WRONG contract for a real, currently-held NIFTY
+        # weekly option (multiple expiries share one TRADING_SYMBOL string —
+        # see resolve_security_id's own docstring), so the live-price
+        # WebSocket subscribed to a different option entirely and its LTP
+        # never matched. When the adapter's Position already carries the
+        # real security_id, it must be used directly — resolve_symbol should
+        # not be called at all.
+        import src.execution.service as svc
+        adapter = MagicMock()
+        adapter.get_positions = AsyncMock(return_value=[self._position(security_id="57339")])
+        adapter.get_holdings = AsyncMock(return_value=[])
+        resolve_mock = AsyncMock(side_effect=AssertionError("should not re-resolve"))
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(svc, "resolve_symbol", resolve_mock), \
+             patch.object(svc._repo, "find_active_smart_order_for_symbol", AsyncMock(return_value=None)):
+            result = await svc.get_positions_for_web()
+        assert result["positions"][0]["security_id"] == "57339"
+        resolve_mock.assert_not_awaited()
 
     @pytest.mark.anyio
     async def test_holdings_resolved_as_equity_segment(self):

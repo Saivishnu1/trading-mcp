@@ -78,11 +78,9 @@ async def search_symbols(query: str, *, segment: str | None = None, limit: int =
 async def get_positions_for_web() -> dict:
     """Unified open-position view for the web /positions page — equity
     holdings + derivative positions from INDmoney, each enriched with the
-    security_id needed to subscribe to a live price (Position/Holding
-    dataclasses don't carry it — see src/brokers/models.py — so it's
-    resolved on demand via resolve_symbol, same path the trade form already
-    uses when no dropdown pick is available) and any active SL/target this
-    app placed for that symbol (ExecutionRepository.find_active_smart_order_for_symbol).
+    security_id needed to subscribe to a live price and any active
+    SL/target this app placed for that symbol
+    (ExecutionRepository.find_active_smart_order_for_symbol).
 
     Zerodha is deliberately excluded: order placement/modification in this
     stack only ever goes through INDmoney (see ZerodhaBroker.place_order's
@@ -98,6 +96,18 @@ async def get_positions_for_web() -> dict:
     with every figure showing ₹0. A qty-0 row isn't an open position and
     can't be sold or have its SL/target modified, so it has no business on
     this page.
+
+    security_id comes straight from the broker adapter's own Position/
+    Holding.security_id (2026-07-17 fix) — it used to be re-resolved here
+    via resolve_symbol()'s symbol-text search instead, which is a confirmed-
+    ambiguous match for any weekly index option sharing a TRADING_SYMBOL
+    string with other expiries in the same month (documented on
+    resolve_security_id itself). That ambiguity picked the wrong contract's
+    security_id for a real, currently-held NIFTY position, so the live-price
+    WebSocket subscribed to a different option entirely and its LTP never
+    matched, staying at ₹0 despite the position genuinely being live.
+    resolve_symbol is now only a fallback for the rare case the adapter
+    didn't have a security_id at all.
     """
     broker = get_broker_adapter("indmoney")
     positions, holdings = await asyncio.gather(broker.get_positions(), broker.get_holdings())
@@ -109,11 +119,12 @@ async def get_positions_for_web() -> dict:
         symbol = entry.symbol
         exchange = entry.exchange.upper()
         segment = "DERIVATIVE" if kind == "position" else "EQUITY"
-        security_id = None
-        try:
-            security_id = await resolve_symbol(symbol, exchange=exchange, segment=segment)
-        except Exception as exc:
-            logger.debug("get_positions_for_web: resolve_symbol(%s) failed: %s", symbol, exc)
+        security_id = getattr(entry, "security_id", None)
+        if not security_id:
+            try:
+                security_id = await resolve_symbol(symbol, exchange=exchange, segment=segment)
+            except Exception as exc:
+                logger.debug("get_positions_for_web: resolve_symbol(%s) failed: %s", symbol, exc)
 
         active_order = None
         try:
