@@ -302,52 +302,81 @@ class TestINDmoneyBroker:
 
     @pytest.mark.anyio
     async def test_get_positions_success(self):
+        # Real confirmed shape (2026-07-16/17, via get_indmoney_raw_data
+        # against an actually-open position): a flat list under "data", with
+        # net_qty/avg_price/product — NOT the previously-guessed
+        # net_quantity/average_price/exchange_segment/position_type, none of
+        # which exist in the real response.
         b = self._broker()
         payload = {
             "status": "success",
-            "data": {
-                "net_positions": [
-                    {
-                        "trading_symbol": "NIFTY25MAYFUT",
-                        "exchange_segment": "NSE_FNO",
-                        "net_quantity": 50,
-                        "average_price": 120.0,
-                        "last_traded_price": 150.0,
-                        "pnl_absolute": 1500.0,
-                        "position_type": "open",
-                    }
-                ],
-                "day_positions": [],
-            },
+            "data": [
+                {
+                    "net_qty": 65, "avg_price": 44.25, "realized_profit": 0,
+                    "exchange": "", "security_id": "57339", "symbol": "NIFTY",
+                    "drv_instrument": "OPTIDX", "drv_expiry_date": "07/21/2026 14:00",
+                    "drv_option_type": "PE", "drv_strike_price": 23950,
+                    "product": "MARGIN",
+                }
+            ],
         }
         resp = _make_httpx_response(200, payload)
         client_mock = MagicMock()
         client_mock.get = AsyncMock(return_value=resp)
-        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+        instrument_rows = [{
+            "SECURITY_ID": "57339", "TRADING_SYMBOL": "NIFTY-JUL2026-23950-PE", "EXCH": "NSE",
+        }]
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)), \
+             patch.object(b, "get_instruments", AsyncMock(return_value=instrument_rows)):
             positions = await b.get_positions()
         assert len(positions) == 1
         p = positions[0]
-        assert p.symbol == "NIFTY25MAYFUT"
+        assert p.symbol == "NIFTY-JUL2026-23950-PE"
         assert p.exchange == "NSE"
-        assert p.quantity == 50
+        assert p.quantity == 65
+        assert p.avg_price == 44.25
+        assert p.product == "MARGIN"
         assert p.broker == "indmoney"
 
     @pytest.mark.anyio
-    async def test_get_positions_missing_trading_symbol_falls_back_to_resolved_name(self):
-        # A same-day squared-off position row (2026-07-15 bug) — INDstocks
-        # omits trading_symbol once net_quantity hits zero. The UI shouldn't
-        # show the bare security_id when a real name can be resolved.
+    async def test_get_positions_resolves_bse_exchange_when_field_is_empty(self):
+        # The confirmed real bug: "exchange" is always "" in practice, so a
+        # BSE (SENSEX) position must be resolved via the instrument master,
+        # not read directly off the position row.
         b = self._broker()
         payload = {
             "status": "success",
-            "data": {
-                "net_positions": [{
-                    "security_id": "824353", "exchange_segment": "BSE_FNO",
-                    "net_quantity": 0, "average_price": 0, "last_traded_price": 0,
-                    "pnl_absolute": 0,
-                }],
-                "day_positions": [],
-            },
+            "data": [{
+                "net_qty": 20, "avg_price": 157.25, "realized_profit": 0,
+                "exchange": "", "security_id": "824353", "symbol": "SENSEX",
+                "drv_instrument": "OPTIDX", "drv_expiry_date": "07/16/2026 14:00",
+                "drv_option_type": "CE", "drv_strike_price": 77800, "product": "MARGIN",
+            }],
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        instrument_rows = [{
+            "SECURITY_ID": "824353", "TRADING_SYMBOL": "SENSEX 16 JUL 77800 CE", "EXCH": "BSE",
+        }]
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)), \
+             patch.object(b, "get_instruments", AsyncMock(return_value=instrument_rows)):
+            positions = await b.get_positions()
+        assert positions[0].exchange == "BSE"
+        assert positions[0].quantity == 20
+
+    @pytest.mark.anyio
+    async def test_get_positions_missing_trading_symbol_falls_back_to_resolved_name(self):
+        # trading_symbol never exists in the real response at all (confirmed
+        # 2026-07-16/17), not just for squared-off rows as originally
+        # theorized — every row needs the reverse lookup.
+        b = self._broker()
+        payload = {
+            "status": "success",
+            "data": [{
+                "security_id": "824353", "exchange": "", "net_qty": 0,
+                "avg_price": 0, "realized_profit": 0, "symbol": "SENSEX",
+            }],
         }
         resp = _make_httpx_response(200, payload)
         client_mock = MagicMock()
