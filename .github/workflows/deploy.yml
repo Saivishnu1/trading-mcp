@@ -49,6 +49,15 @@ jobs:
             set -a && source /etc/zerodha-mcp/.env && set +a
             ~/.local/bin/uv run alembic upgrade head
 
+            # Idempotent, safe on every deploy — only inserts the
+            # /ws/prices WebSocket location block if it's missing, never
+            # touches anything certbot has added to the nginx config (see
+            # sync_nginx_ws_config.sh's header for why a full config regen
+            # here would be unsafe). No-op if nginx isn't set up yet.
+            if [ -f /etc/nginx/sites-available/zerodha-mcp ]; then
+              sudo bash infra/sync_nginx_ws_config.sh
+            fi
+
             sudo systemctl daemon-reload
             # zerodha-monitor is a separate long-running process that reads
             # the same DB schema and alert logic as zerodha-mcp — restarting

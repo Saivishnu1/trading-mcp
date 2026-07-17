@@ -64,14 +64,14 @@ set -a; source "${ENV_FILE}"; set +a
 # ---------------------------------------------------------------------------
 if ! "${SKIP_PULL}"; then
   echo ""
-  echo "[1/4] Pulling latest code..."
+  echo "[1/5] Pulling latest code..."
   git fetch origin
   BRANCH=$(git rev-parse --abbrev-ref HEAD)
   git pull origin "${BRANCH}"
   echo "  Branch: ${BRANCH}"
   echo "  Commit: $(git log --oneline -1)"
 else
-  echo "[1/4] Skipping git pull (--no-pull)"
+  echo "[1/5] Skipping git pull (--no-pull)"
   echo "  Commit: $(git log --oneline -1)"
 fi
 
@@ -79,7 +79,7 @@ fi
 # Step 2: uv sync (install / update dependencies)
 # ---------------------------------------------------------------------------
 echo ""
-echo "[2/4] Syncing dependencies..."
+echo "[2/5] Syncing dependencies..."
 uv sync --frozen
 echo "  Dependencies up to date."
 
@@ -88,7 +88,7 @@ echo "  Dependencies up to date."
 # Application NEVER starts with a stale schema.
 # ---------------------------------------------------------------------------
 echo ""
-echo "[3/4] Running database migrations..."
+echo "[3/5] Running database migrations..."
 DB_URL_SAFE=$(echo "${DATABASE_URL:-}" | sed 's|:\([^:@]*\)@|:***@|')
 echo "  DATABASE_URL: ${DB_URL_SAFE}"
 
@@ -98,10 +98,25 @@ uv run alembic upgrade head
 echo "  Migration complete: $(uv run alembic current)"
 
 # ---------------------------------------------------------------------------
-# Step 4: Restart application services
+# Step 4: Sync nginx WebSocket config (2026-07-17) — idempotent, safe to run
+# on every deploy. Only inserts the /ws/prices location block if missing;
+# never touches anything certbot has added to this file. See
+# sync_nginx_ws_config.sh's own header for why a full config regen here
+# would be unsafe.
 # ---------------------------------------------------------------------------
 echo ""
-echo "[4/4] Restarting services: ${RESTART_SERVICES[*]}..."
+echo "[4/5] Syncing nginx WebSocket config..."
+if [ -f /etc/nginx/sites-available/zerodha-mcp ]; then
+  sudo bash "${REPO_ROOT}/infra/sync_nginx_ws_config.sh"
+else
+  echo "  nginx not set up on this host yet — skipping (fine for a fresh VM before infra/10_setup_nginx.sh)."
+fi
+
+# ---------------------------------------------------------------------------
+# Step 5: Restart application services
+# ---------------------------------------------------------------------------
+echo ""
+echo "[5/5] Restarting services: ${RESTART_SERVICES[*]}..."
 
 if "${SETUP_MODE}"; then
   echo "  Installing systemd services (first-time setup)..."
