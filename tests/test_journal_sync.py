@@ -1,5 +1,6 @@
 """Tests for Phase 16 — Zerodha auto-import (sync_zerodha_orders)."""
 import sqlite3
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -11,6 +12,14 @@ from src.journal.service import (
     _parse_order_timestamp,
     _product_to_trade_type,
 )
+
+# Anchored to the real run date, not a hardcoded string (2026-07-23 bug:
+# get_trade_history's default 30-day lookback window silently excluded a
+# trade whose hardcoded fixture date had aged out of it as real time passed
+# — the exact "wall-clock date drift" bug class this codebase has hit
+# before, just in a test fixture instead of production code this time).
+_TODAY = datetime.now().strftime("%Y-%m-%d")
+_YESTERDAY = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def _make_conn():
@@ -28,7 +37,7 @@ def _order(
     qty=10,
     status="COMPLETE",
     product="CNC",
-    ts="2026-06-19 10:30:00",
+    ts=f"{_TODAY} 10:30:00",
 ):
     return {
         "order_id": order_id,
@@ -111,9 +120,9 @@ class TestSyncBuyOrders:
         assert trades[0]["created_by"] == "ZERODHA_SYNC"
 
     def test_buy_uses_order_timestamp(self):
-        sync_zerodha_orders([_order(ts="2026-06-18 09:15:00")])
+        sync_zerodha_orders([_order(ts=f"{_YESTERDAY} 09:15:00")])
         trades = get_open_trades()["trades"]
-        assert trades[0]["entry_date"] == "2026-06-18"
+        assert trades[0]["entry_date"] == _YESTERDAY
 
     def test_buy_dedup_skips_already_imported(self):
         sync_zerodha_orders([_order(order_id="ORD001")])
@@ -154,8 +163,8 @@ class TestSyncSellOrders:
 class TestSyncIntraday:
     def test_buy_then_sell_same_symbol_same_batch(self):
         orders = [
-            _order(order_id="B1", txn="BUY",  price=2500.0, ts="2026-06-19 09:30:00"),
-            _order(order_id="S1", txn="SELL", price=2550.0, ts="2026-06-19 15:00:00"),
+            _order(order_id="B1", txn="BUY",  price=2500.0, ts=f"{_TODAY} 09:30:00"),
+            _order(order_id="S1", txn="SELL", price=2550.0, ts=f"{_TODAY} 15:00:00"),
         ]
         result = sync_zerodha_orders(orders)
         assert result["imported"] == 1
