@@ -227,7 +227,8 @@ async def _fetch_indmoney_single_chunk(
         raw = r.json()
         if not raw:
             return []
-        candles = raw if isinstance(raw, list) else raw.get("data", [])
+        from src.brokers.indmoney import extract_historical_candles
+        candles = extract_historical_candles(raw, scrip_code)
         result = []
         for c in candles:
             if isinstance(c, list) and len(c) >= 6:

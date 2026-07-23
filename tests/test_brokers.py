@@ -476,6 +476,40 @@ class TestINDmoneyBroker:
         assert candles[0]["volume"] == 50000
 
     @pytest.mark.anyio
+    async def test_get_historical_data_success_with_confirmed_real_shape(self):
+        # Confirmed real shape (2026-07-23, via a live 200 response):
+        # {"success": bool, "data": {"<scrip_code>": {"candles": [...]}}} —
+        # one level deeper than the flat-list shape the old test above
+        # exercises, which was never actually confirmed against a real body.
+        b = self._broker()
+        payload = {
+            "success": True,
+            "data": {"NSE_2885": {"candles": [[1700000000000, 100.0, 105.0, 99.0, 103.0, 50000]]}},
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            candles = await b.get_historical_data("NSE_2885", "1day", "2024-01-01", "2024-01-31")
+        assert len(candles) == 1
+        assert candles[0]["open"] == 100.0
+        assert candles[0]["close"] == 103.0
+
+    @pytest.mark.anyio
+    async def test_get_historical_data_null_candles_for_illiquid_contract(self):
+        # Exactly what a live request for a freshly-opened, thinly-traded
+        # option returned (2026-07-23): candles: None, not an empty list —
+        # must degrade to [] cleanly, not raise.
+        b = self._broker()
+        payload = {"success": True, "data": {"NSE_63943": {"candles": None}}}
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            candles = await b.get_historical_data("NSE_63943", "1day", "2024-01-01", "2024-01-31")
+        assert candles == []
+
+    @pytest.mark.anyio
     async def test_get_historical_data_no_token(self):
         from src.brokers.indmoney import INDmoneyBroker
         b = INDmoneyBroker()
@@ -501,6 +535,44 @@ class TestINDmoneyBroker:
             candles = await b.get_historical_data("NSE_128673", "1day", "2024-01-01", "2024-01-31")
         assert candles == []
         assert any("parsed 0 candles" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# extract_historical_candles (2026-07-23) — shared by get_historical_data
+# and chart_awareness/data_fetcher.py, both previously duplicating the same
+# unconfirmed-and-wrong flat-list assumption.
+# ---------------------------------------------------------------------------
+
+class TestExtractHistoricalCandles:
+
+    def test_confirmed_real_shape_with_data(self):
+        from src.brokers.indmoney import extract_historical_candles
+        raw = {"success": True, "data": {"NSE_2885": {"candles": [[1, 2, 3, 4, 5, 6]]}}}
+        assert extract_historical_candles(raw, "NSE_2885") == [[1, 2, 3, 4, 5, 6]]
+
+    def test_confirmed_real_shape_null_candles(self):
+        # Exactly what a live request for a thinly-traded contract returned.
+        from src.brokers.indmoney import extract_historical_candles
+        raw = {"success": True, "data": {"NSE_63943": {"candles": None}}}
+        assert extract_historical_candles(raw, "NSE_63943") == []
+
+    def test_scrip_code_not_in_response(self):
+        from src.brokers.indmoney import extract_historical_candles
+        raw = {"success": True, "data": {"NSE_2885": {"candles": [[1, 2, 3, 4, 5, 6]]}}}
+        assert extract_historical_candles(raw, "NSE_9999") == []
+
+    def test_legacy_bare_list_still_supported(self):
+        from src.brokers.indmoney import extract_historical_candles
+        raw = [[1, 2, 3, 4, 5, 6]]
+        assert extract_historical_candles(raw, "NSE_2885") == raw
+
+    def test_malformed_shapes_return_empty(self):
+        from src.brokers.indmoney import extract_historical_candles
+        assert extract_historical_candles({"data": [{"time": 1}]}, "NSE_2885") == []
+        assert extract_historical_candles({"data": "not a dict"}, "NSE_2885") == []
+        assert extract_historical_candles({"data": {"NSE_2885": "not a dict"}}, "NSE_2885") == []
+        assert extract_historical_candles(None, "NSE_2885") == []
+        assert extract_historical_candles("garbage", "NSE_2885") == []
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,38 @@ _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours — instrument masters ra
 _instrument_cache: dict[str, tuple[float, list[dict]]] = {}
 
 
+def extract_historical_candles(raw, scrip_code: str) -> list:
+    """Navigate a GET /market/historical/{interval} response body to the raw
+    candle list for `scrip_code`.
+
+    Confirmed real shape (2026-07-23, via a live 200 response — the request
+    that had assumed a flat list directly under "data" instead silently
+    parsed zero candles every time, logged only as an unexplained
+    "/trade/candles" 502):
+      {"success": bool, "data": {"<scrip_code>": {"candles": [...] | None}}}
+    — one level deeper than previously guessed, and keyed by the scrip code
+    (not a flat list). The per-candle element shape itself
+    ([ts_ms, open, high, low, close, volume]) is unconfirmed either way —
+    the live response used to verify the outer shape had "candles": None
+    (no trading history for that contract) — so that part is left as-is
+    until a real non-empty candle list is observed.
+
+    Returns [] (never raises) if the shape doesn't match, if `scrip_code`
+    isn't in the response, or if candles is null/absent.
+    """
+    if isinstance(raw, list):
+        return raw
+    if not isinstance(raw, dict):
+        return []
+    data = raw.get("data")
+    if not isinstance(data, dict):
+        return []
+    entry = data.get(scrip_code)
+    if not isinstance(entry, dict):
+        return []
+    return entry.get("candles") or []
+
+
 class INDmoneyBroker(BrokerAdapter):
     """Broker adapter backed by the INDstocks API."""
 
@@ -941,11 +973,7 @@ class INDmoneyBroker(BrokerAdapter):
                 raw = r.json()
                 if not raw:
                     return []
-                # Response candles: [timestamp_ms, open, high, low, close, volume]
-                # — unconfirmed against a real INDstocks response body (this
-                # shape is a guess inherited from chart_awareness/
-                # data_fetcher.py's identical, equally-unconfirmed parsing).
-                candles = raw if isinstance(raw, list) else raw.get("data", [])
+                candles = extract_historical_candles(raw, symbol)
                 result = []
                 for c in candles:
                     if isinstance(c, list) and len(c) >= 6:
