@@ -398,6 +398,33 @@ class INDmoneyBroker(BrokerAdapter):
             logger.debug("INDmoneyBroker.get_trades error: %s", exc)
             return []
 
+    @staticmethod
+    def _order_book_price(o: dict) -> float:
+        """Best-effort display price for one /order-book row.
+
+        Confirmed bug (2026-07-23): the old fallback chain was
+        ``o.get("traded_price") or o.get("requested_price") or ...`` — for
+        an order that never filled, INDstocks returns ``"traded_price":
+        "0.00"``, a non-empty string that Python's ``or`` treats as truthy,
+        so it was picked over the real, meaningful ``"requested_price"``
+        (e.g. "81.00") every time. Every cancelled/failed/pending order in
+        the unified order list showed price 0 regardless of what it was
+        actually placed at. Now explicitly checks for a genuinely non-zero
+        parsed float before accepting each candidate.
+        """
+        def _nonzero_float(val) -> float | None:
+            try:
+                f = float(val) if val not in (None, "") else None
+            except (TypeError, ValueError):
+                return None
+            return f if f else None
+
+        for key in ("traded_price", "requested_price", "sl_trigger_price"):
+            val = _nonzero_float(o.get(key))
+            if val is not None:
+                return val
+        return 0.0
+
     async def get_orders(self) -> list[Order]:
         if not self._token:
             return []
@@ -417,11 +444,7 @@ class INDmoneyBroker(BrokerAdapter):
                 for o in items:
                     if not isinstance(o, dict):
                         continue
-                    price_str = o.get("traded_price") or o.get("requested_price") or o.get("sl_trigger_price") or ""
-                    try:
-                        price = float(price_str) if price_str else 0.0
-                    except (ValueError, TypeError):
-                        price = 0.0
+                    price = self._order_book_price(o)
                     try:
                         qty = int(o.get("requested_qty") or 0)
                     except (ValueError, TypeError):
