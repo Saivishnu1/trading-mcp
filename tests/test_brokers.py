@@ -426,6 +426,31 @@ class TestINDmoneyBroker:
         assert o.status == "SUCCESS"
         assert o.broker == "indmoney"
 
+    @pytest.mark.anyio
+    async def test_get_orders_unfilled_order_shows_requested_price_not_zero(self):
+        # Confirmed bug (2026-07-23), real payload from a cancelled sell:
+        # traded_price is the non-empty string "0.00" (never filled), which
+        # the old `or`-chain treated as truthy and picked over the real
+        # requested_price of "81.00".
+        b = self._broker()
+        payload = {
+            "status": "success",
+            "data": [{
+                "id": "DRV-86285456", "name": "NIFTY 28 Jul ₹24100 Call",
+                "security_id": "63943", "txn_type": "SELL", "exchange": "NSE",
+                "segment": "DERIVATIVE", "product": "INTRADAY",
+                "traded_qty": 0, "requested_qty": 65,
+                "traded_price": "0.00", "requested_price": "81.00",
+                "status": "CANCELLED",
+            }],
+        }
+        resp = _make_httpx_response(200, payload)
+        client_mock = MagicMock()
+        client_mock.get = AsyncMock(return_value=resp)
+        with patch("src.brokers.indmoney.httpx.AsyncClient", return_value=_async_cm(client_mock)):
+            orders = await b.get_orders()
+        assert orders[0].price == 81.00
+
     # --- get_option_chain (not_available stub) ---
 
     @pytest.mark.anyio
@@ -573,6 +598,42 @@ class TestExtractHistoricalCandles:
         assert extract_historical_candles({"data": {"NSE_2885": "not a dict"}}, "NSE_2885") == []
         assert extract_historical_candles(None, "NSE_2885") == []
         assert extract_historical_candles("garbage", "NSE_2885") == []
+
+
+# ---------------------------------------------------------------------------
+# INDmoneyBroker._order_book_price (2026-07-23)
+# ---------------------------------------------------------------------------
+
+class TestOrderBookPrice:
+
+    def test_uses_traded_price_when_genuinely_filled(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        o = {"traded_price": "75.65", "requested_price": "75.65"}
+        assert INDmoneyBroker._order_book_price(o) == 75.65
+
+    def test_falls_back_to_requested_price_when_traded_price_is_zero_string(self):
+        # The exact confirmed bug: traded_price "0.00" is truthy in Python's
+        # `or` chain, so it used to be picked over the real order price.
+        from src.brokers.indmoney import INDmoneyBroker
+        o = {"traded_price": "0.00", "requested_price": "81.00"}
+        assert INDmoneyBroker._order_book_price(o) == 81.00
+
+    def test_falls_back_to_sl_trigger_price_when_both_empty(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        o = {"traded_price": "", "requested_price": "", "sl_trigger_price": "69.0"}
+        assert INDmoneyBroker._order_book_price(o) == 69.0
+
+    def test_all_missing_or_zero_returns_zero(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        assert INDmoneyBroker._order_book_price({}) == 0.0
+        assert INDmoneyBroker._order_book_price(
+            {"traded_price": "0.00", "requested_price": "0.00", "sl_trigger_price": "0.00"}
+        ) == 0.0
+
+    def test_malformed_values_are_skipped_not_raised(self):
+        from src.brokers.indmoney import INDmoneyBroker
+        o = {"traded_price": "not_a_number", "requested_price": "81.00"}
+        assert INDmoneyBroker._order_book_price(o) == 81.00
 
 
 # ---------------------------------------------------------------------------
