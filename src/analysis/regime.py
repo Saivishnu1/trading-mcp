@@ -588,7 +588,9 @@ def generate_trade_setup(symbol: str) -> dict:
     }
 
 
-def generate_trade_setup_tf(symbol: str, horizon: str, interval: str) -> dict:
+def generate_trade_setup_tf(
+    symbol: str, horizon: str, interval: str, *, check_mixed_timeframes: bool = False,
+) -> dict:
     """Priority 1 — Timeframe Engine consumer. Same scoring core as
     generate_trade_setup (see _score_setup), but the technicals come from
     src.timeframe.engine.get_technicals(), which refuses the call outright
@@ -606,11 +608,19 @@ def generate_trade_setup_tf(symbol: str, horizon: str, interval: str) -> dict:
         "INTRADAY_OPTIONS", "SWING", "POSITIONAL".
     interval: e.g. "15minute", "day", "week" — must have a role under the
         given horizon per src.timeframe.policy.POLICY, or this refuses.
+    check_mixed_timeframes: Priority 8 — when True, fetches EVERY
+        policy-defined interval for this horizon (up to 4x the network/
+        compute cost of the default single-EXECUTION-plus-one-CONTEXT
+        fetch) and reports genuine N-timeframe agreement/conflict via
+        `mixed_timeframe_report`, instead of the narrower single-context
+        check Priority 7's confidence penalty already does internally.
+        False by default so existing/typical callers pay no extra cost.
     """
     from src.timeframe.confidence import adjust_confidence
     from src.timeframe.engine import get_technicals
     from src.timeframe.evidence import build_context_summary, build_evidence
-    from src.timeframe.policy import HoldingHorizon, context_intervals
+    from src.timeframe.multiframe import build_mixed_timeframe_report
+    from src.timeframe.policy import POLICY, HoldingHorizon, context_intervals
     from src.timeframe.thesis import build_trade_thesis
     from src.timeframe.trace import build_decision_trace
 
@@ -715,6 +725,34 @@ def generate_trade_setup_tf(symbol: str, horizon: str, interval: str) -> dict:
     # built from a moment ago — otherwise the audit record would contradict
     # the thing it's meant to be auditing.
     result["decision_trace"]["confidence"] = result["confidence"]
+
+    # Priority 8 — Mixed Timeframe Detection (opt-in: fetches every
+    # policy-defined interval for this horizon, not just the single
+    # EXECUTION-plus-one-CONTEXT pair the rest of this function uses).
+    if check_mixed_timeframes:
+        technicals_by_interval: dict[str, dict] = {interval: technicals}
+        for other_interval in POLICY.get(horizon_enum, {}):
+            if other_interval == interval:
+                continue
+            technicals_by_interval[other_interval] = get_technicals(symbol, horizon_enum, other_interval)
+        mtf_report = build_mixed_timeframe_report(technicals_by_interval)
+        result["mixed_timeframe_report"] = mtf_report
+        if mtf_report["alignment"] == "CONFLICT":
+            result["cautions"] = result.get("cautions", []) + [
+                f"Mixed timeframe conflict: {mtf_report['conflict_detail']}"
+            ]
+            # Same asymmetry as every other Priority 7 penalty — a real,
+            # cross-timeframe disagreement reduces confidence rather than
+            # being averaged away or silently ignored.
+            mtf_penalty = 15
+            result["raw_confidence"] = result["raw_confidence"]
+            result["confidence"] = max(0, result["confidence"] - mtf_penalty)
+            result["confidence_penalties"] = result["confidence_penalties"] + [{
+                "reason": f"Mixed timeframe conflict: {mtf_report['conflict_detail']}",
+                "points": mtf_penalty,
+            }]
+            result["decision_trace"]["confidence"] = result["confidence"]
+
     return result
 
 
