@@ -589,7 +589,10 @@ def generate_trade_setup(symbol: str) -> dict:
 
 
 def generate_trade_setup_tf(
-    symbol: str, horizon: str, interval: str, *, check_mixed_timeframes: bool = False,
+    symbol: str, horizon: str, interval: str, *,
+    check_mixed_timeframes: bool = False,
+    include_options_layer: bool = False,
+    include_risk_layer: bool = False,
 ) -> dict:
     """Priority 1 — Timeframe Engine consumer. Same scoring core as
     generate_trade_setup (see _score_setup), but the technicals come from
@@ -615,10 +618,19 @@ def generate_trade_setup_tf(
         `mixed_timeframe_report`, instead of the narrower single-context
         check Priority 7's confidence penalty already does internally.
         False by default so existing/typical callers pay no extra cost.
+    include_options_layer: Priority 9 — when True, attaches a best-effort
+        options-chain read (PCR, max pain, IV skew) via the existing
+        src.options_awareness engine as `options_layer`. False by default;
+        no-op cost for equities/symbols with no options chain (surfaces as
+        {"available": False, "reason": ...}, never raises).
+    include_risk_layer: Priority 9 — when True, attaches the existing
+        composite market risk score (src.intelligence.risk) as
+        `risk_layer`. False by default.
     """
     from src.timeframe.confidence import adjust_confidence
     from src.timeframe.engine import get_technicals
     from src.timeframe.evidence import build_context_summary, build_evidence
+    from src.timeframe.layers import attach_options_layer, attach_risk_layer
     from src.timeframe.multiframe import build_mixed_timeframe_report
     from src.timeframe.policy import POLICY, HoldingHorizon, context_intervals
     from src.timeframe.thesis import build_trade_thesis
@@ -752,6 +764,17 @@ def generate_trade_setup_tf(
                 "points": mtf_penalty,
             }]
             result["decision_trace"]["confidence"] = result["confidence"]
+
+    # Priority 9 — Recommendation Architecture: Options Engine / Risk Engine
+    # layers. Both opt-in and independent of each other and of Priority 8 —
+    # neither feeds into confidence/signal here, they're additional,
+    # clearly-labeled context a caller can factor in themselves, since
+    # neither has a validated way (yet) to combine with the pure-technicals
+    # score above without duplicating existing engines' own gating logic.
+    if include_options_layer:
+        result["options_layer"] = attach_options_layer(symbol)
+    if include_risk_layer:
+        result["risk_layer"] = attach_risk_layer(symbol)
 
     return result
 
