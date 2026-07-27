@@ -339,13 +339,20 @@ class TestSizeFromRecommendation:
         result = sizer_engine.size_from_recommendation("INFY")
         assert any("no sizing" in c.lower() for c in result["cautions"])
 
-    def test_wait_still_sized(self, monkeypatch):
+    def test_wait_is_not_sized(self, monkeypatch):
+        # Audit-H1: WAIT (trade_allowed still True, e.g. a caution-only gate
+        # like weekly-regime conflict or event risk) must NOT be sized —
+        # previously size_from_recommendation only bypassed on trade_allowed
+        # is False or recommendation == "AVOID", so a WAIT verdict silently
+        # got full-size sizing identical to ENTER. WAIT is now treated the
+        # same as AVOID for sizing purposes.
         rec = _recommendation(recommendation="WAIT", trade_allowed=True,
                                cautions=["Event risk HIGH"])
         self._setup(monkeypatch, rec=rec)
         result = sizer_engine.size_from_recommendation("INFY")
-        assert result["quantity"] is not None
-        assert result["log_trade_params"] is not None
+        assert result["quantity"] is None
+        assert result["log_trade_params"] is None
+        assert any("no sizing" in c.lower() for c in result["cautions"])
 
     def test_recommendation_cautions_forwarded(self, monkeypatch):
         rec = _recommendation(cautions=["Event risk HIGH (65/100)"])

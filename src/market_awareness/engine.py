@@ -187,13 +187,13 @@ class MarketAwarenessEngine:
                 "pivot": chart.get("levels", {}).get("pivot", {}),
             },
             "options": {
-                "pcr": options.get("pcr") if include_options and options.get("pcr") is not None else 0.0,
+                "pcr": options.get("pcr") if include_options else None,
                 "pcr_interpretation": options.get("pcr_interpretation", "") if include_options else "",
-                "max_pain": options.get("max_pain") if include_options and options.get("max_pain") is not None else 0.0,
-                "call_wall": opt_walls.get("call_wall") if include_options and opt_walls.get("call_wall") is not None else 0.0,
-                "put_wall": opt_walls.get("put_wall") if include_options and opt_walls.get("put_wall") is not None else 0.0,
-                "atm_iv": opt_iv.get("atm_iv") if include_options and opt_iv.get("atm_iv") is not None else 0.0,
-                "iv_skew": opt_iv.get("iv_skew") if include_options and opt_iv.get("iv_skew") is not None else 0.0,
+                "max_pain": options.get("max_pain") if include_options else None,
+                "call_wall": opt_walls.get("call_wall") if include_options else None,
+                "put_wall": opt_walls.get("put_wall") if include_options else None,
+                "atm_iv": opt_iv.get("atm_iv") if include_options else None,
+                "iv_skew": opt_iv.get("iv_skew") if include_options else None,
                 "oi_supports": opt_levels.get("supports", []) if include_options else [],
                 "oi_resistances": opt_levels.get("resistances", []) if include_options else [],
             },
@@ -204,13 +204,13 @@ class MarketAwarenessEngine:
                 "dominant_chart_bias": chart_pats.get("summary", {}).get("dominant_bias", "neutral") if include_patterns else "neutral",
             },
             "global": {
-                "vix": vix.get("level") if include_global and vix.get("level") is not None else 0.0,
+                "vix": vix.get("level") if include_global else None,
                 "vix_interpretation": vix.get("interpretation", "") if include_global else "",
-                "crude": global_pulse.get("assets", {}).get("crude_oil", {}).get("last") if include_global and global_pulse.get("assets", {}).get("crude_oil", {}).get("last") is not None else 0.0,
-                "crude_change_pct": global_pulse.get("assets", {}).get("crude_oil", {}).get("change_pct") if include_global and global_pulse.get("assets", {}).get("crude_oil", {}).get("change_pct") is not None else 0.0,
-                "gold_change_pct": global_pulse.get("assets", {}).get("gold", {}).get("change_pct") if include_global and global_pulse.get("assets", {}).get("gold", {}).get("change_pct") is not None else 0.0,
-                "dxy_change_pct": global_pulse.get("assets", {}).get("dxy", {}).get("change_pct") if include_global and global_pulse.get("assets", {}).get("dxy", {}).get("change_pct") is not None else 0.0,
-                "sp500_change_pct": global_pulse.get("assets", {}).get("sp500", {}).get("change_pct") if include_global and global_pulse.get("assets", {}).get("sp500", {}).get("change_pct") is not None else 0.0,
+                "crude": global_pulse.get("assets", {}).get("crude_oil", {}).get("last") if include_global else None,
+                "crude_change_pct": global_pulse.get("assets", {}).get("crude_oil", {}).get("change_pct") if include_global else None,
+                "gold_change_pct": global_pulse.get("assets", {}).get("gold", {}).get("change_pct") if include_global else None,
+                "dxy_change_pct": global_pulse.get("assets", {}).get("dxy", {}).get("change_pct") if include_global else None,
+                "sp500_change_pct": global_pulse.get("assets", {}).get("sp500", {}).get("change_pct") if include_global else None,
                 "overall_sentiment": global_pulse.get("overall_sentiment", "NEUTRAL") if include_global else "NEUTRAL",
             },
             "calendar": {
@@ -245,6 +245,6 @@ class MarketAwarenessEngine:
             "calendar": calendar,
         }
         
-        final_data["observations"] = narrator.narrate(raw_components)
+        final_data["observations"] = narrator.narrate(raw_components, missing_data)
 
         return final_data

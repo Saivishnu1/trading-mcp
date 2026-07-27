@@ -21,11 +21,17 @@ import logging
 import httpx
 
 from src.brokers.streaming import stream_order_updates
+from src.execution import trailing_sl
 from src.execution.repository import ExecutionRepository
 
 logger = logging.getLogger(__name__)
 
 _TELEGRAM_SEND_URL = "https://api.telegram.org/bot{token}/sendMessage"
+
+# Order statuses after which the order can never fill further and a trailing
+# SL ratcheting it is guaranteed to be acting on a dead order from this point
+# on — must be cancelled here, not left running.
+_TERMINAL_STATUSES = frozenset({"FILLED", "REJECTED", "CANCELLED"})
 
 # order_id -> last order_status we've already alerted on, so a duplicate push
 # (heartbeat/retry) for an unchanged status doesn't spam the same message.
@@ -81,6 +87,14 @@ async def run_order_update_listener(bot_token: str, chat_id: str) -> None:
                 continue
             if _last_alerted_status.get(order_id) == order_status:
                 continue  # duplicate push for a status we already alerted on
+
+            if order_status in _TERMINAL_STATUSES and trailing_sl.is_trailing(order_id):
+                trailing_sl.cancel_trailing_sl(order_id)
+                await repo.deactivate_sl_target(order_id)
+                logger.info(
+                    "order_update_listener: cancelled trailing SL for %s (terminal status %s)",
+                    order_id, order_status,
+                )
 
             logged = await repo.find_by_broker_order_id(order_id)
             message = _format_alert(order_id, order_status, logged, update)

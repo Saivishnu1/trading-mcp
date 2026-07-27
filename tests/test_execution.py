@@ -421,6 +421,53 @@ class TestResolveSecurityId:
             assert await b.resolve_security_id("TCS", exchange="BSE") == "11536"
 
 
+class TestResolveSecurityIdStrict:
+    """Audit-H3 — resolve_security_id_strict reports whether the match was
+    a genuine same-exchange match, so an order-placement caller can refuse
+    a wrong-exchange fallback instead of silently accepting it."""
+
+    @pytest.mark.anyio
+    async def test_exact_exchange_match_reports_true(self):
+        b = _broker()
+        rows = [
+            {"EXCH": "NSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "2885"},
+            {"EXCH": "BSE", "TRADING_SYMBOL": "RELIANCE", "SECURITY_ID": "500325"},
+        ]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            sec_id, matched = await b.resolve_security_id_strict("RELIANCE", exchange="BSE")
+        assert sec_id == "500325"
+        assert matched is True
+
+    @pytest.mark.anyio
+    async def test_fallback_to_other_exchange_reports_false(self):
+        b = _broker()
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "11536"}]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            sec_id, matched = await b.resolve_security_id_strict("TCS", exchange="BSE")
+        assert sec_id == "11536"
+        assert matched is False
+
+    @pytest.mark.anyio
+    async def test_no_exchange_requested_reports_true(self):
+        b = _broker()
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "11536"}]
+        with patch.object(b, "get_instruments", AsyncMock(return_value=rows)):
+            sec_id, matched = await b.resolve_security_id_strict("TCS")
+        assert sec_id == "11536"
+        assert matched is True
+
+    @pytest.mark.anyio
+    async def test_no_match_at_all_returns_none_id(self):
+        # Nothing found for this symbol at all — resolve_symbol's caller
+        # sees security_id is None and reports "symbol not found" (its
+        # `if not sec_id` branch), not the wrong-exchange warning path,
+        # since that only fires when security_id is not None.
+        b = _broker()
+        with patch.object(b, "get_instruments", AsyncMock(return_value=[])):
+            sec_id, matched = await b.resolve_security_id_strict("NOTLISTED", exchange="BSE")
+        assert sec_id is None
+
+
 # ---------------------------------------------------------------------------
 # resolve_security_name (2026-07-15) — reverse of resolve_security_id, used
 # when INDstocks omits trading_symbol on a squared-off position/holding.
@@ -809,6 +856,36 @@ class TestResolveSymbolExchangeThreading:
              patch.object(adapter, "get_instruments", AsyncMock(return_value=rows)):
             result = await svc.resolve_symbol("RELIANCE", exchange="NSE", segment="EQUITY")
         assert result == "2885"
+
+    @pytest.mark.anyio
+    async def test_audit_h3_refuses_wrong_exchange_fallback_for_order_placement(self):
+        # Audit-H3: only an NSE row exists for this symbol, but the caller
+        # (order placement) explicitly requested BSE. resolve_security_id's
+        # best-effort fallback would silently hand back the NSE security_id
+        # (documented/intentional for the Telegram symbol-only /buy flow —
+        # see TestResolveSecurityId::test_exchange_filter_falls_back_when_no_row_matches
+        # in this same test module) — but resolve_symbol, used at the
+        # order-submission boundary, must refuse rather than let an order
+        # silently route onto the wrong exchange's security_id.
+        import src.execution.service as svc
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "11536"}]
+        adapter = _broker()
+        with patch.object(svc, "get_broker_adapter", return_value=adapter), \
+             patch.object(adapter, "get_instruments", AsyncMock(return_value=rows)):
+            result = await svc.resolve_symbol("TCS", exchange="BSE", segment="EQUITY")
+        assert result is None
+
+    @pytest.mark.anyio
+    async def test_audit_h3_resolve_security_id_fallback_still_intact(self):
+        # The underlying resolve_security_id (used by the Telegram /buy /sell
+        # symbol-only flow, which has no exchange-aware picker) must keep its
+        # documented best-effort fallback — only the stricter order-placement
+        # boundary (resolve_symbol) rejects a wrong-exchange match.
+        adapter = _broker()
+        rows = [{"EXCH": "NSE", "TRADING_SYMBOL": "TCS", "SECURITY_ID": "11536"}]
+        with patch.object(adapter, "get_instruments", AsyncMock(return_value=rows)):
+            result = await adapter.resolve_security_id("TCS", exchange="BSE")
+        assert result == "11536"
 
 
 # ---------------------------------------------------------------------------

@@ -131,10 +131,11 @@ async def test_market_awareness_disabled_features():
         res = await engine.analyze("NIFTY", include_options=False, include_global=False, include_patterns=False)
 
         assert res["symbol"] == "NIFTY"
-        # Features should be empty/default values
-        assert res["options"]["pcr"] == 0.0
+        # Audit-H2: disabled/missing sections must be None, not a fabricated
+        # 0.0 that a caller could misread as a real (e.g. bearish PCR) reading.
+        assert res["options"]["pcr"] is None
         assert len(res["options"]["oi_supports"]) == 0
-        assert res["global"]["vix"] == 0.0
+        assert res["global"]["vix"] is None
         assert len(res["patterns"]["candlestick"]) == 0
         assert len(res["patterns"]["chart"]) == 0
         assert len(res["missing_data"]) == 0
@@ -226,6 +227,7 @@ async def test_market_awareness_partial_failure():
         assert res["symbol"] == "NIFTY"
         assert res["market_structure"]["trend"] == "sideways"
         assert "options" in res["missing_data"]
-        # Options values should fall back to default
-        assert res["options"]["pcr"] == 0.0
+        # Audit-H2: a failed fetch must surface as None, not a fabricated 0.0
+        # that analytics._pcr_code would classify as BEARISH.
+        assert res["options"]["pcr"] is None
         assert res["data_sources"]["options"] == "none"

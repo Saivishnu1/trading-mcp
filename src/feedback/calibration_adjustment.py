@@ -83,13 +83,17 @@ def calibration_size_factor(calibrated_confidence: float) -> float:
     """Position size multiplier derived from calibrated confidence.
 
     Reduces size when historical performance suggests lower win probability
-    than the raw model confidence implies; small boost when historically
-    accurate at high confidence.
+    than the raw model confidence implies. Never increases size (Audit-H5):
+    generate_trade_setup's confidence is a hand-weighted indicator score with
+    no backtested basis (unlike Phase 20A/21's walk-forward-audited signals,
+    which were found to lack directional edge and had their fields deleted
+    entirely) — calibration against realized win rate is a legitimate
+    safeguard for shrinking size on historically-overconfident buckets, but
+    amplifying size on a historically-accurate bucket asserts a stronger
+    edge claim than the underlying score was ever validated to support.
     """
     if calibrated_confidence <= 45.0:
         return 0.50
     if calibrated_confidence <= 55.0:
         return 0.75
-    if calibrated_confidence >= 75.0:
-        return 1.10
     return 1.0

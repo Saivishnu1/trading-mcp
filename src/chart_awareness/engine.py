@@ -70,6 +70,12 @@ class ChartEngine:
             "candles_analyzed": len(candles),
             "day_high": last_candle.get("high"),
             "day_low": last_candle.get("low"),
+            "last_close": last_candle.get("close"),
+            # Audit M3 (Phase 1): callers had no way to tell a fresh intraday
+            # candle from a stale one — analyze_chart returned indicator
+            # values with no timestamp at all. candles[-1]['datetime'] was
+            # always available but discarded.
+            "last_candle_datetime": last_candle.get("datetime"),
             "trend": trend,
             "structure": structure,
             "indicators": computed_indicators,

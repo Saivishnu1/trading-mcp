@@ -94,6 +94,55 @@ def _ltp(pmap: dict, strike: float, otype: str) -> float | None:
     return pmap.get((strike, otype))
 
 
+# Audit-H4: strikes with a wide bid-ask spread or thin open interest can have
+# a `lastPrice` that is a stale, unrepresentative print from a much earlier
+# trade — the reported max_loss/net_credit is not what a real order would
+# actually fill at. Flag rather than silently trust `lastPrice` alone.
+_WIDE_SPREAD_PCT_THRESHOLD = 10.0   # spread as % of mid-price
+_LOW_OI_THRESHOLD = 500              # open interest floor
+
+
+def _build_liquidity_map(chain_data: dict, expiry: str) -> dict[tuple[float, str], dict]:
+    """Map (strike, option_type) → {bid, ask, oi} for the given expiry."""
+    liq: dict[tuple[float, str], dict] = {}
+    for row in chain_data.get("records", {}).get("data", []):
+        if row.get("expiryDate") != expiry:
+            continue
+        strike = float(row.get("strikePrice", 0))
+        for otype in ("CE", "PE"):
+            leg_data = row.get(otype)
+            if not leg_data:
+                continue
+            liq[(strike, otype)] = {
+                "bid": leg_data.get("bidprice"),
+                "ask": leg_data.get("askPrice"),
+                "oi": leg_data.get("openInterest"),
+            }
+    return liq
+
+
+def _leg_liquidity_warning(strike: float, otype: str, liquidity_map: dict) -> str | None:
+    """Return a warning string if this leg's spread is wide or OI is thin;
+    None if the leg looks liquid or liquidity data is unavailable (never
+    fabricates a warning from absent data)."""
+    info = liquidity_map.get((strike, otype))
+    if not info:
+        return None
+    bid, ask, oi = info.get("bid"), info.get("ask"), info.get("oi")
+    warnings = []
+    if bid is not None and ask is not None and bid > 0 and ask > 0:
+        mid = (bid + ask) / 2
+        if mid > 0:
+            spread_pct = (ask - bid) / mid * 100
+            if spread_pct > _WIDE_SPREAD_PCT_THRESHOLD:
+                warnings.append(f"spread {spread_pct:.0f}% of mid")
+    if oi is not None and oi < _LOW_OI_THRESHOLD:
+        warnings.append(f"OI only {int(oi)}")
+    if not warnings:
+        return None
+    return f"{int(strike)}{otype}: " + ", ".join(warnings)
+
+
 # ---------------------------------------------------------------------------
 # Leg selection
 # ---------------------------------------------------------------------------
@@ -319,6 +368,7 @@ def _build_summary(
     legs: list[dict],
     payoff: dict,
     sym: str,
+    liquidity_warnings: list[str] | None = None,
 ) -> str:
     if not legs:
         return (
@@ -330,7 +380,21 @@ def _build_summary(
         f"{l['action']} {int(l['strike'])} {l['option_type']}" for l in legs
     )
 
+    liquidity_suffix = ""
+    if liquidity_warnings:
+        liquidity_suffix = (
+            " Liquidity caution — lastPrice may not be fillable near the reported "
+            f"level for: {'; '.join(liquidity_warnings)}."
+        )
+
     if payoff.get("is_estimate"):
+        if liquidity_warnings:
+            return (
+                f"{strategy} selected for {sym} based on {signal} signal. "
+                f"Legs: {leg_desc}. Real premiums were found but at least one leg "
+                "has a wide bid-ask spread or thin open interest, so the reported "
+                f"numbers may not be fillable at those levels.{liquidity_suffix}"
+            )
         return (
             f"{strategy} selected for {sym} based on {signal} signal. "
             f"Legs: {leg_desc}. "
@@ -351,7 +415,7 @@ def _build_summary(
     return (
         f"{strategy} selected for {sym} based on {signal} signal. "
         f"Legs: {leg_desc}. "
-        f"Max loss: {max_loss} | Max profit: {max_profit}. {be_str}."
+        f"Max loss: {max_loss} | Max profit: {max_profit}. {be_str}.{liquidity_suffix}"
     )
 
 
@@ -388,6 +452,7 @@ def build_option_strategy(symbol: str, expiry: str | None = None) -> dict:
     chain_data: dict | None = None
     chain_expiry: str | None = expiry
     pmap: dict = {}
+    liquidity_map: dict = {}
     premium_data_available = False
     strikes: list[float] = []
 
@@ -416,6 +481,7 @@ def build_option_strategy(symbol: str, expiry: str | None = None) -> dict:
 
         strikes = _sorted_strikes(chain_data, chain_expiry)
         pmap    = _build_pmap(chain_data, chain_expiry)
+        liquidity_map = _build_liquidity_map(chain_data, chain_expiry)
         premium_data_available = bool(pmap)
 
     except Exception as exc:
@@ -455,6 +521,18 @@ def build_option_strategy(symbol: str, expiry: str | None = None) -> dict:
 
     payoff = _calc_payoff(strategy_name, legs, pmap)
 
+    leg_liquidity_warnings = [
+        w for w in (
+            _leg_liquidity_warning(leg["strike"], leg["option_type"], liquidity_map)
+            for leg in legs
+        ) if w
+    ]
+    if leg_liquidity_warnings:
+        # A wide-spread/thin-OI leg's lastPrice may not be fillable near the
+        # reported value — this qualifies is_estimate even when a premium
+        # was found (Audit-H4).
+        payoff = {**payoff, "is_estimate": True}
+
     return {
         "symbol":                sym,
         "strategy":              strategy_name,
@@ -470,5 +548,6 @@ def build_option_strategy(symbol: str, expiry: str | None = None) -> dict:
         "upper_breakeven":       payoff.get("upper_breakeven"),
         "lower_breakeven":       payoff.get("lower_breakeven"),
         "is_estimate":           payoff.get("is_estimate", True),
-        "summary":               _build_summary(strategy_name, signal, legs, payoff, sym),
+        "liquidity_warning":     "; ".join(leg_liquidity_warnings) if leg_liquidity_warnings else None,
+        "summary":               _build_summary(strategy_name, signal, legs, payoff, sym, leg_liquidity_warnings),
     }

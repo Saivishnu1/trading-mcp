@@ -43,17 +43,24 @@ def register(mcp: FastMCP) -> None:
         )
 
         has_error = "error" in result
+        missing_data = result.get("missing_data") or []
         spot_suspect = _meta.spot_outside_range(
             result.get("spot"), result.get("day_high"), result.get("day_low")
         )
         if has_error:
             data_quality = _meta.DQ_INVALID
-        elif spot_suspect:
+        elif spot_suspect or missing_data:
             data_quality = _meta.DQ_SUSPECT
         else:
             data_quality = _meta.DQ_VALID
 
         warning = None if _meta.is_market_hours() else "Outside NSE session. Indicators and options reflect last available session."
+        if missing_data:
+            missing_note = (
+                f"Data unavailable for: {', '.join(missing_data)} — related fields are null, "
+                "not a real zero/negative reading. Do not treat them as bearish/bullish signals."
+            )
+            warning = missing_note if warning is None else f"{warning} {missing_note}"
         if spot_suspect:
             suspect_note = (
                 f"spot ({result.get('spot')}) falls outside this response's own "

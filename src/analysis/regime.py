@@ -370,23 +370,40 @@ def calculate_position_size(
     risk_amount = capital * (risk_percent / 100.0)
     position_size = round(risk_amount / stop_distance, 4) if stop_distance else None
 
-    return {
+    result: dict = {
         "capital": _round(capital),
         "risk_percent": _round(risk_percent, 2),
         "risk_amount": _round(risk_amount),
         "position_size": position_size,
     }
 
+    if position_size is not None and entry > 0:
+        capital_required = position_size * entry
+        if capital_required > capital:
+            capped_size = math.floor(capital / entry) if entry > 0 else 0
+            result["capital_ceiling_caution"] = (
+                f"Risk-based position_size ({position_size}) would require "
+                f"₹{_round(capital_required)} against ₹{_round(capital)} capital — "
+                f"capped size at this entry/stoploss is {capped_size}"
+            )
+            result["capital_capped_position_size"] = capped_size
+        result["capital_required"] = _round(capital_required)
 
-def generate_trade_setup(symbol: str) -> dict:
-    technicals = _analyze_technicals(symbol)
-    if "error" in technicals:
-        return technicals
+    return result
 
-    regime = detect_market_regime(symbol)
-    if "error" in regime:
-        return regime
 
+def _score_setup(technicals: dict, regime_name: str) -> dict | None:
+    """Pure scoring core shared by generate_trade_setup (daily-only, unchanged
+    behavior) and generate_trade_setup_tf (Priority 1 — Timeframe Engine,
+    any EXECUTION-role interval). Operates on any technicals dict with the
+    same shape _analyze_technicals/get_technicals produce. Returns None when
+    inputs are invalid (NaN/missing) — caller decides how to surface that.
+
+    Extracted verbatim from generate_trade_setup's body — same math, same
+    thresholds, same output keys — so daily-only callers see zero behavior
+    change. Do not diverge the scoring rules between the two callers without
+    updating both regression suites.
+    """
     price = technicals["last_close"]
     rsi = technicals["rsi_14"]
     ema20 = technicals["ema_20"]
@@ -396,76 +413,88 @@ def generate_trade_setup(symbol: str) -> dict:
     atr = technicals["atr_14"]
 
     if any(_is_invalid(x) for x in (price, rsi, ema20, ema50, adx, atr, macd["macd"], macd["signal"])):
-        return _error(symbol, "insufficient data for trade setup")
+        return None
 
     bullish = 0
     bearish = 0
-    reasoning: list[str] = []
+    # Priority 4 — Recommendation Evidence Engine. Each entry tags WHICH
+    # indicator produced the line and its polarity (bullish/bearish/neutral)
+    # at the moment it's known — inside the same if/elif that already
+    # decides the score delta. generate_trade_setup's plain `reasoning`
+    # list[str] (unchanged output contract) is derived from this below by
+    # extracting just the text; nothing about the daily-only function's
+    # output shape changes. generate_trade_setup_tf additionally surfaces
+    # the tagged version as evidence_for/evidence_against.
+    evidence: list[dict] = []
+
+    def _log(indicator: str, polarity: str, points: int, text: str) -> None:
+        evidence.append({"indicator": indicator, "polarity": polarity, "points": points, "text": text})
 
     if rsi > 70:
         bearish += 10
-        reasoning.append(f"RSI at {rsi:.0f} is overbought — elevated mean-reversion risk.")
+        _log("rsi", "bearish", 10, f"RSI at {rsi:.0f} is overbought — elevated mean-reversion risk.")
     elif rsi > 55:
         bullish += 20
-        reasoning.append(f"RSI at {rsi:.0f} is above 55, favoring bullish momentum.")
+        _log("rsi", "bullish", 20, f"RSI at {rsi:.0f} is above 55, favoring bullish momentum.")
     elif rsi < 30:
         bullish += 10
-        reasoning.append(f"RSI at {rsi:.0f} is oversold — potential mean-reversion bounce.")
+        _log("rsi", "bullish", 10, f"RSI at {rsi:.0f} is oversold — potential mean-reversion bounce.")
     elif rsi < 45:
         bearish += 20
-        reasoning.append(f"RSI at {rsi:.0f} is below 45, favoring bearish momentum.")
+        _log("rsi", "bearish", 20, f"RSI at {rsi:.0f} is below 45, favoring bearish momentum.")
     else:
-        reasoning.append(f"RSI at {rsi:.0f} is neutral (45–55).")
+        _log("rsi", "neutral", 0, f"RSI at {rsi:.0f} is neutral (45–55).")
 
     # Near-boundary caution: the 30/70 extremes carry the largest scoring swing,
     # so flag readings within a couple of points where the bin could flip.
     if abs(rsi - 70) <= _RSI_BOUNDARY_TOL or abs(rsi - 30) <= _RSI_BOUNDARY_TOL:
-        reasoning.append(
-            f"RSI {rsi:.0f} sits near an overbought/oversold boundary — "
-            "the read may flip on a small move."
-        )
+        _log("rsi", "neutral", 0,
+             f"RSI {rsi:.0f} sits near an overbought/oversold boundary — "
+             "the read may flip on a small move.")
 
     if price > ema20:
         bullish += 15
-        reasoning.append("Price is trading above EMA20.")
+        _log("ema_20", "bullish", 15, "Price is trading above EMA20.")
     elif price < ema20:
         bearish += 15
-        reasoning.append("Price is trading below EMA20.")
+        _log("ema_20", "bearish", 15, "Price is trading below EMA20.")
 
     if price > ema50:
         bullish += 15
-        reasoning.append("Price is trading above EMA50.")
+        _log("ema_50", "bullish", 15, "Price is trading above EMA50.")
     elif price < ema50:
         bearish += 15
-        reasoning.append("Price is trading below EMA50.")
+        _log("ema_50", "bearish", 15, "Price is trading below EMA50.")
 
     if macd["macd"] > macd["signal"]:
         bullish += 20
-        reasoning.append("MACD is above the signal line, which is bullish.")
+        _log("macd", "bullish", 20, "MACD is above the signal line, which is bullish.")
     elif macd["macd"] < macd["signal"]:
         bearish += 20
-        reasoning.append("MACD is below the signal line, which is bearish.")
+        _log("macd", "bearish", 20, "MACD is below the signal line, which is bearish.")
 
     if adx > 25:
         if bullish >= bearish:
             bullish += 20
+            _log("adx", "bullish", 20, f"ADX at {adx} confirms stronger directional conviction.")
         else:
             bearish += 20
-        reasoning.append(f"ADX at {adx} confirms stronger directional conviction.")
+            _log("adx", "bearish", 20, f"ADX at {adx} confirms stronger directional conviction.")
+    else:
+        _log("adx", "neutral", 0, f"ADX at {adx} is <=25 — no directional conviction added.")
 
-    regime_name = regime["regime"]
     if regime_name in {"BULL_TREND", "NEUTRAL_BULLISH"}:
         bullish += 10
-        reasoning.append(f"Market regime is {regime_name}, aligning with bullish setups.")
+        _log("regime", "bullish", 10, f"Market regime is {regime_name}, aligning with bullish setups.")
     elif regime_name in {"BEAR_TREND", "NEUTRAL_BEARISH"}:
         bearish += 10
-        reasoning.append(f"Market regime is {regime_name}, aligning with bearish setups.")
+        _log("regime", "bearish", 10, f"Market regime is {regime_name}, aligning with bearish setups.")
     elif regime_name == "BREAKOUT_POTENTIAL":
         bullish += 5
         bearish += 5
-        reasoning.append("Breakout potential is building, but direction still needs confirmation.")
+        _log("regime", "neutral", 0, "Breakout potential is building, but direction still needs confirmation.")
     else:
-        reasoning.append("Range-bound conditions reduce directional conviction.")
+        _log("regime", "neutral", 0, "Range-bound conditions reduce directional conviction.")
 
     if bullish >= 60 and bullish > bearish:
         signal = "BUY"
@@ -482,7 +511,9 @@ def generate_trade_setup(symbol: str) -> dict:
     else:
         signal = "NEUTRAL"
         confidence = max(bullish, bearish)
-        reasoning.append("Bullish and bearish evidence is balanced.")
+        _log("composite", "neutral", 0, "Bullish and bearish evidence is balanced.")
+
+    reasoning: list[str] = [e["text"] for e in evidence]
 
     # Regime-aware target multipliers (from entry, measured from price).
     # Entry buffer: 0.25×ATR. Stop distance: 1.00×ATR.
@@ -520,7 +551,6 @@ def generate_trade_setup(symbol: str) -> dict:
         target_scalar = _round(price + atr)
 
     return {
-        "symbol": symbol.upper(),
         "signal": signal,
         "confidence": _scale_confidence(confidence),
         # Legacy scalar fields (backward-compatible with Dashboard / Journal / Alerts)
@@ -533,8 +563,159 @@ def generate_trade_setup(symbol: str) -> dict:
         "bull_target": bull_target,
         "bear_target": bear_target,
         "reasoning": reasoning,
+        "_evidence": evidence,  # tagged version, private — see build_evidence() for the public shape
+    }
+
+
+def generate_trade_setup(symbol: str) -> dict:
+    technicals = _analyze_technicals(symbol)
+    if "error" in technicals:
+        return technicals
+
+    regime = detect_market_regime(symbol)
+    if "error" in regime:
+        return regime
+
+    scored = _score_setup(technicals, regime["regime"])
+    if scored is None:
+        return _error(symbol, "insufficient data for trade setup")
+    scored = {k: v for k, v in scored.items() if k != "_evidence"}
+
+    return {
+        "symbol": symbol.upper(),
+        **scored,
         "data_basis": _data_basis(technicals),
     }
+
+
+def generate_trade_setup_tf(symbol: str, horizon: str, interval: str) -> dict:
+    """Priority 1 — Timeframe Engine consumer. Same scoring core as
+    generate_trade_setup (see _score_setup), but the technicals come from
+    src.timeframe.engine.get_technicals(), which refuses the call outright
+    if (horizon, interval) has no defined role at all, and tags the result
+    with which role this interval plays — so a caller cannot mistake a
+    CONTEXT-role read for one that's allowed to gate an entry.
+
+    Parallel to generate_trade_setup, not a replacement — existing callers
+    (create_trade_plan, recommend_trade, build_option_strategy, review_trade)
+    are unchanged and keep calling the daily-only function. This is the
+    entry point for any NEW recommendation path that wants explicit
+    timeframe validation instead of an implicit daily default.
+
+    horizon: one of src.timeframe.policy.HoldingHorizon's values, e.g.
+        "INTRADAY_OPTIONS", "SWING", "POSITIONAL".
+    interval: e.g. "15minute", "day", "week" — must have a role under the
+        given horizon per src.timeframe.policy.POLICY, or this refuses.
+    """
+    from src.timeframe.confidence import adjust_confidence
+    from src.timeframe.engine import get_technicals
+    from src.timeframe.evidence import build_context_summary, build_evidence
+    from src.timeframe.policy import HoldingHorizon, context_intervals
+    from src.timeframe.thesis import build_trade_thesis
+    from src.timeframe.trace import build_decision_trace
+
+    try:
+        horizon_enum = HoldingHorizon(horizon)
+    except ValueError:
+        return _error(symbol, f"unknown horizon {horizon!r} — see src.timeframe.policy.HoldingHorizon")
+
+    technicals = get_technicals(symbol, horizon_enum, interval)
+    if "error" in technicals:
+        return technicals
+
+    if not technicals.get("can_gate_entry"):
+        return {
+            "symbol": symbol.upper() if isinstance(symbol, str) else symbol,
+            "error": (
+                f"interval={interval!r} is role={technicals.get('role')} under "
+                f"horizon={horizon!r} — CONTEXT/DISALLOWED intervals cannot "
+                "produce an entry trade setup by themselves. Call with an "
+                "EXECUTION or FINE_ENTRY interval for this horizon, or use "
+                "the CONTEXT read only to inform confidence/sizing on an "
+                "EXECUTION-role setup."
+            ),
+            "horizon": horizon,
+            "interval": interval,
+            "role": technicals.get("role"),
+        }
+
+    # Regime classification needs to be computed from the SAME timeframe's
+    # technicals — reusing detect_market_regime (always daily) here would
+    # silently reintroduce exactly the timeframe-mixing bug this engine
+    # exists to prevent.
+    regime_dict = _classify_regime(symbol, technicals)
+
+    scored = _score_setup(technicals, regime_dict["regime"])
+    if scored is None:
+        return _error(symbol, "insufficient data for trade setup")
+
+    evidence_split = build_evidence(scored.pop("_evidence", []), scored["signal"])
+
+    # Priority 4 — attempt one CONTEXT-role fetch for this horizon (e.g.
+    # SWING's "week", INTRADAY_OPTIONS' "day") to populate context/rejected.
+    # Best-effort: a context fetch failing (stale/unavailable) never blocks
+    # the EXECUTION-role setup that already scored successfully above — it
+    # only means context/rejected reflect that failure instead of a reading.
+    context_technicals = None
+    context_error = None
+    ctx_intervals = context_intervals(horizon_enum)
+    if ctx_intervals:
+        ctx_result = get_technicals(symbol, horizon_enum, ctx_intervals[0])
+        if "error" in ctx_result:
+            context_error = ctx_result["error"]
+        else:
+            context_technicals = ctx_result
+    context_split = build_context_summary(context_technicals, context_error)
+
+    result = {
+        "symbol": symbol.upper(),
+        **scored,
+        "horizon": horizon,
+        "interval": interval,
+        "role": technicals.get("role"),
+        "data_basis": {
+            "source": technicals.get("data_source"),
+            "last_candle_date": technicals.get("last_candle_date"),
+            "last_candle_datetime": technicals.get("last_candle_datetime"),
+            "staleness_days": _staleness_days(technicals.get("last_candle_date")),
+        },
+        # Priority 2 — per-indicator metadata for every indicator that fed
+        # this setup's score, so the setup is auditable back to individual
+        # indicator freshness/source, not just the aggregate data_basis.
+        "indicator_metadata": technicals.get("indicator_metadata", []),
+        # Priority 4 — Recommendation Evidence Engine.
+        "evidence_for": evidence_split["evidence_for"],
+        "evidence_against": evidence_split["evidence_against"],
+        "ignored": evidence_split["ignored"],
+        "context": context_split["context"],
+        "rejected": context_split["rejected"],
+    }
+    # Priority 6 — Trade Thesis Engine: "why this trade exists" (reframed
+    # from evidence_for above) paired with "why it fails" (concrete,
+    # checkable invalidation conditions from this SAME timeframe's technicals).
+    result["thesis"] = build_trade_thesis(result, technicals)
+    # Priority 5 — Decision Trace. Pure reformatting of everything already
+    # in `result` above; adds no new data, just one coherent audit record.
+    # Built BEFORE the confidence adjustment below because Priority 7's
+    # penalties are themselves partly derived from this trace's own
+    # data_quality/indicators_rejected verdicts.
+    result["decision_trace"] = build_decision_trace(result)
+    # Priority 7 — Confidence rework. Reduces (never increases) the raw
+    # hand-weighted confidence when this SAME pipeline already found a real
+    # problem: mixed-timeframe conflict, missing indicator data, internal
+    # disagreement between evidence_for/evidence_against, or a DEGRADED
+    # decision_trace verdict. The raw score is preserved for audit.
+    conf_adjustment = adjust_confidence(result, result["decision_trace"])
+    result["raw_confidence"] = conf_adjustment["raw_confidence"]
+    result["confidence"] = conf_adjustment["adjusted_confidence"]
+    result["confidence_penalties"] = conf_adjustment["penalties"]
+    result["confidence_not_checked"] = conf_adjustment["not_checked"]
+    # The trace's own `confidence` field must reflect what was actually
+    # reported (the adjusted value), not the pre-penalty raw score it was
+    # built from a moment ago — otherwise the audit record would contradict
+    # the thing it's meant to be auditing.
+    result["decision_trace"]["confidence"] = result["confidence"]
+    return result
 
 
 def recommend_strategy(symbol: str) -> dict:

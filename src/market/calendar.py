@@ -500,20 +500,14 @@ def get_market_calendar() -> dict:
             except ValueError:
                 pass
 
-    # Session active status (naive — doesn't check market hours, just trading day)
-    from datetime import datetime as _dt_cls
-    now = _dt_cls.now()
-    hour_min = now.hour * 60 + now.minute
-    market_open_min = 9 * 60 + 15
-    market_close_min = 15 * 60 + 30
-    session_active = (
-        is_trading
-        and market_open_min <= hour_min <= market_close_min
-    )
-    bse_session_active = (
-        is_bse_trading
-        and market_open_min <= hour_min <= market_close_min
-    )
+    # Session active status — IST-aware (matches is_market_session_open()/
+    # meta.is_market_hours()). Computed inline rather than by calling
+    # is_market_session_open() to avoid recursion (that function calls
+    # get_market_calendar() when not passed one).
+    now_ist_time = datetime.now(_IST).time()
+    in_session_hours = _MARKET_OPEN <= now_ist_time <= _MARKET_CLOSE
+    session_active = is_trading and in_session_hours
+    bse_session_active = is_bse_trading and in_session_hours
 
     calendar_source = "live" if any(v == "live" for v in per_index_expiry_source.values()) else "cached"
     if not bse_holidays:

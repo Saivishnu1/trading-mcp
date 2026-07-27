@@ -92,6 +92,33 @@ def _heat_size_factor(heat_pct: float) -> tuple[float, str | None]:
     return 1.0, None
 
 
+def _apply_capital_ceiling(
+    units: int,
+    unit_price: float,
+    capital: float,
+    unit_multiplier: int = 1,
+) -> tuple[int, str | None]:
+    """Clamp `units` so units * unit_price * unit_multiplier never exceeds `capital`.
+
+    Risk-based sizing (risk_budget / stoploss_distance) has no upper bound tied to
+    account size — a tight stoploss can size a notional position larger than the
+    entire stated capital. This is the backstop: it never loosens a size the
+    heat/portfolio-risk factors already reduced, only tightens further if the
+    risk-based size still doesn't fit in the account.
+    """
+    if unit_price <= 0 or unit_multiplier <= 0 or capital <= 0:
+        return units, None
+    notional_per_unit = unit_price * unit_multiplier
+    max_units = max(1, math.floor(capital / notional_per_unit))
+    if units > max_units:
+        return max_units, (
+            f"Size clamped to capital ceiling: {units} would require "
+            f"₹{round(units * notional_per_unit, 2)} against ₹{round(capital, 2)} "
+            f"capital — reduced to {max_units}"
+        )
+    return units, None
+
+
 def _build_equity_log_params(
     symbol: str,
     direction: str,
@@ -162,6 +189,12 @@ def size_equity_trade(
         size_adjustments = [m for m in [heat_adj_msg, port_adj_msg] if m]
         size_factors = [f for f in [heat_factor, port_factor] if f < 1.0]
         quantity = _apply_size_factors(base_quantity, size_factors) if size_factors else base_quantity
+
+        quantity, capital_ceiling_note = _apply_capital_ceiling(
+            quantity, entry, capital, unit_multiplier=1,
+        )
+        if capital_ceiling_note:
+            size_adjustments.append(capital_ceiling_note)
 
         max_loss = round(quantity * stoploss_distance, 2)
         capital_required = round(quantity * entry, 2)
@@ -247,6 +280,12 @@ def size_options_trade(
         size_factors = [f for f in [heat_factor, port_factor] if f < 1.0]
         lots = _apply_size_factors(base_lots, size_factors) if size_factors else base_lots
 
+        lots, capital_ceiling_note = _apply_capital_ceiling(
+            lots, premium, capital, unit_multiplier=lot_size,
+        )
+        if capital_ceiling_note:
+            size_adjustments.append(capital_ceiling_note)
+
         quantity = lots * lot_size
         capital_required = round(lots * lot_size * premium, 2)
         max_loss = round(lots * lot_size * premium_distance, 2)
@@ -331,7 +370,7 @@ def size_from_recommendation(
         # Portfolio heat (computed for all cases — informational even on AVOID)
         portfolio_heat_pct, heat_cautions = _compute_portfolio_heat(capital)
 
-        if not trade_allowed or recommendation == "AVOID":
+        if not trade_allowed or recommendation in ("AVOID", "WAIT"):
             cautions = list(rec_cautions) + list(heat_cautions)
             cautions.append("Trade not recommended — no sizing produced")
             return {
@@ -374,6 +413,11 @@ def size_from_recommendation(
         size_adjustments = [m for m in [heat_adj_msg, port_adj_msg] if m]
         size_factors = [f for f in [heat_factor, port_factor] if f < 1.0]
         quantity = _apply_size_factors(base_position_size, size_factors) if size_factors else (base_position_size or 1)
+
+        if entry is not None and entry > 0 and quantity:
+            quantity, capital_ceiling_note = _apply_capital_ceiling(quantity, entry, capital)
+            if capital_ceiling_note:
+                size_adjustments.append(capital_ceiling_note)
 
         # Compute absolute sizing
         max_loss: float | None = None

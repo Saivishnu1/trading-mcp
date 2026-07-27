@@ -779,6 +779,46 @@ class INDmoneyBroker(BrokerAdapter):
             )
         return fallback_sec_id
 
+    async def resolve_security_id_strict(
+        self, symbol: str, source: str = "equity", exchange: str | None = None,
+    ) -> tuple[str | None, bool]:
+        """Like resolve_security_id, but also reports whether the returned
+        security_id's EXCH row actually matched the requested exchange.
+
+        Returns (security_id, matched_exchange). matched_exchange is True
+        when no exchange was requested (nothing to mismatch) or an exact
+        EXCH match was found; False when resolve_security_id had to fall
+        back to a different exchange's row for the same symbol text — the
+        case a caller placing a real order must not silently accept (see
+        resolve_security_id's docstring for the BSE-stuck-LTP incident this
+        fallback is suspected to have caused).
+        """
+        if not symbol:
+            return None, True
+        target = symbol.strip().upper()
+        want_exchange = exchange.strip().upper() if exchange else None
+        rows = await self._cached_instruments(source)
+        fallback_sec_id: str | None = None
+        for row_up in rows:
+            sym = str(
+                row_up.get("TRADING_SYMBOL")
+                or row_up.get("SYMBOL_NAME")
+                or row_up.get("CUSTOM_SYMBOL")
+                or ""
+            ).strip().upper()
+            if sym != target:
+                continue
+            sec_id = row_up.get("SECURITY_ID")
+            sec_id = str(sec_id) if sec_id else None
+            if fallback_sec_id is None:
+                fallback_sec_id = sec_id
+            if want_exchange is None:
+                return sec_id, True
+            row_exch = str(row_up.get("EXCH") or "").strip().upper()
+            if row_exch == want_exchange:
+                return sec_id, True
+        return fallback_sec_id, False
+
     async def resolve_security_name(self, security_id: str, source: str = "equity") -> str | None:
         """Reverse of resolve_security_id — look up the instrument master's
         display name for a bare ``security_id``.

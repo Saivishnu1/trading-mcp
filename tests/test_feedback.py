@@ -157,11 +157,17 @@ class TestCalibrationSizeFactor:
     def test_mid_range_no_adjustment(self):
         assert calibration_size_factor(65.0) == 1.0
 
-    def test_high_confidence_boost(self):
-        assert calibration_size_factor(75.0) == 1.10
+    def test_high_confidence_no_boost(self):
+        # Audit-H5: calibration must never amplify size, even at high
+        # calibrated confidence — it can only shrink it or leave it unchanged.
+        assert calibration_size_factor(75.0) == 1.0
 
-    def test_above_75_boost(self):
-        assert calibration_size_factor(80.0) == 1.10
+    def test_above_75_no_boost(self):
+        assert calibration_size_factor(80.0) == 1.0
+
+    def test_never_exceeds_one(self):
+        for conf in (0.0, 20.0, 45.0, 50.0, 55.0, 60.0, 65.0, 75.0, 80.0, 85.0):
+            assert calibration_size_factor(conf) <= 1.0
 
     def test_zero_confidence_half_size(self):
         assert calibration_size_factor(0.0) == 0.50

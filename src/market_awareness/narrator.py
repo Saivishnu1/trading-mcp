@@ -21,8 +21,14 @@ def get_calendar_index_key(symbol: str) -> str:
 
 class MarketNarrator:
 
-    def narrate(self, data: dict) -> list[str]:
+    def narrate(self, data: dict, missing_data: list[str] | None = None) -> list[str]:
         obs = []
+
+        if missing_data:
+            obs.append(
+                "Data unavailable for: " + ", ".join(missing_data) +
+                " — treat related fields as absent, not zero."
+            )
 
         # 1. Chart observations
         chart = data.get("chart", {})

@@ -27,6 +27,7 @@ _EVENT_RISK_BLOCK = 80
 _EVENT_RISK_CAUTION = 60
 _EVENT_RISK_SIZE_FACTOR = 0.70
 _DUPLICATE_SIZE_FACTOR = 0.50
+_WEEKLY_REGIME_CONFLICT_SIZE_FACTOR = 0.50
 
 # get_event_risk never raises and never returns an "error" key — it falls back
 # internally (earnings→10, news→45, market→50) and reports a low `confidence`.
@@ -182,22 +183,18 @@ def recommend_trade(
             size_factors.append(_DUPLICATE_SIZE_FACTOR)
             risk_adjustments.append("Position size reduced 50% due to duplicate exposure")
 
-        # Calibration-based size adjustment (FB-7: applied once here, not in create_trade_plan)
+        # Calibration-based size adjustment (FB-7: applied once here, not in create_trade_plan).
+        # Audit-H5: calibration_size_factor() never returns >1.0 — calibration can only
+        # ever shrink size, never amplify it (see that function's docstring).
         if calibration_applied and calibrated_confidence is not None:
             cal_factor = _cal_size_factor(calibrated_confidence)
-            if cal_factor != 1.0:
+            if cal_factor < 1.0:
                 size_factors.append(cal_factor)
-                if cal_factor < 1.0:
-                    pct = round((1 - cal_factor) * 100)
-                    risk_adjustments.append(
-                        f"Position size reduced {pct}% — calibrated confidence "
-                        f"{calibrated_confidence:.0f} (raw: {raw_confidence})"
-                    )
-                else:
-                    risk_adjustments.append(
-                        f"Position size increased 10% — calibrated confidence "
-                        f"{calibrated_confidence:.0f} confirms high historical accuracy"
-                    )
+                pct = round((1 - cal_factor) * 100)
+                risk_adjustments.append(
+                    f"Position size reduced {pct}% — calibrated confidence "
+                    f"{calibrated_confidence:.0f} (raw: {raw_confidence})"
+                )
 
         # Timeframe alignment check (Phase 19)
         weekly_regime: str | None = None
@@ -216,10 +213,18 @@ def recommend_trade(
                             f"Higher timeframe conflict: weekly is {weekly_regime} — "
                             "daily bullish signal may be counter-trend"
                         )
+                        size_factors.append(_WEEKLY_REGIME_CONFLICT_SIZE_FACTOR)
+                        risk_adjustments.append(
+                            "Position size reduced 50% — weekly regime conflicts with daily signal"
+                        )
                     elif signal in _SHORT_SIGNALS and weekly_regime in ("BULL_TREND", "NEUTRAL_BULLISH"):
                         cautions.append(
                             f"Higher timeframe conflict: weekly is {weekly_regime} — "
                             "daily bearish signal may be counter-trend"
+                        )
+                        size_factors.append(_WEEKLY_REGIME_CONFLICT_SIZE_FACTOR)
+                        risk_adjustments.append(
+                            "Position size reduced 50% — weekly regime conflicts with daily signal"
                         )
                     elif timeframe_alignment == "STRONG":
                         _alignment_reason = (

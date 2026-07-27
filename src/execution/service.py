@@ -26,16 +26,34 @@ async def resolve_symbol(symbol: str, *, exchange: str, segment: str) -> str | N
     """Resolve a trading symbol to an INDmoney security_id.
 
     Uses the fno instrument master for derivatives, equity otherwise.
-    Returns None if unresolved.
+    Returns None if unresolved OR if the only match found is for a
+    different exchange than requested (Audit-H3) — an order-placement
+    caller must never silently receive a wrong-exchange security_id.
+    resolve_security_id's best-effort same-exchange-fallback behavior is
+    intentional for its other caller (the Telegram /buy /sell flow's
+    symbol-only lookup, which has no exchange-aware picker); this stricter
+    check applies only at the order-submission boundary.
 
-    Passes exchange through to resolve_security_id (2026-07-15) — without it,
-    a dual-listed symbol (NSE + BSE) resolves to whichever exchange's row the
-    instrument master lists first, which broke live pricing for BSE
-    positions on the /positions page (see resolve_security_id's docstring).
+    Passes exchange through to resolve_security_id_strict (2026-07-15,
+    tightened 2026-07-23) — without it, a dual-listed symbol (NSE + BSE)
+    resolves to whichever exchange's row the instrument master lists first,
+    which broke live pricing for BSE positions on the /positions page (see
+    resolve_security_id's docstring) and could route an order onto the
+    wrong exchange's security_id.
     """
     broker = get_broker_adapter("indmoney")
     source = "fno" if segment.upper() == "DERIVATIVE" else "equity"
-    return await broker.resolve_security_id(symbol, source=source, exchange=exchange)
+    security_id, matched_exchange = await broker.resolve_security_id_strict(
+        symbol, source=source, exchange=exchange,
+    )
+    if security_id is not None and not matched_exchange:
+        logger.warning(
+            "resolve_symbol: refusing wrong-exchange match for symbol=%s exchange=%s "
+            "(resolver only found a different exchange's row) — order not submitted",
+            symbol, exchange,
+        )
+        return None
+    return security_id
 
 
 async def search_symbols(query: str, *, segment: str | None = None, limit: int = 15) -> list[dict]:
