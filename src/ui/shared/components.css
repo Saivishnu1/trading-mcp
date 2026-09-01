@@ -1,7 +1,7 @@
 /*
-  Shared component primitives — the component library from PRODUCT_DESIGN.md
-  §12. Every page consumes these instead of redefining .card/.btn/.msg per
-  file. Depends on tokens.css being loaded first.
+  Shared component primitives — the component library from
+  docs/design/PRODUCT_DESIGN.md §12. Every page consumes these instead of
+  redefining .card/.btn/.msg per file. Depends on tokens.css being loaded first.
 */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -287,7 +287,7 @@ input[type="number"], input.data-input { font-family: var(--font-mono); font-var
 /* ── Modal / Sheet ──
    Compact: full-screen. Medium/Expanded: centered dialog.
    Bottom-sheet variant (.sheet-bottom) used for Modify — anchors to the
-   bottom edge regardless of shape-class, per UX_BLUEPRINT.md §4.6/§19. */
+   bottom edge regardless of shape-class, per docs/design/UX_BLUEPRINT.md §4.6/§19. */
 .modal-backdrop {
   position: fixed; inset: 0;
   background: var(--surface-3);

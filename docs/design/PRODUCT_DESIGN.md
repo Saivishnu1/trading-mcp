@@ -1,3 +1,9 @@
+> **Archived design source.** This document's tokens, spacing, and motion
+> rules were implemented — see [`../../src/ui/shared/tokens.css`](../../src/ui/shared/tokens.css),
+> `components.css`, and `nav.css`, which cite this file by section number.
+> The "not approved" status line below predates that implementation and is
+> kept for historical accuracy, not as a current statement.
+
 # Product Design — Zerodha Trading Platform
 
 **Status: proposal, not approved. No implementation until sign-off.**

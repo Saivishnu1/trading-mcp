@@ -164,7 +164,7 @@ document.addEventListener("click", function (e) {
 
 /* ── Keyboard shortcut: "/" focuses the nearest [data-symbol-search]
    input, matching the pattern from Linear/Raycast/TradingView referenced
-   in PRODUCT_DESIGN.md §9. Ignored while already typing in a field. ── */
+   in docs/design/PRODUCT_DESIGN.md §9. Ignored while already typing in a field. ── */
 document.addEventListener("keydown", function (e) {
   if (e.key !== "/" ) return;
   var tag = (document.activeElement && document.activeElement.tagName) || "";

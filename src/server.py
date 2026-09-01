@@ -319,7 +319,7 @@ _FONT_JBMONO_V = _content_hash(_FONT_JBMONO)
 # loaded once and injected into every page template via {shared_head}/{nav}
 # string substitution, the exact same pattern already used for
 # {tool_count}. Additive only: no existing route, API, or business logic
-# changes. See PRODUCT_DESIGN.md / UX_BLUEPRINT.md for the design rationale.
+# changes. See docs/design/PRODUCT_DESIGN.md / docs/design/UX_BLUEPRINT.md for the design rationale.
 # tokens.css's own {inter_font_v}/{jbmono_font_v} placeholders are resolved
 # here, before _SHARED_CSS's own content hash is computed below, so a font
 # file change also busts the shared.css URL.

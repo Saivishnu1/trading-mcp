@@ -2,7 +2,7 @@
   Navigation — one component, two renderings selected by shape-class.
   Compact (<600px): bottom tab bar. Medium/Expanded (>=600px): side rail,
   icon-only until Expanded (>=1024px) where labels appear.
-  See PRODUCT_DESIGN.md §10, UX_BLUEPRINT.md cross-page checklist item 1.
+  See docs/design/PRODUCT_DESIGN.md §10, docs/design/UX_BLUEPRINT.md cross-page checklist item 1.
 */
 
 .nav-rail {

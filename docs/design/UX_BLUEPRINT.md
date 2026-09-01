@@ -1,3 +1,8 @@
+> **Archived design source.** This blueprint's page layouts and interaction
+> rules were implemented across `src/ui/*.html`. The "not approved" status
+> line below predates that implementation and is kept for historical
+> accuracy, not as a current statement.
+
 # UX Blueprint — Zerodha Trading Platform
 
 **Status: proposal, not approved. No implementation code in this document.**

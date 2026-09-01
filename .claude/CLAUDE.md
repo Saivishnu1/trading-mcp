@@ -71,14 +71,14 @@ After implementing:
 
 1. Run validation.
 2. Check backward compatibility.
-3. Update DEVELOPMENT.md.
+3. Update docs/history/DEVELOPMENT.md.
 4. Suggest commit message.
 
 ---
 
 ## Token Efficiency Rules
 
-Do NOT re-read DEVELOPMENT.md unless requested.
+Do NOT re-read docs/history/DEVELOPMENT.md unless requested.
 
 Assume previous phases are complete.
 
@@ -113,7 +113,7 @@ When generating tests:
 * No TA-Lib.
 * No NumPy requirement.
 * Railway deployment.
-* 1924 unit + regression tests across 62 test files (pytest, no live network calls) as of 2026-07-10.
+* ~2,600 unit + regression tests across 96 test files (pytest, no live network calls) as of 2026-09-01.
 * Coverage: analysis 92%, strategy 92%, planner 89%, review 84%, dashboard 89%, intelligence 92–98%, portfolio_intelligence 97%, catalyst 90%+, journal 97%, recommendations 98%, sizer 95%, common 100%.
 * Confidence is one 0–85 scale system-wide (regime + setup), via regime._scale_confidence — rescaled into the band, not clamped. Never reintroduce a 0–100 confidence.
 * Symbol resolution has ONE home: src/market/symbols.py (to_yf / is_nse_stock / is_index / INDEX_YF / normalize_symbol). Do not add per-module alias tables.

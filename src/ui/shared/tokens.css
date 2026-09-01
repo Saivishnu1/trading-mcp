@@ -1,7 +1,8 @@
 /*
   Design tokens — single source of truth for color, type, spacing, motion,
-  and radius across the whole product. See PRODUCT_DESIGN.md §4-6, §13 and
-  UX_BLUEPRINT.md's mood board for the rationale behind every choice below.
+  and radius across the whole product. See docs/design/PRODUCT_DESIGN.md
+  §4-6, §13 and docs/design/UX_BLUEPRINT.md's mood board for the rationale
+  behind every choice below.
 
   Two fully-realized themes (dark default, light equally complete — never
   an afterthought media query). Theme is controlled by [data-theme="dark"]
@@ -61,7 +62,7 @@
 
   --tracking-caption: 0.06em;
 
-  /* ── Spacing (4px base unit, see PRODUCT_DESIGN.md §6) ── */
+  /* ── Spacing (4px base unit, see docs/design/PRODUCT_DESIGN.md §6) ── */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -77,7 +78,7 @@
   --radius-lg: 18px;  /* modals, sheets */
   --radius-full: 999px;
 
-  /* ── Motion (see PRODUCT_DESIGN.md §13 — four categories, nothing else) ── */
+  /* ── Motion (see docs/design/PRODUCT_DESIGN.md §13 — four categories, nothing else) ── */
   --dur-micro: 120ms;       /* press/hover feedback */
   --dur-transition: 220ms;  /* tab switch, panel open, orientation changes */
   --dur-entrance: 360ms;    /* one-time entrance moments only */

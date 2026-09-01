@@ -1,3 +1,7 @@
+> **Archived.** This is a historical, phase-by-phase engineering log — a working
+> record kept during development, not a maintained reference. For the current
+> architecture, see [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).
+
 # Zerodha Personal MCP — Development Log
 
 **Repository:** `trading-mcp`

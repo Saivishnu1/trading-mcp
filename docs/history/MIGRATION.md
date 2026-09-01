@@ -1,3 +1,7 @@
+> **Archived.** One-time historical migration record (Kite Connect → the
+> personal-API integration this project now uses). Not needed for current
+> setup — see the root [`README.md`](../../README.md).
+
 # Migration Guide — Kite Connect → Zerodha Personal APIs
 
 ## What changed and why
