@@ -19,6 +19,7 @@ Expiry resolution order:
 from __future__ import annotations
 
 import json as _json_mod
+import logging
 import os as _os_mod
 import time as _time_mod
 from datetime import date, datetime, timedelta
@@ -28,6 +29,8 @@ from typing import Optional
 import pytz as _pytz
 
 from src.providers.calendar.chain import get_calendar_provider, reset_calendar_provider
+
+logger = logging.getLogger(__name__)
 
 _IST = _pytz.timezone("Asia/Kolkata")
 _MARKET_OPEN = _time(9, 15)
@@ -45,7 +48,8 @@ def _load_zerodha_expiries_cache() -> dict:
             return {}
         with open(path) as f:
             return _json_mod.load(f)
-    except Exception:
+    except (OSError, _json_mod.JSONDecodeError) as exc:
+        logger.warning("Zerodha expiry cache %s unreadable: %s", path, exc)
         return {}
 
 # ---------------------------------------------------------------------------
@@ -89,6 +93,12 @@ _SESSION_TIMES = {
 # Updated on each get_market_calendar() call — read by get_calendar_health()
 _last_expiry_source: str = "algorithmic"
 
+# Reset at the start of every _live_expiries() call; accumulates
+# (source, error) pairs for any expiry provider tier that raised, so
+# get_calendar_health() can surface degradation instead of the failure
+# being silently absorbed. Read by get_calendar_health().
+_expiry_source_errors: list[tuple[str, str]] = []
+
 
 # ---------------------------------------------------------------------------
 # Backward-compat reset helper (used by tests)
@@ -99,6 +109,7 @@ def _reset_holiday_cache() -> None:
     global _last_expiry_source
     reset_calendar_provider()
     _last_expiry_source = "algorithmic"
+    _expiry_source_errors.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +237,12 @@ def _live_expiries() -> dict[str, str]:
     """
     results: dict[str, str] = {}
     today = _today_ist()
+    _expiry_source_errors.clear()
 
-    # Priority 1: Zerodha instruments CSV — NFO + BFO, no enctoken needed
+    # Priority 1: Zerodha instruments CSV — NFO + BFO, no enctoken needed.
+    # A later tier (NSE/BSE option-chain services below) can still fill in
+    # any index this tier misses, so a failure here is logged at debug
+    # level and the chain continues rather than being treated as fatal.
     try:
         import asyncio
 
@@ -247,8 +262,9 @@ def _live_expiries() -> dict[str, str]:
                 upcoming = [d for d in dates if d >= today.isoformat()]
                 if upcoming:
                     results[idx] = upcoming[0]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Zerodha expiry source unavailable, falling back to NSE/BSE chain: %s", exc)
+        _expiry_source_errors.append(("zerodha_csv", str(exc)))
 
     # Priority 2: NSE option chain — fills any NSE gaps
     try:
@@ -263,10 +279,14 @@ def _live_expiries() -> dict[str, str]:
                 expiry_dates = meta.get("records", {}).get("expiryDates", [])
                 if expiry_dates:
                     results[index] = expiry_dates[0]
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as exc:
+                # Per-index failure — the algorithmic fallback in
+                # get_market_calendar() covers this specific index, so
+                # debug level is enough; the tier as a whole hasn't failed.
+                logger.debug("NSE option chain expiry lookup failed for %s: %s", nse_sym, exc)
+    except Exception as exc:
+        logger.warning("NSE option-chain expiry provider tier failed entirely: %s", exc, exc_info=True)
+        _expiry_source_errors.append(("nse_chain", str(exc)))
 
     # Priority 3: BSE options service — fills any BSE gaps
     try:
@@ -279,10 +299,11 @@ def _live_expiries() -> dict[str, str]:
                 expiries = bse_svc.available_expiries(bse_sym)
                 if expiries:
                     results[index] = expiries[0]
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as exc:
+                logger.debug("BSE option chain expiry lookup failed for %s: %s", bse_sym, exc)
+    except Exception as exc:
+        logger.warning("BSE option-chain expiry provider tier failed entirely: %s", exc, exc_info=True)
+        _expiry_source_errors.append(("bse_chain", str(exc)))
 
     return results
 
@@ -305,6 +326,13 @@ def get_calendar_health() -> dict:
       version          — JSON file version ("YYYY.N") or None for old format
       source.runtime   — always "JSONCalendarProvider"
       source.refresh   — always "NSEOfficialProvider"
+      expiry_errors    — (source, error) pairs from the last _live_expiries()
+                         call for any live-expiry provider tier that raised.
+                         Empty when the live-expiry chain was fully healthy;
+                         non-empty means expiries fell back to the
+                         algorithmic calculation for at least one index —
+                         see get_market_calendar()'s per-index
+                         expiry_source_per_index for which ones.
     """
     chain = get_calendar_provider()
     if chain.last_result is None:
@@ -316,6 +344,7 @@ def get_calendar_health() -> dict:
         "runtime": "JSONCalendarProvider",
         "refresh": "NSEOfficialProvider",
     }
+    chain_health["expiry_errors"] = list(_expiry_source_errors)
     return chain_health
 
 
@@ -337,8 +366,8 @@ def _fetch_bse_holiday_names(year: int) -> dict[str, str]:
                 raw = _json.load(fh)
             entries = raw if isinstance(raw, list) else raw.get("holidays", [])
             return {e["date"]: e.get("name", "BSE Holiday") for e in entries if e.get("date")}
-        except Exception:
-            pass
+        except (OSError, _json.JSONDecodeError, KeyError, AttributeError) as exc:
+            logger.warning("BSE holiday-name resource %s unreadable: %s", path, exc)
     return {}
 
 
@@ -366,8 +395,8 @@ def _fetch_bse_holidays_sync(year: int) -> list[str]:
                 cached = data.get("holidays", [])
                 if cached:
                     return cached
-    except Exception:
-        pass
+    except (OSError, _json.JSONDecodeError) as exc:
+        logger.warning("BSE holiday cache %s unreadable: %s", cache_path, exc)
 
     # Static BSE calendar file
     from pathlib import Path
@@ -383,8 +412,8 @@ def _fetch_bse_holidays_sync(year: int) -> list[str]:
             holidays = sorted(e["date"] for e in entries if e.get("date"))
             if holidays:
                 return holidays
-        except Exception:
-            pass
+        except (OSError, _json.JSONDecodeError, KeyError, AttributeError) as exc:
+            logger.warning("Static BSE calendar resource %s unreadable: %s", path, exc)
 
     return []
 
