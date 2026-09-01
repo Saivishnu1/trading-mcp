@@ -364,7 +364,7 @@ class MarketIntelligence:
         all_alerts: list[dict] = []
         streak_updates: dict = {}
         for i, result in enumerate(results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.warning("market_intelligence run_all_checks sub-check raised: %s", result)
             elif i == 3:  # check_oi_walls returns (alerts, streak_updates)
                 oi_alerts, streak_updates = result

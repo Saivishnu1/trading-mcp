@@ -18,7 +18,9 @@ def get_ema_series(closes: list[float], period: int) -> list[float | None]:
 
 
 def get_bollinger_bands(closes: list[float], period: int = 20, std_mult: float = 2.0) -> tuple[list[float | None], list[float | None], list[float | None]]:
-    upper, lower, mid = [], [], []
+    upper: list[float | None] = []
+    lower: list[float | None] = []
+    mid: list[float | None] = []
     for i in range(len(closes)):
         if i < period - 1:
             upper.append(None)
@@ -58,7 +60,7 @@ def get_macd_series(closes: list[float], fast: int = 12, slow: int = 26, signal:
     fast_aligned = [None] * (fast - 1) + fast_ema
     slow_aligned = [None] * (slow - 1) + slow_ema
 
-    macd_line = []
+    macd_line: list[float | None] = []
     for f, s in zip(fast_aligned, slow_aligned):
         if f is not None and s is not None:
             macd_line.append(f - s)
@@ -72,7 +74,7 @@ def get_macd_series(closes: list[float], fast: int = 12, slow: int = 26, signal:
     if len(sig_aligned) < len(closes):
         sig_aligned += [None] * (len(closes) - len(sig_aligned))
 
-    hist = []
+    hist: list[float | None] = []
     for m, s in zip(macd_line, sig_aligned):
         if m is not None and s is not None:
             hist.append(m - s)
@@ -94,7 +96,7 @@ def get_rsi_series(closes: list[float], period: int = 14) -> list[float | None]:
     avg_gain = _wilder_smooth(gains, period)
     avg_loss = _wilder_smooth(losses, period)
 
-    rsi_line = [None] * period
+    rsi_line: list[float | None] = [None] * period
     for g, l in zip(avg_gain, avg_loss):
         if l == 0:
             rsi_line.append(100.0)

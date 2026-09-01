@@ -123,3 +123,45 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+exclude = ["^migrations/", "^src/ui/"]
+# Type-check against the actual deploy target (Oracle VM, Linux), not
+# whatever OS runs mypy -- otherwise typeshed's fcntl stub (POSIX-only
+# flock/LOCK_EX/etc.) reports false attr-defined errors on a Windows dev
+# machine for code that only ever runs on Linux in production.
+platform = "linux"
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true  # jugaad-data, jugaad-trader, mplfinance ship no stubs
+
+# The two messiest I/O-boundary modules (telegram formatting/conversation
+# state, the composite market-awareness engine) generate ~250 combined
+# errors that are mostly Optional-narrowing noise around external API
+# responses, not caught bugs. Excluded here rather than silently
+# accumulating # type: ignore comments; revisit when those modules are
+# next touched for a feature, not as a standalone typing pass.
+[[tool.mypy.overrides]]
+module = ["src.telegram_admin.handlers", "src.market_awareness.engine"]
+ignore_errors = true
+
+# Tier 3 — messy I/O boundaries (external APIs, Telegram, multi-broker
+# adapters). Untyped-def bodies aren't checked, but the module still gets
+# the repo-wide floor above.
+[[tool.mypy.overrides]]
+module = ["src.server", "src.telegram_admin.*", "src.brokers.*"]
+check_untyped_defs = false
+
+# Tier 2 — pure computation, no external-API surface: near-zero churn to
+# hold strict, and a type error here is a correctness bug (position
+# sizing, indicator math, the trust envelope), not a plumbing bug.
+[[tool.mypy.overrides]]
+module = ["src.technical.*", "src.common.*", "src.sizer.*", "src.meta", "src.charts.styles"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true

@@ -72,7 +72,10 @@ def fetch_prior_day_price(commodity_code: str) -> float | None:
             if not series:
                 return None
             first = series[0]
-            return float(first.get("price") if isinstance(first, dict) else first)
+            price = first.get("price") if isinstance(first, dict) else first
+            if price is None:
+                return None
+            return float(price)
     except Exception as exc:
         logger.debug("OilPriceAPI fetch_prior_day_price failed for %s: %s", commodity_code, exc)
         return None

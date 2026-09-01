@@ -74,8 +74,12 @@ async def _warm_instrument_cache() -> None:
     swallowed since /search/resolve still work, just slower, on cache miss.
     """
     try:
+        from typing import cast
+
         from src.brokers.factory import get_broker_adapter
-        await get_broker_adapter("indmoney").warm_instrument_cache()
+        from src.brokers.indmoney import INDmoneyBroker
+        adapter = cast(INDmoneyBroker, get_broker_adapter("indmoney"))
+        await adapter.warm_instrument_cache()
         logger.info("Instrument cache pre-warmed (equity + fno).")
     except Exception as exc:
         logger.warning("Instrument cache warm-up failed (will lazy-load on first search): %s", exc)

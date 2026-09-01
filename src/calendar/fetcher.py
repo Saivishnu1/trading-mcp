@@ -172,10 +172,10 @@ def _parse_bse_dates(html: str, year: int) -> list[str]:
         r"\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b", html, re.IGNORECASE
     ):
         d_raw, mon, y = int(match.group(1)), match.group(2).lower()[:3], int(match.group(3))
-        m = _MONTH_MAP.get(mon)
-        if m and y == year and 1 <= d_raw <= 31:
+        month_num = _MONTH_MAP.get(mon)
+        if month_num and y == year and 1 <= d_raw <= 31:
             try:
-                dates.add(date(y, m, d_raw).isoformat())
+                dates.add(date(y, month_num, d_raw).isoformat())
             except ValueError:
                 pass
 

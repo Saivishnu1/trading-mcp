@@ -47,7 +47,7 @@ def _get_nse_live():
     with _nse_lock:
         if _nse_live is None:
             try:
-                from jugaad_data.nse import NSELive  # type: ignore[import]
+                from jugaad_data.nse import NSELive
                 _nse_live = NSELive()
             except ImportError:
                 logger.warning("jugaad-data not installed; NSELive unavailable")
@@ -90,7 +90,7 @@ def _nse_to_normalized(raw: dict, instrument: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _yf_quote(yf_sym: str, instrument: str) -> dict:
-    import yfinance as yf  # type: ignore[import]
+    import yfinance as yf
     ticker = yf.Ticker(yf_sym)
     try:
         fi = ticker.fast_info
@@ -162,7 +162,7 @@ def _load_nse_instruments() -> list[dict]:
         if _instruments and (time.time() - _instruments_loaded_at) < _INSTRUMENTS_TTL_SECONDS:
             return _instruments
         try:
-            import httpx  # type: ignore[import]
+            import httpx
             headers = {
                 "User-Agent": "Mozilla/5.0",
                 "Referer": "https://www.nseindia.com",
@@ -253,7 +253,7 @@ class MarketService:
         """
         import time
 
-        import yfinance as yf  # type: ignore[import]
+        import yfinance as yf
         yf_sym = _to_yf(symbol)
 
         df = None

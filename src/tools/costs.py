@@ -109,6 +109,7 @@ def register(mcp: FastMCP) -> None:
         """
         try:
             ind = INDmoneyBroker()
+            data: dict[str, object]
             if not await ind.is_authenticated():
                 data = {"error": "not_authenticated", "message": "INDmoney is not authenticated."}
                 return _meta.wrap(data, _cost_meta(data, zerodha_connected=False))

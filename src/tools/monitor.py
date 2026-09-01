@@ -246,7 +246,7 @@ def register(mcp: FastMCP) -> None:
         """
         from sqlalchemy import select
 
-        from src.db.base import get_session
+        from src.db.config import get_session
         from src.db.models import MonitorSettings
 
         repo = MonitorRepository()

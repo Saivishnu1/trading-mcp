@@ -24,7 +24,7 @@ class JugaadClient:
 
     def _import_zerodha(self):
         try:
-            from jugaad_trader import Zerodha  # type: ignore[import]
+            from jugaad_trader import Zerodha
             return Zerodha
         except ImportError as exc:
             raise ImportError(

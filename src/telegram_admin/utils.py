@@ -7,8 +7,8 @@ def split_message(text: str, max_chars: int = 4000) -> list[str]:
     if len(text) <= max_chars:
         return [text]
 
-    chunks = []
-    current_chunk = []
+    chunks: list[str] = []
+    current_chunk: list[str] = []
     current_length = 0
 
     for line in text.splitlines(keepends=True):

@@ -122,6 +122,9 @@ class BrowserPriceRelay:
             self._updates = asyncio.Queue()
             self._task = asyncio.create_task(self._consume(instruments))
             return
+        # _task and _updates are always set together (see the branch
+        # above), so _task being non-None here guarantees _updates is too.
+        assert self._updates is not None
         await self._updates.put({"action": "subscribe", "mode": "ltp", "instruments": sorted(instruments)})
 
     async def _consume(self, initial_instruments: list[str]) -> None:

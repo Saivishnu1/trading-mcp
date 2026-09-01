@@ -196,7 +196,7 @@ class ChartRenderer:
             # Filter strikes window around spot price
             strikes = np.array([x[0] for x in oi_data])
             if spot:
-                idx = np.argmin(np.abs(strikes - spot))
+                idx = int(np.argmin(np.abs(strikes - spot)))
                 start_idx = max(0, idx - 15)
                 end_idx = min(len(oi_data), idx + 16)
                 window_data = oi_data[start_idx:end_idx]

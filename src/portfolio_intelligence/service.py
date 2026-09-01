@@ -215,7 +215,7 @@ def _concentration_risk(positions: list[dict]) -> dict:
 def _top_risks(analyses: list[dict]) -> list[dict]:
     """Top 3 positions by risk score, descending."""
     scored = [a for a in analyses if a.get("risk_score") is not None]
-    scored.sort(key=lambda a: a["risk_score"], reverse=True)  # type: ignore[arg-type]
+    scored.sort(key=lambda a: a["risk_score"], reverse=True)
     return [
         {
             "symbol":        a["symbol"],

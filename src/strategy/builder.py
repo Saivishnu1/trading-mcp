@@ -243,6 +243,8 @@ def _calc_payoff(strategy: str, legs: list[dict], pmap: dict) -> dict:
         buy_p, sell_p = p(buy_strike, "CE"), p(sell_strike, "CE")
         if missing(buy_p, sell_p):
             return {"is_estimate": True}
+        # missing() above already proved neither is None.
+        assert buy_p is not None and sell_p is not None
         net_debit  = round(buy_p - sell_p, 2)
         spread_w   = sell_strike - buy_strike
         return {
@@ -260,6 +262,8 @@ def _calc_payoff(strategy: str, legs: list[dict], pmap: dict) -> dict:
         buy_p, sell_p = p(buy_strike, "PE"), p(sell_strike, "PE")
         if missing(buy_p, sell_p):
             return {"is_estimate": True}
+        # missing() above already proved neither is None.
+        assert buy_p is not None and sell_p is not None
         net_debit = round(buy_p - sell_p, 2)
         spread_w  = buy_strike - sell_strike
         be        = round(buy_strike - net_debit, 2)
@@ -308,6 +312,8 @@ def _calc_payoff(strategy: str, legs: list[dict], pmap: dict) -> dict:
         cp, pp  = p(strike, "CE"), p(strike, "PE")
         if missing(cp, pp):
             return {"is_estimate": True}
+        # missing() above already proved neither is None.
+        assert cp is not None and pp is not None
         total = round(cp + pp, 2)
         return {
             "is_estimate":     False,
@@ -323,6 +329,8 @@ def _calc_payoff(strategy: str, legs: list[dict], pmap: dict) -> dict:
         cp, pp = p(ce_strike, "CE"), p(pe_strike, "PE")
         if missing(cp, pp):
             return {"is_estimate": True}
+        # missing() above already proved neither is None.
+        assert cp is not None and pp is not None
         total = round(cp + pp, 2)
         return {
             "is_estimate":     False,
@@ -341,6 +349,8 @@ def _calc_payoff(strategy: str, legs: list[dict], pmap: dict) -> dict:
         sp_p, lp_p = p(sp, "PE"), p(lp, "PE")
         if missing(sc_p, lc_p, sp_p, lp_p):
             return {"is_estimate": True}
+        # missing() above already proved none of these is None.
+        assert sc_p is not None and lc_p is not None and sp_p is not None and lp_p is not None
         net_credit   = round((sc_p - lc_p) + (sp_p - lp_p), 2)
         call_width   = lc - sc
         put_width    = sp - lp
@@ -512,6 +522,11 @@ def build_option_strategy(symbol: str, expiry: str | None = None) -> dict:
         }
 
     # --- Strike selection & payoff ---
+    # `strikes` is only populated inside the try block above, after
+    # chain_data and chain_expiry are both set, and the "not strikes" branch
+    # above already returned -- so both are guaranteed non-None here.
+    assert chain_data is not None
+    assert chain_expiry is not None
     ivl  = _interval(strikes)
     legs = _select_legs(strategy_name, spot, strikes, ivl, chain_data, chain_expiry)
 

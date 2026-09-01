@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 def _fetch_live(symbol: str, expiry: str | None) -> tuple[dict, str | None]:
     """Fetch raw chain from NSE/BSE service (no cache)."""
+    from src.options.bse_service import BSEOptionsService
+    from src.options.service import OptionsService
+
     sym = symbol.upper().strip()
+    svc: BSEOptionsService | OptionsService
     if sym in _BSE_SYMBOLS:
         from src.options.bse_service import get_bse_options_service
         svc = get_bse_options_service()

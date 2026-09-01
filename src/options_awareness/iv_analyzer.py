@@ -16,7 +16,9 @@ class IVAnalyzer:
         rows = _strikes_for_expiry(chain, expiry)
         spot = _underlying(chain) or 0.0
 
-        all_strikes = sorted({r.get("strikePrice") for r in rows if r.get("strikePrice") is not None})
+        all_strikes: list[float] = sorted({
+            float(r["strikePrice"]) for r in rows if r.get("strikePrice") is not None
+        })
         if not all_strikes or spot <= 0:
             return {
                 "atm_iv": None,

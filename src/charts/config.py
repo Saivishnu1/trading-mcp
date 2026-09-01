@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-CHART_SPECS = {
+from typing import TypedDict
+
+
+class ChartSpec(TypedDict):
+    figsize: tuple[float, float]
+    dpi: int
+    panels: list[str]
+    panel_ratios: list[int]
+
+
+CHART_SPECS: dict[str, ChartSpec] = {
     "price": {
         "figsize":    (14, 8),
         "dpi":        150,

@@ -163,7 +163,7 @@ async def get_indicator_chart_impl(
 
 async def get_option_chart_impl(
     symbol: str = "NIFTY",
-    expiry: str = None,
+    expiry: str | None = None,
     theme: str = "dark",
 ) -> dict:
     symbol_upper = symbol.upper().strip()
@@ -265,7 +265,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     async def get_option_chart(
         symbol: str = "NIFTY",
-        expiry: str = None,
+        expiry: str | None = None,
         theme: str = "dark",
     ) -> dict:
         """Returns Open Interest bar chart (Calls vs Puts) as base64 PNG.

@@ -63,7 +63,7 @@ def _options_section(symbol: str) -> tuple[dict, float | None]:
     Returns (section_dict, spot_price).
     Returns empty defaults with a note when the chain is unavailable.
     """
-    _UNAVAIL = {
+    _UNAVAIL: dict[str, object] = {
         "expiry": None,
         "pcr": None,
         "pcr_interpretation": None,

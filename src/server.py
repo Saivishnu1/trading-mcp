@@ -148,9 +148,13 @@ def _warm_instrument_cache_background() -> None:
     def _run() -> None:
         try:
             import asyncio
+            from typing import cast
 
             from src.brokers.factory import get_broker_adapter
-            asyncio.run(get_broker_adapter("indmoney").warm_instrument_cache())
+            from src.brokers.indmoney import INDmoneyBroker
+
+            adapter = cast(INDmoneyBroker, get_broker_adapter("indmoney"))
+            asyncio.run(adapter.warm_instrument_cache())
             logger.info("Instrument cache pre-warmed (equity + fno).")
         except Exception as exc:
             logger.warning("Instrument cache warm-up failed (will lazy-load on first search): %s", exc)
@@ -512,8 +516,11 @@ def _build_order_from_web(data: dict):
         return None, "Symbol is required."
     if side not in ("BUY", "SELL"):
         return None, "Side must be BUY or SELL."
+    raw_qty = data.get("quantity")
     try:
-        qty = int(data.get("quantity"))
+        qty = int(raw_qty) if raw_qty is not None else None
+        if qty is None:
+            raise TypeError("quantity is required")
     except (TypeError, ValueError):
         return None, "Quantity must be a whole number."
     if qty <= 0:
@@ -594,7 +601,7 @@ async def _is_market_session_open_safe() -> bool:
         return False
 
 
-_oauth_codes = {}
+_oauth_codes: dict[str, dict] = {}
 
 def _verify_pkce(code_verifier: str, code_challenge: str, method: str) -> bool:
     import base64
@@ -912,8 +919,9 @@ def _get_base_url(scope) -> str:
     host = headers.get(b"host", b"localhost:8000").decode("utf-8")
 
     proto = "http"
-    if headers.get(b"x-forwarded-proto"):
-        proto = headers.get(b"x-forwarded-proto").decode("utf-8")
+    forwarded_proto = headers.get(b"x-forwarded-proto")
+    if forwarded_proto:
+        proto = forwarded_proto.decode("utf-8")
     elif scope.get("scheme"):
         proto = scope.get("scheme")
     elif "443" in host:
@@ -1468,8 +1476,11 @@ async def _app(scope, receive, send):
                 await _send_json(send, 400, {"error": "Provide at least one of sl_trigger_price/tgt_trigger_price."})
                 return
 
+            from typing import cast
+
             from src.brokers.factory import get_broker_adapter
-            adapter = get_broker_adapter("indmoney")
+            from src.brokers.indmoney import INDmoneyBroker
+            adapter = cast(INDmoneyBroker, get_broker_adapter("indmoney"))
             result = await adapter.modify_smart_order(order_id, **fields)
             status = _order_response_status(result)
             await _send_json(send, status, result)

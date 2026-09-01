@@ -290,6 +290,7 @@ def register(mcp: FastMCP) -> None:
         )
         nse_sym = _parse(symbol.strip())[1].upper().removesuffix(".NS").removesuffix(".BO")
 
+        data: dict[str, object]
         try:
             svc = get_options_service()
             chain = svc.get_option_chain(nse_sym, expiry)
@@ -311,7 +312,9 @@ def register(mcp: FastMCP) -> None:
         resolved = expiry if expiry in expiry_dates else (expiry_dates[0] if expiry_dates else None)
 
         rows = analytics._strikes_for_expiry(chain, resolved)
-        all_strikes = sorted({r.get("strikePrice") for r in rows if r.get("strikePrice") is not None})
+        all_strikes: list[float] = sorted({
+            float(r["strikePrice"]) for r in rows if r.get("strikePrice") is not None
+        })
 
         # ATM = strike closest to spot
         atm_strike: float | None = None

@@ -312,7 +312,7 @@ def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: 
     """Download one ticker from yfinance and return normalized candles. Empty list on failure."""
     import math
 
-    import yfinance as yf  # type: ignore[import]
+    import yfinance as yf
 
     def _normalize(df) -> list[dict]:
         if df is None or df.empty:

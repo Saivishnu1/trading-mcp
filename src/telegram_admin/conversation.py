@@ -1,6 +1,6 @@
 import logging
 
-from telegram import Update
+from telegram import Message, Update
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -24,6 +24,10 @@ AWAITING_VARIABLE_SELECTION, AWAITING_VALUE, AWAITING_RESTART_CONFIRMATION = ran
 @admin_only
 async def env_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Entry point for /env command. Shows available variables."""
+    # This handler is only ever registered as a CommandHandler, which the
+    # telegram-ext dispatcher invokes exclusively for message updates, so
+    # update.message is always set here.
+    assert update.message is not None
     try:
         reply_markup = get_env_keyboard(ALLOWED_VARIABLES)
         await update.message.reply_text(
@@ -41,24 +45,39 @@ async def env_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def select_variable(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Callback query handler when a variable button is clicked."""
     query = update.callback_query
+    # This handler is only ever registered as a CallbackQueryHandler, which
+    # the telegram-ext dispatcher invokes exclusively for callback-query
+    # updates, so update.callback_query is always set here.
+    assert query is not None
     await query.answer()
+    # query.message is a MaybeInaccessibleMessage when the original message
+    # is too old for Bot API to return full fields; reply_text/edit_text
+    # only exist on the full Message. In practice the /env flow completes
+    # within seconds so this is always a full Message, but guard it rather
+    # than assert, since an inaccessible message is a real (if rare)
+    # Telegram-side condition, not something this code controls.
+    message = query.message
+    if not isinstance(message, Message):
+        logger.warning("select_variable: query.message is not accessible")
+        return ConversationHandler.END
 
     try:
         data = query.data or ""
         if not data.startswith("edit_env:"):
             logger.warning("Invalid callback data in select_variable: %s", data)
-            await query.message.reply_text("❌ Invalid variable selection.")
+            await message.reply_text("❌ Invalid variable selection.")
             return ConversationHandler.END
 
         var_name = data.split(":", 1)[1]
         if var_name not in ALLOWED_VARIABLES:
             logger.warning("Attempted to edit non-allowed variable: %s", var_name)
-            await query.message.reply_text("❌ Modifying that variable is not permitted.")
+            await message.reply_text("❌ Modifying that variable is not permitted.")
             return ConversationHandler.END
 
+        assert context.user_data is not None
         context.user_data["selected_var"] = var_name
 
-        await query.message.edit_text(
+        await message.edit_text(
             f"Selected:\n\n"
             f"`{var_name}`\n\n"
             f"Send the new value.",
@@ -67,12 +86,17 @@ async def select_variable(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return AWAITING_VALUE
     except Exception as exc:
         logger.error("Error in select_variable: %s", exc, exc_info=True)
-        await query.message.reply_text(f"❌ Error selecting variable: {exc}")
+        await message.reply_text(f"❌ Error selecting variable: {exc}")
         return ConversationHandler.END
 
 @admin_only
 async def receive_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receives the value for the selected variable and updates the .env file."""
+    # This handler is only ever registered as a MessageHandler, which the
+    # telegram-ext dispatcher invokes exclusively for message updates, so
+    # update.message and context.user_data are always set here.
+    assert update.message is not None
+    assert context.user_data is not None
     try:
         new_value = update.message.text
         var_name = context.user_data.get("selected_var")
@@ -81,6 +105,15 @@ async def receive_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             logger.warning("receive_value called without a valid selected variable in context")
             await update.message.reply_text("❌ No variable selected. Please restart the process with /env.")
             return ConversationHandler.END
+
+        if new_value is None:
+            # The state's MessageHandler is filtered to filters.TEXT, so this
+            # should be unreachable in practice, but update.message.text is
+            # legitimately Optional (e.g. non-text messages) -- guard rather
+            # than pass None into update_variable, which requires a str.
+            logger.warning("receive_value called with a non-text message")
+            await update.message.reply_text("❌ Please send a text value.")
+            return AWAITING_VALUE
 
         # Update in the .env file
         update_variable(ENV_FILE_PATH, var_name, new_value)
@@ -102,12 +135,19 @@ async def receive_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 async def confirm_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Callback query handler for the restart confirmation YES/NO buttons."""
     query = update.callback_query
+    # See select_variable: this handler is only ever registered as a
+    # CallbackQueryHandler, so update.callback_query is always set here.
+    assert query is not None
     await query.answer()
+    message = query.message
+    if not isinstance(message, Message):
+        logger.warning("confirm_restart: query.message is not accessible")
+        return ConversationHandler.END
 
     try:
         data = query.data or ""
         if data == "restart:yes":
-            await query.message.edit_text("♻️ Restarting zerodha-mcp and zerodha-monitor...")
+            await message.edit_text("♻️ Restarting zerodha-mcp and zerodha-monitor...")
 
             import time
             start_time = time.perf_counter()
@@ -122,33 +162,40 @@ async def confirm_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             all_ok = all(active.values())
 
-            await query.message.reply_text(
+            await message.reply_text(
                 f"{'♻️ Restart successful.' if all_ok else '⚠️ Restart completed with issues.'}\n"
                 f"✔ Completed in {duration:.1f} s\n\n"
                 f"{status_lines}",
                 parse_mode="Markdown"
             )
         elif data == "restart:no":
-            await query.message.edit_text(
+            await message.edit_text(
                 "Changes saved.\n\n"
                 "Restart later using /restart."
             )
         else:
             logger.warning("Invalid callback data in confirm_restart: %s", data)
-            await query.message.reply_text("❌ Invalid selection.")
+            await message.reply_text("❌ Invalid selection.")
 
+        assert context.user_data is not None
         context.user_data.clear()
         return ConversationHandler.END
     except Exception as exc:
         logger.error("Error in confirm_restart: %s", exc, exc_info=True)
-        await query.message.reply_text(f"❌ Error restarting service: {exc}")
-        context.user_data.clear()
+        await message.reply_text(f"❌ Error restarting service: {exc}")
+        if context.user_data is not None:
+            context.user_data.clear()
         return ConversationHandler.END
 
 @admin_only
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels the active conversation and clears context user data."""
+    # This handler is only ever registered as a CommandHandler, which the
+    # telegram-ext dispatcher invokes exclusively for message updates, so
+    # update.message and context.user_data are always set here.
+    assert update.message is not None
     try:
+        assert context.user_data is not None
         context.user_data.clear()
         await update.message.reply_text("Cancelled.")
         return ConversationHandler.END

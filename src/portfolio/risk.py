@@ -52,9 +52,9 @@ class RiskAnalyzer:
                 "pnl": round(h.pnl, 2),
                 "pnl_percent": round(h.pnl_percent, 2),
             }
-            for h in holdings
+            for h in sorted(holdings, key=lambda h: -(h.current_price * h.quantity))
         ]
-        return sorted(values, key=lambda x: -x["value"])[:top_n]
+        return values[:top_n]
 
     def single_stock_exposure(self, holdings: list[Holding]) -> dict:
         """Return each symbol's share of total portfolio value (percent)."""

@@ -285,10 +285,10 @@ def _get_schema_version(conn) -> int | None:
     return row["version"] if row else None
 
 
-def _connect(path: str):
+def _connect(path: str) -> "_LibsqlConn | sqlite3.Connection":
     if _TURSO_URL:
         try:
-            import libsql_experimental as libsql  # type: ignore[import]
+            import libsql_experimental as libsql
             conn = _LibsqlConn(libsql.connect(_TURSO_URL, auth_token=_TURSO_TOKEN))
             _init_schema(conn)
             return conn
@@ -298,12 +298,12 @@ def _connect(path: str):
                 "TURSO_DATABASE_URL is set but libsql_experimental is not installed — "
                 "falling back to local SQLite at %s", path
             )
-    conn = sqlite3.connect(path, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.row_factory = sqlite3.Row
-    _init_schema(conn)
-    return conn
+    sqlite_conn = sqlite3.connect(path, check_same_thread=False)
+    sqlite_conn.execute("PRAGMA journal_mode=WAL")
+    sqlite_conn.execute("PRAGMA foreign_keys=ON")
+    sqlite_conn.row_factory = sqlite3.Row
+    _init_schema(sqlite_conn)
+    return sqlite_conn
 
 
 def _get_connection():

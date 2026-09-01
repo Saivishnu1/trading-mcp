@@ -80,7 +80,10 @@ def dotenv_lock(file_path: Path):
                 # Seek to start
                 os.lseek(fd, 0, os.SEEK_SET)
                 # LK_LOCK locks the file. Retries automatically for up to 10 seconds.
-                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+                # msvcrt is Windows-only; mypy type-checks against the Linux
+                # deploy target (see pyproject.toml [tool.mypy] platform),
+                # so it can't see this module's attributes either way.
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
                 locked = True
             except (ImportError, OSError):
                 # Fallback: if locking is not supported, log warning and continue
@@ -97,7 +100,7 @@ def dotenv_lock(file_path: Path):
                 try:
                     import msvcrt
                     os.lseek(fd, 0, os.SEEK_SET)
-                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
                 except (ImportError, OSError):
                     pass
         f.close()

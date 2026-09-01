@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import cast
 
 from src.brokers.factory import get_broker_adapter
+from src.brokers.indmoney import INDmoneyBroker
 from src.brokers.models import OrderRequest
 
 from .repository import ExecutionRepository
@@ -20,6 +22,18 @@ from .repository import ExecutionRepository
 logger = logging.getLogger(__name__)
 
 _repo = ExecutionRepository()
+
+
+def _get_indmoney_broker() -> INDmoneyBroker:
+    """get_broker_adapter("indmoney") always returns an INDmoneyBroker (see
+    factory.py) but is typed to the base BrokerAdapter, which doesn't
+    declare INDmoney-only methods like resolve_security_id_strict and
+    search_instruments. This call site always wants those, so narrow here.
+    A static cast, not an isinstance assert, because tests substitute a
+    MagicMock/fake here via patch.object(svc, "get_broker_adapter", ...),
+    which is not an INDmoneyBroker instance but does duck-type it.
+    """
+    return cast(INDmoneyBroker, get_broker_adapter("indmoney"))
 
 
 async def resolve_symbol(symbol: str, *, exchange: str, segment: str) -> str | None:
@@ -41,7 +55,7 @@ async def resolve_symbol(symbol: str, *, exchange: str, segment: str) -> str | N
     resolve_security_id's docstring) and could route an order onto the
     wrong exchange's security_id.
     """
-    broker = get_broker_adapter("indmoney")
+    broker = _get_indmoney_broker()
     source = "fno" if segment.upper() == "DERIVATIVE" else "equity"
     security_id, matched_exchange = await broker.resolve_security_id_strict(
         symbol, source=source, exchange=exchange,
@@ -66,7 +80,7 @@ async def search_symbols(query: str, *, segment: str | None = None, limit: int =
     one search box. On a cold cache this halves worst-case latency versus
     awaiting the two sources one after another.
     """
-    broker = get_broker_adapter("indmoney")
+    broker = _get_indmoney_broker()
     sources = ["fno" if segment and segment.upper() == "DERIVATIVE" else "equity"] \
         if segment else ["equity", "fno"]
 

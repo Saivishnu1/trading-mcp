@@ -182,6 +182,9 @@ class LivePriceCache:
             self._task = asyncio.create_task(self._consume(list(new_instruments)))
             return
 
+        # _task and _updates are always set together (see the branch
+        # above), so _task being non-None here guarantees _updates is too.
+        assert self._updates is not None
         if added:
             await self._updates.put({
                 "action": "subscribe", "mode": "ltp", "instruments": sorted(added),

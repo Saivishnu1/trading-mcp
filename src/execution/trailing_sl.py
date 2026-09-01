@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import cast
 
 from src.brokers.factory import get_broker_adapter
+from src.brokers.indmoney import INDmoneyBroker
 from src.brokers.streaming import stream_prices
 from src.execution.repository import ExecutionRepository
 
@@ -54,7 +56,15 @@ async def _trail_loop(
     For a SELL (short): the stop only ever moves DOWN, tracking
     ``current_price + trail_points``, and never moves up.
     """
-    adapter = get_broker_adapter(broker_name)
+    # Client-side trailing SL only exists because INDstocks has no native
+    # trailing-SL field (see module docstring) -- it is an INDmoney-only
+    # feature, and modify_smart_order is an INDmoney-only method not on the
+    # base BrokerAdapter. broker_name defaults to "indmoney" and every
+    # current caller passes that. A static cast, not an isinstance assert,
+    # because tests substitute a MagicMock here via
+    # patch.object(ts, "get_broker_adapter", ...), which is not an
+    # INDmoneyBroker instance but does duck-type it.
+    adapter = cast(INDmoneyBroker, get_broker_adapter(broker_name))
     sl_trigger = initial_sl_trigger
     sl_limit = initial_sl_limit
     instrument = _instrument_key(exchange, security_id)

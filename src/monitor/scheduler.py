@@ -284,13 +284,21 @@ class MarketMonitor:
         from src.options.analytics import calculate_pcr
 
         positions = await self.repo.get_active_positions(user["id"])
-        vix, nifty_q, sensex_q, key_levels, calendar, sentiment, global_pulse, nifty_chain = await asyncio.gather(
+        # Split across two gather() calls -- asyncio.gather's typeshed
+        # overloads only cover up to 6 positional awaitables with precise
+        # per-argument types; a 7th+ collapses the whole tuple to
+        # tuple[object, ...]. Splitting keeps full concurrency (both
+        # gathers still run their members in parallel) while keeping each
+        # unpacked variable's real type.
+        vix, nifty_q, sensex_q, key_levels, calendar, sentiment = await asyncio.gather(
             self._get_vix(),
             self._get_index_quote("NIFTY"),
             self._get_index_quote("SENSEX"),
             self._get_key_levels(),
             self._get_calendar(),
             self._get_global_sentiment(),
+        )
+        global_pulse, nifty_chain = await asyncio.gather(
             self._get_global_pulse_raw(),
             self._get_option_chain("NIFTY"),
         )

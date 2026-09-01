@@ -47,3 +47,15 @@ class BrokerClient(Protocol):
     def trades(self) -> list[dict]:
         """Return today's executed trade fills."""
         ...
+
+    def get_enctoken(self) -> str | None:
+        """Return the current session's enctoken, if any."""
+        ...
+
+    def set_enctoken(self, token: str) -> None:
+        """Install a session enctoken (e.g. after login or restore)."""
+        ...
+
+    def clear_enctoken(self) -> None:
+        """Drop the current session enctoken (logout)."""
+        ...

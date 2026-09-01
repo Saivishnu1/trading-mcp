@@ -62,7 +62,7 @@ class MarketAggregator:
         # Execute concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        data = {}
+        data: dict[str, object] = {}
         missing_data = []
 
         for name, res in zip(task_names, results):

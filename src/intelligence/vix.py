@@ -78,7 +78,7 @@ def get_india_vix() -> dict:
         change_pct = round((current - prev) / prev * 100, 2) if prev else None
         history = closes[:-1]  # exclude today from reference set
 
-        result: dict = {
+        result = {
             "level":          current,
             "prev_close":     prev,
             "change_pct":     change_pct,

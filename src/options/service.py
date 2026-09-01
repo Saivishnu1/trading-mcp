@@ -49,7 +49,7 @@ class OptionsService:
         self._cache: dict[tuple[str, Optional[str]], tuple[dict, float]] = {}
         self._lock = threading.Lock()
         self._cookies_ready = False
-        self._nse_live = None  # jugaad_data.nse.NSELive, imported lazily
+        self._nse_live: object | None = None  # jugaad_data.nse.NSELive, imported lazily; False sentinel = tried and failed
 
     # ------------------------------------------------------------------
     # Source 1 — jugaad-data NSELive (primary)
@@ -58,7 +58,7 @@ class OptionsService:
     def _get_nse_live(self):
         if self._nse_live is None:
             try:
-                from jugaad_data.nse import NSELive  # type: ignore[import]
+                from jugaad_data.nse import NSELive
                 self._nse_live = NSELive()
             except Exception as exc:
                 logger.warning("jugaad-data NSELive unavailable: %s", exc)

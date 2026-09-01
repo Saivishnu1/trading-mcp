@@ -587,7 +587,7 @@ class INDmoneyBroker(BrokerAdapter):
                         "INDmoneyBroker._place_smart_order rejected (status=%s): %s",
                         r.status_code, body,
                     )
-                order_data = []
+                order_data: list = []
                 if isinstance(body, dict):
                     data = body.get("data", {})
                     if isinstance(data, dict):
@@ -906,7 +906,8 @@ class INDmoneyBroker(BrokerAdapter):
             return []
         rows = await self._cached_instruments(source)
 
-        starts, contains = [], []
+        starts: list[dict] = []
+        contains: list[dict] = []
         seen = set()
         logged_raw_row = False
         for row in rows:
