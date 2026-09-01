@@ -4,8 +4,11 @@
   §4-6, §13 and docs/design/UX_BLUEPRINT.md's mood board for the rationale
   behind every choice below.
 
-  Two fully-realized themes (dark default, light equally complete — never
-  an afterthought media query). Theme is controlled by [data-theme="dark"]
+  Two fully-realized themes (light default, dark equally complete — never
+  an afterthought media query). Apple-inspired palette: the neutrals and
+  blue Apple's own design system uses (label/secondary-label grays,
+  #0071e3 accent), not an invented one — see the LIGHT THEME block below
+  for the exact source values. Theme is controlled by [data-theme="dark"]
   or [data-theme="light"] on <html>; falls back to prefers-color-scheme
   when no explicit preference has been chosen yet.
 */
@@ -105,111 +108,119 @@
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   DARK THEME — default. Tuned for long viewing sessions: near-black
-   surfaces (never pure #000, which halates against bright numbers),
-   soft off-white text (never pure #fff).
+   LIGHT THEME — default. Apple-inspired: the exact neutrals and blue
+   Apple's own design system uses (label #1d1d1f, secondary #6e6e73,
+   surface #f5f5f7, accent #0071e3), not an invented palette. System
+   green/red are swapped for Apple's own accessible-on-white variants —
+   the marketing-site glyph green (#34c759) fails AA as small text, so
+   this uses the same darker values Apple ships in text contexts.
+   Defined once here; the OS-preference fallback below just points at
+   this same block via a class instead of duplicating every value.
    ══════════════════════════════════════════════════════════════════════ */
 :root,
-:root[data-theme="dark"] {
-  --surface-0: #0a0a0d;
-  --surface-1: #131318;
-  --surface-2: #1b1b22;
-  --surface-3: rgba(0, 0, 0, 0.6); /* overlay scrim */
+:root[data-theme="light"] {
+  --surface-0: #f5f5f7;
+  --surface-1: #ffffff;
+  --surface-2: #f5f5f7;
+  --surface-3: rgba(0, 0, 0, 0.4); /* overlay scrim */
 
-  --content-primary:   #f4f4f6;
-  --content-secondary: #a3a3ad;
-  --content-tertiary:  #5c5c66;
-  --content-inverse:   #0a0a0d;
+  --content-primary:   #1d1d1f;
+  --content-secondary: #6e6e73;
+  --content-tertiary:  #86868b;
+  --content-inverse:   #ffffff;
 
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-subtle: #d2d2d7;
+  --border-strong: #b8b8bd;
 
-  --accent:         #5b8def;
-  --accent-surface: rgba(91, 141, 239, 0.14);
-  --accent-strong:  #7ba3f5;
+  --accent:         #0071e3;
+  --accent-surface: rgba(0, 113, 227, 0.08);
+  --accent-strong:  #0058b0;
 
-  --buy:         #34d399;
-  --buy-surface: rgba(52, 211, 153, 0.12);
-  --sell:         #f8716b;
-  --sell-surface: rgba(248, 113, 107, 0.12);
+  --buy:         #1a7f37;
+  --buy-surface: rgba(26, 127, 55, 0.08);
+  --sell:         #d70015;
+  --sell-surface: rgba(215, 0, 21, 0.08);
 
-  --status-info:            #7dabf7;
-  --status-info-surface:    rgba(125, 171, 247, 0.12);
-  --status-warning:         #f0b354;
-  --status-warning-surface: rgba(240, 179, 84, 0.12);
-  --status-caution:         #c99df0;
-  --status-caution-surface: rgba(201, 157, 240, 0.12);
+  --status-info:            #0071e3;
+  --status-info-surface:    rgba(0, 113, 227, 0.08);
+  --status-warning:         #b25000;
+  --status-warning-surface: rgba(178, 80, 0, 0.08);
+  --status-caution:         #8944ab;
+  --status-caution-surface: rgba(137, 68, 171, 0.08);
 
-  --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.45);
+  --focus-ring: 0 0 0 3px rgba(0, 113, 227, 0.35);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   LIGHT THEME — fully realized, not a bolt-on. Tuned for bright-screen
-   legibility: soft off-white surfaces (never stark #fff, reduces glare),
-   deepened buy/sell colors (pure saturated green/red on white reads as
-   garish, not premium).
+   DARK THEME — fully realized, not a bolt-on. Same Apple-inspired
+   language: true near-black system surfaces (not blue-tinted), warm
+   off-white label text, the same accent/buy/sell hues lifted to stay
+   legible against dark surfaces.
    ══════════════════════════════════════════════════════════════════════ */
-:root[data-theme="light"] {
-  --surface-0: #f6f7f9;
-  --surface-1: #ffffff;
-  --surface-2: #ffffff;
-  --surface-3: rgba(15, 18, 25, 0.4);
+:root[data-theme="dark"] {
+  --surface-0: #000000;
+  --surface-1: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --surface-3: rgba(0, 0, 0, 0.6);
 
-  --content-primary:   #14161a;
-  --content-secondary: #5b6070;
-  --content-tertiary:  #9aa1af;
-  --content-inverse:   #ffffff;
+  --content-primary:   #f5f5f7;
+  --content-secondary: #98989d;
+  --content-tertiary:  #6e6e73;
+  --content-inverse:   #000000;
 
-  --border-subtle: #e5e7eb;
-  --border-strong: #c7cdd6;
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
 
-  --accent:         #2d5fd9;
-  --accent-surface: rgba(45, 95, 217, 0.08);
-  --accent-strong:  #234ab3;
+  --accent:         #0a84ff;
+  --accent-surface: rgba(10, 132, 255, 0.16);
+  --accent-strong:  #409cff;
 
-  --buy:         #158f5f;
-  --buy-surface: #e7f8ee;
-  --sell:         #d1392a;
-  --sell-surface: #fdecea;
+  --buy:         #30d158;
+  --buy-surface: rgba(48, 209, 88, 0.14);
+  --sell:         #ff453a;
+  --sell-surface: rgba(255, 69, 58, 0.14);
 
-  --status-info:            #2d5fd9;
-  --status-info-surface:    rgba(45, 95, 217, 0.08);
-  --status-warning:         #b45309;
-  --status-warning-surface: #fff4e0;
-  --status-caution:         #8b3fc9;
-  --status-caution-surface: rgba(139, 63, 201, 0.08);
+  --status-info:            #64d2ff;
+  --status-info-surface:    rgba(100, 210, 255, 0.14);
+  --status-warning:         #ff9f0a;
+  --status-warning-surface: rgba(255, 159, 10, 0.14);
+  --status-caution:         #bf5af2;
+  --status-caution-surface: rgba(191, 90, 242, 0.14);
 
-  --focus-ring: 0 0 0 3px rgba(45, 95, 217, 0.35);
+  --focus-ring: 0 0 0 3px rgba(10, 132, 255, 0.45);
 }
 
 /* Respect OS-level preference only when the user hasn't made an explicit
-   in-app choice yet (no [data-theme] attribute set at all). */
-@media (prefers-color-scheme: light) {
+   in-app choice yet (no [data-theme] attribute set at all). Since light
+   is now the default block on bare :root, only the dark override needs
+   re-pointing here -- no value duplication, unlike the old light-theme
+   block that repeated all 26 declarations verbatim in this media query. */
+@media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --surface-0: #f6f7f9;
-    --surface-1: #ffffff;
-    --surface-2: #ffffff;
-    --surface-3: rgba(15, 18, 25, 0.4);
-    --content-primary:   #14161a;
-    --content-secondary: #5b6070;
-    --content-tertiary:  #9aa1af;
-    --content-inverse:   #ffffff;
-    --border-subtle: #e5e7eb;
-    --border-strong: #c7cdd6;
-    --accent:         #2d5fd9;
-    --accent-surface: rgba(45, 95, 217, 0.08);
-    --accent-strong:  #234ab3;
-    --buy:         #158f5f;
-    --buy-surface: #e7f8ee;
-    --sell:         #d1392a;
-    --sell-surface: #fdecea;
-    --status-info:            #2d5fd9;
-    --status-info-surface:    rgba(45, 95, 217, 0.08);
-    --status-warning:         #b45309;
-    --status-warning-surface: #fff4e0;
-    --status-caution:         #8b3fc9;
-    --status-caution-surface: rgba(139, 63, 201, 0.08);
-    --focus-ring: 0 0 0 3px rgba(45, 95, 217, 0.35);
+    --surface-0: #000000;
+    --surface-1: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --surface-3: rgba(0, 0, 0, 0.6);
+    --content-primary:   #f5f5f7;
+    --content-secondary: #98989d;
+    --content-tertiary:  #6e6e73;
+    --content-inverse:   #000000;
+    --border-subtle: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.2);
+    --accent:         #0a84ff;
+    --accent-surface: rgba(10, 132, 255, 0.16);
+    --accent-strong:  #409cff;
+    --buy:         #30d158;
+    --buy-surface: rgba(48, 209, 88, 0.14);
+    --sell:         #ff453a;
+    --sell-surface: rgba(255, 69, 58, 0.14);
+    --status-info:            #64d2ff;
+    --status-info-surface:    rgba(100, 210, 255, 0.14);
+    --status-warning:         #ff9f0a;
+    --status-warning-surface: rgba(255, 159, 10, 0.14);
+    --status-caution:         #bf5af2;
+    --status-caution-surface: rgba(191, 90, 242, 0.14);
+    --focus-ring: 0 0 0 3px rgba(10, 132, 255, 0.45);
   }
 }
 
