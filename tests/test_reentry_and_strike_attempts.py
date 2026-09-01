@@ -5,7 +5,7 @@ as test_journal_service.py."""
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -32,7 +32,7 @@ def fresh_db():
 
 
 def _iso_minutes_ago(minutes: float) -> str:
-    return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%S")
+    return (datetime.now(UTC) - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 class TestParseOptionSymbol:

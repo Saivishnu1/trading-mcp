@@ -129,7 +129,7 @@ async def show_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             lines.append(f"{var:<25} {display_val}")
 
         await update.message.reply_text(
-            f"```\n" + "\n".join(lines) + "\n```",
+            "```\n" + "\n".join(lines) + "\n```",
             parse_mode="Markdown"
         )
     except Exception as exc:

@@ -68,7 +68,7 @@ def test_resolve_user_basic_single_user_success(monkeypatch):
 
     # Header format: Basic base64(user_id:token) -> USER123:secret_key
     creds = base64.b64encode(b"USER123:secret_key").decode("utf-8")
-    scope = {"headers": [(b"authorization", f"Basic {creds}".encode("utf-8"))]}
+    scope = {"headers": [(b"authorization", f"Basic {creds}".encode())]}
     assert _resolve_user(scope) == "USER123"
 
 def test_resolve_user_basic_single_user_username_mismatch(monkeypatch):
@@ -77,7 +77,7 @@ def test_resolve_user_basic_single_user_username_mismatch(monkeypatch):
 
     # WRONGUSER:secret_key
     creds = base64.b64encode(b"WRONGUSER:secret_key").decode("utf-8")
-    scope = {"headers": [(b"authorization", f"Basic {creds}".encode("utf-8"))]}
+    scope = {"headers": [(b"authorization", f"Basic {creds}".encode())]}
     assert _resolve_user(scope) is None
 
 def test_resolve_user_basic_multi_user_success(monkeypatch):
@@ -93,7 +93,7 @@ def test_resolve_user_basic_multi_user_success(monkeypatch):
 
     # USER456:user_token_abc
     creds = base64.b64encode(b"USER456:user_token_abc").decode("utf-8")
-    scope = {"headers": [(b"authorization", f"Basic {creds}".encode("utf-8"))]}
+    scope = {"headers": [(b"authorization", f"Basic {creds}".encode())]}
     assert _resolve_user(scope) == "USER456"
 
 def test_resolve_user_basic_multi_user_username_mismatch(monkeypatch):
@@ -109,7 +109,7 @@ def test_resolve_user_basic_multi_user_username_mismatch(monkeypatch):
 
     # WRONGUSER:user_token_abc
     creds = base64.b64encode(b"WRONGUSER:user_token_abc").decode("utf-8")
-    scope = {"headers": [(b"authorization", f"Basic {creds}".encode("utf-8"))]}
+    scope = {"headers": [(b"authorization", f"Basic {creds}".encode())]}
     assert _resolve_user(scope) is None
 
 def test_resolve_user_basic_invalid_base64():
@@ -118,5 +118,5 @@ def test_resolve_user_basic_invalid_base64():
 
 def test_resolve_user_basic_missing_colon():
     creds = base64.b64encode(b"username_no_colon").decode("utf-8")
-    scope = {"headers": [(b"authorization", f"Basic {creds}".encode("utf-8"))]}
+    scope = {"headers": [(b"authorization", f"Basic {creds}".encode())]}
     assert _resolve_user(scope) is None

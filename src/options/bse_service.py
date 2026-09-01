@@ -14,7 +14,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -77,7 +77,7 @@ class BSEOptionsService:
     def __init__(self, session: requests.Session | None = None) -> None:
         self._session = session or requests.Session()
         self._session.headers.update(_HEADERS)
-        self._cache: dict[tuple[str, Optional[str]], tuple[dict, float]] = {}
+        self._cache: dict[tuple[str, str | None], tuple[dict, float]] = {}
         self._expiries_cache: dict[str, tuple[list[str], float]] = {}
         self._underlyings_cache: tuple[dict[str, str], float] | None = None
         self._lock = threading.Lock()
@@ -275,7 +275,7 @@ class BSEOptionsService:
             },
         }
 
-    def get_option_chain(self, symbol: str, expiry: Optional[str] = None) -> dict:
+    def get_option_chain(self, symbol: str, expiry: str | None = None) -> dict:
         normalized = self._normalize_symbol(symbol)
         scrip_code = self._resolve_scrip_code(normalized)
         available = self._fetch_expiries(normalized, scrip_code)

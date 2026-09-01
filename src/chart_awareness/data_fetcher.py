@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +233,7 @@ async def _fetch_indmoney_single_chunk(
         for c in candles:
             if isinstance(c, list) and len(c) >= 6:
                 ts_ms = c[0]
-                dt_str = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                dt_str = datetime.fromtimestamp(ts_ms / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
                 result.append({
                     "datetime": dt_str,
                     "open": float(c[1] or 0),
@@ -268,7 +268,7 @@ async def _fetch_indmoney(symbol: str, interval: str, from_date: str, to_date: s
         max_days = _INDMONEY_MAX_DAYS.get(interval, 365)
 
         def _to_ms(d: date) -> int:
-            return int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+            return int(datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp() * 1000)
 
         start_date = datetime.strptime(from_date, "%Y-%m-%d").date()
         end_date = datetime.strptime(to_date, "%Y-%m-%d").date()

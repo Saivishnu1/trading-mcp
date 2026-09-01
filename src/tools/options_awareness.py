@@ -3,8 +3,6 @@ Phase 6 — Option Structure Awareness MCP tool.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
@@ -16,7 +14,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def analyze_option_structure(
         symbol: str,
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
     ) -> dict:
         """Unified option chain analysis — OI walls, max pain, PCR, IV skew, and S/R levels.
 

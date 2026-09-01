@@ -151,13 +151,13 @@ def _regime_component(symbol: str) -> tuple[int, str, bool]:
         from src.analysis.regime import detect_market_regime
         r = detect_market_regime(symbol)
         if "error" in r:
-            return 50, f"Regime error — using neutral 50", False
+            return 50, "Regime error — using neutral 50", False
         regime = r.get("regime", "NEUTRAL")
         score = _REGIME_SCORES.get(regime, 50)
         return score, f"Regime {regime} → {score}", True
     except Exception as exc:
         logger.debug("Regime unavailable for risk score (%s): %s", symbol, exc)
-        return 50, f"Regime unavailable — using neutral 50", False
+        return 50, "Regime unavailable — using neutral 50", False
 
 
 from src.common.scoring import risk_rating as _rating  # single source of truth

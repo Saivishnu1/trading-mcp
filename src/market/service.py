@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Symbol resolution lives in src/market/symbols.py (single source of truth).
 # Local aliases kept so the rest of this module reads unchanged.
-from src.market.symbols import (  # noqa: E402
+from src.market.symbols import (
     is_nse_stock as _is_nse_stock,
 )
 from src.market.symbols import (

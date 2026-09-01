@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from src.monitor.conditions import MarketConditions
 
@@ -165,7 +165,7 @@ class MarketIntelligence:
         self, spot: float, prev_spot: float | None,
         call_wall: float | None, put_wall: float | None,
         session_state: dict | None = None, settings: dict | None = None,
-        now: "datetime | None" = None,
+        now: datetime | None = None,
     ) -> tuple[list[dict], dict]:
         """Hold-confirmation wall-break check (Priority 1 fix, 2026-07-10;
         time-based confirmation — Piece C, 2026-07-11).
@@ -185,11 +185,10 @@ class MarketIntelligence:
         regardless of whether an alert fired this call.
         """
         from datetime import datetime as _datetime
-        from datetime import timezone as _timezone
 
         session_state = session_state or {}
         settings = settings or {}
-        now = now or _datetime.now(_timezone.utc)
+        now = now or _datetime.now(UTC)
         hold_updates: dict = {}
 
         if not call_wall or not put_wall:

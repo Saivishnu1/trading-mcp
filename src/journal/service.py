@@ -2,7 +2,7 @@ import json
 import re
 import threading
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from src.broker import current_user
 from src.journal import db as _db
@@ -39,7 +39,7 @@ def _user_filter(params: list) -> str:
 
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _today() -> str:
@@ -270,7 +270,7 @@ def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC)
     except ValueError:
         return None
 
@@ -307,7 +307,7 @@ def detect_reentry_pattern(
         return None
     underlying, strike, opt = parsed
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = now - timedelta(minutes=window_minutes)
 
     same_strike = [
@@ -327,7 +327,7 @@ def detect_reentry_pattern(
 
     most_recent_closed = max(
         (t for t in same_strike if t.get("status") == "CLOSED"),
-        key=lambda t: _parse_dt(t.get("exit_time")) or datetime.min.replace(tzinfo=timezone.utc),
+        key=lambda t: _parse_dt(t.get("exit_time")) or datetime.min.replace(tzinfo=UTC),
         default=None,
     )
     if most_recent_closed is not None:

@@ -157,7 +157,7 @@ def get_symbol_news(symbol: str, count: int = 10) -> dict:
         try:
             import datetime
             published_at = (
-                datetime.datetime.fromtimestamp(ts_unix, tz=datetime.timezone.utc)
+                datetime.datetime.fromtimestamp(ts_unix, tz=datetime.UTC)
                 .strftime("%Y-%m-%dT%H:%M:%SZ")
                 if ts_unix
                 else None

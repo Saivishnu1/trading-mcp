@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.analysis.regime import detect_market_regime
 from src.options import analytics
@@ -155,7 +155,7 @@ class MarketAwarenessEngine:
             "spot": spot,
             "day_high": day_high,
             "day_low": day_low,
-            "as_of": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "as_of": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "session_active": calendar.get("nse_session_active", False),
             "expiry": {
                 "next": next_expiry,

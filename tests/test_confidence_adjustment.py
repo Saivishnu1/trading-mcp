@@ -15,14 +15,14 @@ CA-12 generate_trade_setup (daily-only, unchanged) has no confidence_penalties/r
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from src.analysis.regime import generate_trade_setup, generate_trade_setup_tf
 from src.timeframe.confidence import adjust_confidence
 
 
 def _fresh_daily_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _setup(confidence=70, signal="BUY", context=None, evidence_for=None, evidence_against=None) -> dict:

@@ -52,14 +52,6 @@ async def make_asgi_call(path, method="GET", query_string=b"", headers=None, bod
     return status, resp_headers, resp_body
 
 
-def test_oauth_protected_resource_metadata():
-    status, headers, body = pytest.async_run(
-        make_asgi_call("/.well-known/oauth-protected-resource")
-    ) if hasattr(pytest, "async_run") else None
-
-    # Use standard event loop running for async in sync test if needed, or pytest-anyio/asyncio
-    # Since we collect pytest plugins, anyio is installed. Let's make tests async.
-
 @pytest.mark.anyio
 async def test_oauth_protected_resource_metadata():
     status, headers, body = await make_asgi_call("/.well-known/oauth-protected-resource")

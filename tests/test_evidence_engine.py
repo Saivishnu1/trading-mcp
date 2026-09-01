@@ -13,14 +13,14 @@ EV-9  evidence_for is non-empty and evidence_against is empty for a strongly bul
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from src.analysis.regime import generate_trade_setup, generate_trade_setup_tf
 from src.timeframe.evidence import build_context_summary, build_evidence
 
 
 def _fresh_daily_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 _SAMPLE_EVIDENCE = [

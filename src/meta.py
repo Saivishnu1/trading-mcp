@@ -16,7 +16,7 @@ make_time_gated_error() — structured TOOL_TIME_GATED response
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ def build_meta(
     from_cache: bool = False,
 ) -> dict:
     """Build the meta dict that accompanies every tool response."""
-    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_utc = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     freshness = _freshness_label(data_age_seconds, stale_threshold_seconds, from_cache)
     is_stale = data_age_seconds > stale_threshold_seconds
 

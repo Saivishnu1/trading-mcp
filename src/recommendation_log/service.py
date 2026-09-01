@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.broker import current_user
 from src.journal import db as _db
@@ -51,7 +51,7 @@ MIN_CLEAN_RECORDS_FOR_ANALYSIS = 100
 # ---------------------------------------------------------------------------
 
 def _now_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _new_id() -> str:

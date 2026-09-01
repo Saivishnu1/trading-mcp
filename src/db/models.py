@@ -17,7 +17,6 @@ from __future__ import annotations
 
 try:
     from sqlalchemy import (
-        BigInteger,
         Boolean,
         CheckConstraint,
         Float,

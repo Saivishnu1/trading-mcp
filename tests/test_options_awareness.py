@@ -4,6 +4,8 @@ All data is synthetic — no live API calls.
 """
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from src.options_awareness.iv_analyzer import IVAnalyzer
@@ -23,7 +25,7 @@ def _make_chain(
         strikes = [23000, 23500, 23800, 24000, 24200, 24500, 25000]
 
     data = []
-    for i, sp in enumerate(strikes):
+    for _i, sp in enumerate(strikes):
         # OI increases toward extremes for call (above spot) and put (below spot)
         dist = abs(sp - spot) / spot
         base_oi = int(500_000 * (1 + dist * 3))
@@ -408,7 +410,7 @@ class TestOptionCache:
             path = _cache_path(symbol, expiry)
             # Backdate the cached_at to 2 days ago
             entry = json.loads(path.read_text(encoding="utf-8"))
-            old_time = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+            old_time = (datetime.now(UTC) - timedelta(days=2)).isoformat()
             entry["cached_at"] = old_time
             path.write_text(json.dumps(entry), encoding="utf-8")
             result = read_cache(symbol, expiry)

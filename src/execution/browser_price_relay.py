@@ -46,7 +46,7 @@ class _Subscriber:
 
     def __init__(self) -> None:
         self.instruments: set[str] = set()
-        self.queue: "asyncio.Queue[dict]" = asyncio.Queue(maxsize=100)
+        self.queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=100)
 
 
 class BrowserPriceRelay:
@@ -74,7 +74,7 @@ class BrowserPriceRelay:
             return None
         return ltp
 
-    async def register(self, instruments: list[str]) -> tuple[int, "asyncio.Queue[dict]"]:
+    async def register(self, instruments: list[str]) -> tuple[int, asyncio.Queue[dict]]:
         """Register a new browser subscriber for `instruments`. Returns
         (subscriber_id, queue) — the caller reads ticks from `queue` and
         must call unregister(subscriber_id) when the connection closes."""

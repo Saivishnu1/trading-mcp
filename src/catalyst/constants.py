@@ -13,7 +13,7 @@ from __future__ import annotations
 # Catalyst keeps its own NSE-centric equity rule (BSE:X → X.NS, since news and
 # earnings are per-company and keyed on the NSE listing), but shares the index
 # table so index aliases never diverge from the rest of the system.
-from src.market.symbols import INDEX_YF as _INDEX_YF, is_index  # noqa: F401
+from src.market.symbols import INDEX_YF as _INDEX_YF
 
 
 def _to_yf_ticker(symbol: str) -> str:

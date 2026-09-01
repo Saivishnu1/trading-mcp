@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytz
 
@@ -568,7 +568,7 @@ class MarketMonitor:
             "live_price_nifty_cache_hit": bool(market_data.get("nifty_spot_cache_hit")),
             "live_price_sensex_ltp": market_data.get("sensex_spot") or None,
             "live_price_sensex_cache_hit": bool(market_data.get("sensex_spot_cache_hit")),
-            "live_price_checked_at": datetime.now(timezone.utc).isoformat(),
+            "live_price_checked_at": datetime.now(UTC).isoformat(),
             **wall_hold_updates,
             **dedup_updates,
         })
@@ -598,7 +598,7 @@ class MarketMonitor:
             session_state = await self.repo.get_session_state(user["id"])
             if not session_state:
                 return
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             updates: dict = {}
             if symbol == "NIFTY":

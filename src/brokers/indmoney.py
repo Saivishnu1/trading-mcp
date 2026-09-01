@@ -12,7 +12,7 @@ import io
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -1016,7 +1016,7 @@ class INDmoneyBroker(BrokerAdapter):
         try:
             # Convert YYYY-MM-DD → Unix milliseconds (start of day UTC)
             def to_ms(date_str: str) -> int:
-                dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC)
                 return int(dt.timestamp() * 1000)
 
             start_ms = to_ms(from_date)

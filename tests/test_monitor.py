@@ -8,7 +8,7 @@ see src/db/base.py). No real broker, HTTP, or WhatsApp calls are made.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,7 +25,7 @@ from src.monitor.symbol_resolver import (
 from src.monitor.trailing_sl import TrailingSLCalculator
 
 try:
-    import sqlalchemy  # noqa: F401
+    import sqlalchemy
     _HAS_SQLALCHEMY = True
 except ImportError:
     _HAS_SQLALCHEMY = False
@@ -35,7 +35,7 @@ requires_sqlalchemy = pytest.mark.skipif(
 )
 
 try:
-    import fcntl  # noqa: F401
+    import fcntl
     _HAS_FCNTL = True
 except ImportError:
     _HAS_FCNTL = False
@@ -173,11 +173,11 @@ class TestMarketConditions:
         assert triggered is False
 
     def test_cooldown_suppresses_recent_alert(self):
-        last_sent = datetime.now(timezone.utc) - timedelta(seconds=60)
+        last_sent = datetime.now(UTC) - timedelta(seconds=60)
         assert self.cond.is_alert_on_cooldown(last_sent, cooldown_seconds=300) is True
 
     def test_cooldown_allows_after_expiry(self):
-        last_sent = datetime.now(timezone.utc) - timedelta(seconds=400)
+        last_sent = datetime.now(UTC) - timedelta(seconds=400)
         assert self.cond.is_alert_on_cooldown(last_sent, cooldown_seconds=300) is False
 
     def test_cooldown_allows_when_never_sent(self):
@@ -225,47 +225,47 @@ class TestMarketConditions:
     # -----------------------------------------------------------------
 
     def test_update_wall_break_hold_since_starts_a_new_hold(self):
-        now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC)
         result = self.cond.update_wall_break_hold_since(
             spot=24410, wall=24400, direction="above", held_since=None, now=now,
         )
         assert result == now.isoformat()
 
     def test_update_wall_break_hold_since_preserves_original_start(self):
-        now = datetime(2026, 7, 13, 10, 5, 0, tzinfo=timezone.utc)
-        original_start = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc).isoformat()
+        now = datetime(2026, 7, 13, 10, 5, 0, tzinfo=UTC)
+        original_start = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC).isoformat()
         result = self.cond.update_wall_break_hold_since(
             spot=24410, wall=24400, direction="above", held_since=original_start, now=now,
         )
         assert result == original_start
 
     def test_update_wall_break_hold_since_clears_when_back_inside(self):
-        now = datetime(2026, 7, 13, 10, 5, 0, tzinfo=timezone.utc)
-        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc).isoformat()
+        now = datetime(2026, 7, 13, 10, 5, 0, tzinfo=UTC)
+        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC).isoformat()
         result = self.cond.update_wall_break_hold_since(
             spot=24390, wall=24400, direction="above", held_since=held_since, now=now,
         )
         assert result is None
 
     def test_update_wall_break_hold_since_put_wall_direction(self):
-        now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC)
         result = self.cond.update_wall_break_hold_since(
             spot=23990, wall=24000, direction="below", held_since=None, now=now,
         )
         assert result == now.isoformat()
 
     def test_check_wall_hold_duration_true_at_threshold(self):
-        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
-        now = datetime(2026, 7, 13, 10, 1, 0, tzinfo=timezone.utc)  # 60s later
+        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 7, 13, 10, 1, 0, tzinfo=UTC)  # 60s later
         assert self.cond.check_wall_hold_duration(held_since.isoformat(), now, confirm_seconds=60) is True
 
     def test_check_wall_hold_duration_false_before_threshold(self):
-        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
-        now = datetime(2026, 7, 13, 10, 0, 30, tzinfo=timezone.utc)  # 30s later
+        held_since = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC)
+        now = datetime(2026, 7, 13, 10, 0, 30, tzinfo=UTC)  # 30s later
         assert self.cond.check_wall_hold_duration(held_since.isoformat(), now, confirm_seconds=60) is False
 
     def test_check_wall_hold_duration_false_when_no_hold(self):
-        now = datetime(2026, 7, 13, 10, 1, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 7, 13, 10, 1, 0, tzinfo=UTC)
         assert self.cond.check_wall_hold_duration(None, now, confirm_seconds=60) is False
 
     def test_check_wall_rejection_duration_true_on_touch_then_fail(self):
@@ -764,7 +764,7 @@ class TestMcxSessionCloseRisk:
 
     @pytest.mark.anyio
     async def test_cooldown_suppresses_duplicate_alert(self):
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=10)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=10)
 
         with patch("src.brokers.indmoney.INDmoneyBroker") as MockInd, \
              patch("src.monitor.scheduler.datetime") as mock_dt:
@@ -1329,7 +1329,7 @@ class TestStaleness:
 
     def test_recent_heartbeat_is_healthy(self):
         from src.tools.monitor import _staleness
-        recent = (datetime.now(timezone.utc) - timedelta(seconds=30)).isoformat()
+        recent = (datetime.now(UTC) - timedelta(seconds=30)).isoformat()
         healthy, status = _staleness(recent)
         assert healthy is True
         assert status == "ACTIVE"
@@ -1337,7 +1337,7 @@ class TestStaleness:
     def test_old_heartbeat_is_stale(self):
         from src.monitor.scheduler import MarketMonitor
         from src.tools.monitor import _staleness
-        old = (datetime.now(timezone.utc) - timedelta(seconds=MarketMonitor.STALE_AFTER_SECONDS + 60)).isoformat()
+        old = (datetime.now(UTC) - timedelta(seconds=MarketMonitor.STALE_AFTER_SECONDS + 60)).isoformat()
         healthy, status = _staleness(old)
         assert healthy is False
         assert status == "STALE"
@@ -1345,7 +1345,7 @@ class TestStaleness:
     def test_boundary_just_under_threshold_is_healthy(self):
         from src.monitor.scheduler import MarketMonitor
         from src.tools.monitor import _staleness
-        just_under = (datetime.now(timezone.utc) - timedelta(seconds=MarketMonitor.STALE_AFTER_SECONDS - 60)).isoformat()
+        just_under = (datetime.now(UTC) - timedelta(seconds=MarketMonitor.STALE_AFTER_SECONDS - 60)).isoformat()
         healthy, status = _staleness(just_under)
         assert healthy is True
         assert status == "ACTIVE"
@@ -1620,7 +1620,7 @@ class TestGetMonitorStatusLivePriceCache:
 
     @pytest.mark.anyio
     async def test_reports_cache_hit_with_fresh_age(self):
-        checked_at = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
+        checked_at = (datetime.now(UTC) - timedelta(seconds=5)).isoformat()
         result = await self._call({
             "last_heartbeat": None,
             "live_price_checked_at": checked_at,
@@ -1639,7 +1639,7 @@ class TestGetMonitorStatusLivePriceCache:
     async def test_reports_rest_fallback(self):
         result = await self._call({
             "last_heartbeat": None,
-            "live_price_checked_at": datetime.now(timezone.utc).isoformat(),
+            "live_price_checked_at": datetime.now(UTC).isoformat(),
             "live_price_nifty_ltp": 24000.0,
             "live_price_nifty_cache_hit": False,
             "live_price_sensex_ltp": 79000.0,
@@ -1886,7 +1886,7 @@ class TestOnIndexTick:
         self.monitor.repo.save_heartbeat = AsyncMock()
         self.monitor.alerter.send_macro_alert = AsyncMock(return_value=True)
 
-        t0 = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        t0 = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC)
         with patch("src.monitor.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = t0
             await self.monitor._on_index_tick("NIFTY", 24410.0)  # first touch

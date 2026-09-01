@@ -89,7 +89,7 @@ class LivePriceCache:
     arrives instead of only at the next poll. on_tick exceptions are
     logged and never propagate — one bad check must not kill the stream."""
 
-    def __init__(self, on_tick: "Callable[[str, float], Awaitable[None]] | None" = None) -> None:
+    def __init__(self, on_tick: Callable[[str, float], Awaitable[None]] | None = None) -> None:
         self._prices: dict[str, tuple[float, float]] = {}  # instrument -> (ltp, monotonic_ts)
         # Exact bare-security-id/token -> "SEGMENT:id" map, rebuilt on every
         # subscription change. NB: if two different segments ever assign the

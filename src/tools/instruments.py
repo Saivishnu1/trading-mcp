@@ -1,4 +1,3 @@
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -10,7 +9,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def search_instruments(
         query: str,
-        exchange: Optional[str] = "NSE",
+        exchange: str | None = "NSE",
         limit: int = 20,
     ) -> list[dict]:
         """Search instruments by trading symbol or company name.

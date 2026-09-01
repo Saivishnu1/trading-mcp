@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import time
-from typing import Optional
 
 import httpx
 
@@ -84,7 +83,7 @@ class InstrumentResolver:
         # In-memory lookup table built on first fetch: SYMBOL → scrip_code
         self._lookup: dict[str, str] | None = None
 
-    async def resolve(self, symbol: str, exchange: str = "NSE") -> Optional[str]:
+    async def resolve(self, symbol: str, exchange: str = "NSE") -> str | None:
         """Return INDstocks scrip-code for `symbol`, or None if not found."""
         s = symbol.upper().strip()
         exch = exchange.upper()

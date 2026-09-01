@@ -105,7 +105,7 @@ class TestNoLookahead:
         closes = [100.0] * 400
         dates  = [f"d{k}" for k in range(400)]
         closes[310] = 200.0
-        bench  = {d: 100.0 for d in dates}  # flat benchmark
+        bench  = dict.fromkeys(dates, 100.0)  # flat benchmark
         # stock +100% at +10, bench flat -> excess = 1.0
         assert screen.forward_excess(closes, dates, bench, 300, 10) == 1.0
 

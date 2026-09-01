@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 _DB_PATH = os.environ.get("JOURNAL_DB", "journal.db")
 _TURSO_URL = os.environ.get("TURSO_DATABASE_URL", "")
@@ -192,7 +192,7 @@ def _init_schema(conn) -> None:
     conn.execute(_DDL_SESSIONS)
     conn.execute(_DDL_API_KEYS)
     # Run migrations before creating indexes so all columns exist first
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
     existing_version = _get_schema_version(conn)
     if existing_version is None:
         conn.execute(

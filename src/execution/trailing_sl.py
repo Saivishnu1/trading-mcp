@@ -31,6 +31,22 @@ logger = logging.getLogger(__name__)
 # (e.g. when the position is closed or the user cancels the smart order).
 _active_trailers: dict[str, asyncio.Task] = {}
 
+# Fire-and-forget persistence tasks (the DB write itself doesn't matter to
+# the caller, only that it isn't lost) still need a strong reference held
+# somewhere -- asyncio.ensure_future()/create_task() only holds a WEAK
+# reference internally, so with nothing else referencing the task object,
+# it can be garbage-collected mid-execution before the write completes.
+# This set exists purely to hold that reference; entries remove themselves
+# via add_done_callback once the write finishes (success or failure).
+_persist_tasks: set[asyncio.Future] = set()
+
+
+def _fire_and_forget(coro) -> None:
+    task = asyncio.ensure_future(coro)
+    _persist_tasks.add(task)
+    task.add_done_callback(_persist_tasks.discard)
+
+
 _repo = ExecutionRepository()
 
 
@@ -145,7 +161,7 @@ def start_trailing_sl(
     if _persist:
         try:
             asyncio.get_running_loop()
-            asyncio.ensure_future(_repo.upsert_trailing_sl_state(
+            _fire_and_forget(_repo.upsert_trailing_sl_state(
                 order_id=order_id, exchange=exchange, security_id=security_id,
                 side=side, broker=broker_name, trail_points=trail_points,
                 sl_trigger_price=initial_sl_trigger, sl_limit_price=initial_sl_limit,
@@ -164,7 +180,7 @@ def cancel_trailing_sl(order_id: str, *, _deactivate: bool = True) -> bool:
     if _deactivate:
         try:
             asyncio.get_running_loop()
-            asyncio.ensure_future(_repo.deactivate_trailing_sl_state(order_id))
+            _fire_and_forget(_repo.deactivate_trailing_sl_state(order_id))
         except RuntimeError:
             pass  # no running loop — nothing to schedule the write onto
     if task is None:

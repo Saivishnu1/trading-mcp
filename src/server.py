@@ -378,14 +378,11 @@ _LUCIDE_JS_V = _content_hash(_LUCIDE_JS)
 _LIGHTWEIGHT_CHARTS_JS_V = _content_hash(_LIGHTWEIGHT_CHARTS_JS)
 
 _SHARED_HEAD_TAG = (
-    '<link rel="stylesheet" href="/ui/shared.css?v={css_v}">\n'
+    f'<link rel="stylesheet" href="/ui/shared.css?v={_SHARED_CSS_V}">\n'
     '<link rel="preload" as="font" type="font/woff2" crossorigin '
-    'href="/ui/fonts/inter-var.woff2?v={inter_v}">\n'
-    '<script src="/ui/lucide.js?v={lucide_v}" defer></script>\n'
-    '<script src="/ui/shared.js?v={js_v}" defer></script>'
-).format(
-    css_v=_SHARED_CSS_V, js_v=_SHARED_JS_V,
-    lucide_v=_LUCIDE_JS_V, inter_v=_FONT_INTER_V,
+    f'href="/ui/fonts/inter-var.woff2?v={_FONT_INTER_V}">\n'
+    f'<script src="/ui/lucide.js?v={_LUCIDE_JS_V}" defer></script>\n'
+    f'<script src="/ui/shared.js?v={_SHARED_JS_V}" defer></script>'
 )
 
 
@@ -431,10 +428,10 @@ async def _send_html(send, status: int, html: str) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
-async def _send_json(send, status: int, data: dict, extra_headers: list = []) -> None:
+async def _send_json(send, status: int, data: dict, extra_headers: list | None = None) -> None:
     body = json.dumps(data).encode()
     headers = [[b"content-type", b"application/json"],
-               [b"content-length", str(len(body)).encode()]] + extra_headers
+               [b"content-length", str(len(body)).encode()]] + (extra_headers or [])
     await send({"type": "http.response.start", "status": status, "headers": headers})
     await send({"type": "http.response.body", "body": body})
 

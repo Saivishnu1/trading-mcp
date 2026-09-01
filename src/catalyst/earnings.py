@@ -16,7 +16,8 @@ import threading
 import time
 from datetime import date, timedelta
 
-from src.catalyst.constants import _to_yf_ticker, is_index
+from src.catalyst.constants import _to_yf_ticker
+from src.market.symbols import is_index
 
 logger = logging.getLogger(__name__)
 

@@ -85,7 +85,7 @@ def _apply_update(update: dict, tracked: dict[str, dict]) -> None:
         entry["instruments"].difference_update(instruments)
 
 
-def _drain_pending_updates(updates: "asyncio.Queue[dict]", tracked: dict[str, dict]) -> None:
+def _drain_pending_updates(updates: asyncio.Queue[dict], tracked: dict[str, dict]) -> None:
     """Apply any updates already sitting in the queue (e.g. queued while the
     connection was down between a drop and this reconnect) synchronously,
     before this connection computes what to subscribe to. Using get_nowait()
@@ -101,7 +101,7 @@ def _drain_pending_updates(updates: "asyncio.Queue[dict]", tracked: dict[str, di
         _apply_update(update, tracked)
 
 
-async def _pump_updates(ws, updates: "asyncio.Queue[dict]", tracked: dict[str, dict]) -> None:
+async def _pump_updates(ws, updates: asyncio.Queue[dict], tracked: dict[str, dict]) -> None:
     """Drain `updates`, forward each subscribe/unsubscribe message onto the
     live connection `ws`, and keep `tracked` in sync so a future reconnect
     replays the current accumulated subscription set — not just whatever
@@ -115,7 +115,7 @@ async def _pump_updates(ws, updates: "asyncio.Queue[dict]", tracked: dict[str, d
 async def _connect_and_subscribe(
     url: str,
     tracked: dict[str, dict],
-    subscription_updates: "asyncio.Queue[dict] | None",
+    subscription_updates: asyncio.Queue[dict] | None,
 ):
     """Yield raw decoded JSON messages from one WS connection. Raises on
     connect failure so the caller's reconnect loop can back off and retry.
@@ -160,7 +160,7 @@ async def _connect_and_subscribe(
 async def _reconnecting_stream(
     url: str,
     subscribe_message: dict,
-    subscription_updates: "asyncio.Queue[dict] | None" = None,
+    subscription_updates: asyncio.Queue[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """Wrap _connect_and_subscribe with indefinite reconnect + backoff.
     Runs until the caller stops iterating (e.g. breaks out of the for-loop
@@ -187,7 +187,7 @@ async def _reconnecting_stream(
 async def stream_prices(
     instruments: list[str],
     mode: str = "ltp",
-    subscription_updates: "asyncio.Queue[dict] | None" = None,
+    subscription_updates: asyncio.Queue[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """Stream live prices for ``instruments`` (``"EXCHANGE:security_id"`` strings,
     e.g. ``"NSE:2885"``, or ``"NIDX:token"``/``"BIDX:token"`` for indices).

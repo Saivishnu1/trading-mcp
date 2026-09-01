@@ -12,14 +12,14 @@ MT-9  no conflict (aligned) leaves confidence unaffected by this check
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from src.analysis.regime import generate_trade_setup_tf
 from src.timeframe.multiframe import build_mixed_timeframe_report
 
 
 def _fresh_daily_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _tech(price: float, ema20: float) -> dict:

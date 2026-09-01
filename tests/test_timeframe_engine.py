@@ -9,7 +9,7 @@ TE-6  _analyze_technicals failure (no data) passes through as an error dict unch
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,11 +19,11 @@ from src.timeframe.policy import HoldingHorizon
 
 
 def _fresh_daily_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _fresh_intraday_ts() -> str:
-    return (datetime.now(timezone.utc) - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+    return (datetime.now(UTC) - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class TestTE1DisallowedPairRefusesWithoutFetching:

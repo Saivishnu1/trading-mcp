@@ -7,13 +7,13 @@ it to a user_id without the agent ever seeing the key.
 """
 
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.journal.db import _get_connection
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def generate() -> str:

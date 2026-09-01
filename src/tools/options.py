@@ -1,4 +1,3 @@
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -16,7 +15,7 @@ def register(mcp: FastMCP) -> None:
     # Internal helpers (not MCP tools)
     # ------------------------------------------------------------------
 
-    def _fetch(symbol: str, expiry: Optional[str]) -> tuple[dict, Optional[str]]:
+    def _fetch(symbol: str, expiry: str | None) -> tuple[dict, str | None]:
         svc = get_options_service()
         metadata = svc.get_option_chain(symbol)
         available = metadata.get("records", {}).get("expiryDates", [])
@@ -24,7 +23,7 @@ def register(mcp: FastMCP) -> None:
         chain = svc.get_option_chain(symbol, resolved)
         return chain, resolved
 
-    def _fetch_bse(symbol: str, expiry: Optional[str]) -> tuple[dict, Optional[str]]:
+    def _fetch_bse(symbol: str, expiry: str | None) -> tuple[dict, str | None]:
         svc = get_bse_options_service()
         metadata = svc.get_option_chain(symbol)
         available = metadata.get("records", {}).get("expiryDates", [])
@@ -32,7 +31,7 @@ def register(mcp: FastMCP) -> None:
         chain = svc.get_option_chain(symbol, resolved)
         return chain, resolved
 
-    def _format_chain(chain: dict, symbol: str, expiry: Optional[str], atm_range: int) -> dict:
+    def _format_chain(chain: dict, symbol: str, expiry: str | None, atm_range: int) -> dict:
         records = chain.get("records", {})
         spot = records.get("underlyingValue")
         expiry_dates = records.get("expiryDates", [])
@@ -110,7 +109,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def get_nifty_option_chain(
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
         atm_range: int = 20,
     ) -> dict:
         """Fetch the NIFTY 50 index option chain from NSE.
@@ -129,7 +128,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def get_banknifty_option_chain(
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
         atm_range: int = 20,
     ) -> dict:
         """Fetch the BANK NIFTY index option chain from NSE.
@@ -148,7 +147,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def get_sensex_option_chain(
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
         atm_range: int = 20,
     ) -> dict:
         """Fetch the SENSEX index option chain from BSE.
@@ -167,7 +166,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def get_bankex_option_chain(
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
         atm_range: int = 20,
     ) -> dict:
         """Fetch the BANKEX index option chain from BSE.
@@ -187,7 +186,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def get_equity_option_chain(
         symbol: str,
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
         atm_range: int = 10,
     ) -> dict:
         """Fetch the NSE equity option chain for any F&O stock.
@@ -221,7 +220,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def calculate_pcr(
         symbol: str = "NIFTY",
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
     ) -> dict:
         """Calculate Put-Call Ratio (PCR) from NSE option chain OI and volume.
 
@@ -241,7 +240,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def calculate_max_pain(
         symbol: str = "NIFTY",
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
     ) -> dict:
         """Calculate the max pain strike for an index option expiry.
 
@@ -262,7 +261,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool()
     def get_option_chain_depth(
         symbol: str = "NIFTY",
-        expiry: Optional[str] = None,
+        expiry: str | None = None,
         atm_range: int = 10,
     ) -> dict:
         """Per-strike option chain depth with summary analytics.

@@ -64,9 +64,7 @@ class ContinuationPatterns:
 
             direction = "bullish" if is_bull else "bearish"
             current_close = df["close"].iloc[-1]
-            if is_bull and current_close > cons_high:
-                status = "confirmed"
-            elif is_bear and current_close < cons_low:
+            if (is_bull and current_close > cons_high) or (is_bear and current_close < cons_low):
                 status = "confirmed"
             elif cons_end == n - 1:
                 status = "complete"
@@ -131,9 +129,7 @@ class ContinuationPatterns:
             apex_low = cons_df["low"].iloc[-1]
             current_close = df["close"].iloc[-1]
 
-            if is_bull and current_close > apex_high:
-                status = "confirmed"
-            elif is_bear and current_close < apex_low:
+            if (is_bull and current_close > apex_high) or (is_bear and current_close < apex_low):
                 status = "confirmed"
             elif cons_end == n - 1:
                 status = "complete"

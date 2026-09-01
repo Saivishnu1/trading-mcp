@@ -3,7 +3,7 @@ Phase 3 — Chart Awareness Engine MCP tool.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from mcp.server.fastmcp import FastMCP
 
@@ -22,8 +22,8 @@ def _candle_age_seconds(last_candle_datetime: str | None) -> int | None:
     raw = str(last_candle_datetime).strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
-            dt = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
-            age = (datetime.now(timezone.utc) - dt).total_seconds()
+            dt = datetime.strptime(raw, fmt).replace(tzinfo=UTC)
+            age = (datetime.now(UTC) - dt).total_seconds()
             return max(0, int(age))
         except ValueError:
             continue

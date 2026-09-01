@@ -24,7 +24,7 @@ import logging
 import os
 import secrets
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Correlation ID for the current request/operation, set by src/server.py's
 # ASGI app from an incoming X-Request-ID header (or a fresh one) and read
@@ -54,7 +54,7 @@ class _JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).strftime(
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).strftime(
                 "%Y-%m-%dT%H:%M:%S.%fZ"
             ),
             "level": record.levelname,

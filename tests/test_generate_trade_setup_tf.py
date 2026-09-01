@@ -11,7 +11,7 @@ GTS-7  result carries horizon/interval/role so a caller can audit which timefram
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -20,11 +20,11 @@ from src.analysis.regime import generate_trade_setup, generate_trade_setup_tf
 
 
 def _fresh_daily_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _fresh_intraday_ts(offset_minutes: int = 0) -> str:
-    return (datetime.now(timezone.utc) - timedelta(minutes=offset_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    return (datetime.now(UTC) - timedelta(minutes=offset_minutes)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _tech_bull_daily():

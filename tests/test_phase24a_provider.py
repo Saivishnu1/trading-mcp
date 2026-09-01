@@ -71,12 +71,12 @@ class TestProviderResultContract:
     def test_provider_meta_has_all_required_keys(self):
         result = self._make_result()
         meta = result.as_provider_meta()
-        assert _REQUIRED_PROVIDER_META_KEYS <= meta.keys()
+        assert meta.keys() >= _REQUIRED_PROVIDER_META_KEYS
 
     def test_source_meta_has_all_required_keys(self):
         result = self._make_result()
         meta = result.as_source_meta()
-        assert _REQUIRED_SOURCE_META_KEYS <= meta.keys()
+        assert meta.keys() >= _REQUIRED_SOURCE_META_KEYS
 
     def test_source_meta_provider_matches_provider_name(self):
         result = self._make_result(provider_name="XYZ")
@@ -508,11 +508,11 @@ class TestProviderMetadataSchema:
 
     def test_json_provider_meta_has_all_keys(self):
         result = self._get_json_result()
-        assert _REQUIRED_PROVIDER_META_KEYS <= result.as_provider_meta().keys()
+        assert result.as_provider_meta().keys() >= _REQUIRED_PROVIDER_META_KEYS
 
     def test_emergency_provider_meta_has_all_keys(self):
         result = self._get_emergency_result()
-        assert _REQUIRED_PROVIDER_META_KEYS <= result.as_provider_meta().keys()
+        assert result.as_provider_meta().keys() >= _REQUIRED_PROVIDER_META_KEYS
 
     def test_json_provider_meta_ttl_positive(self):
         result = self._get_json_result()
@@ -582,7 +582,7 @@ class TestCalendarSourceTransparencyV2:
         with patch("src.market.calendar._live_expiries", return_value={}):
             cal = get_market_calendar()
         pm = cal["source_meta"]["provider_meta"]
-        assert _REQUIRED_PROVIDER_META_KEYS <= pm.keys()
+        assert pm.keys() >= _REQUIRED_PROVIDER_META_KEYS
 
     def test_json_provider_reflected_in_source_meta(self):
         from src.market.calendar import get_market_calendar
@@ -663,7 +663,7 @@ class TestProviderHealthStates:
         with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
                    side_effect=FileNotFoundError("no json")):
             h = self._health()
-        assert "reason" in h and h["reason"]
+        assert h.get("reason")
 
     def test_emergency_has_recommended_action(self):
         with patch("src.providers.calendar.json_provider.JSONCalendarProvider._load_raw_json",
@@ -777,14 +777,14 @@ class TestCalendarProviderIntegration:
         from src.market.calendar import get_market_calendar
         with patch("src.market.calendar._live_expiries", return_value={}):
             cal = get_market_calendar()
-        for idx, exp_str in cal["expiries"].items():
+        for _idx, exp_str in cal["expiries"].items():
             assert date.fromisoformat(exp_str)  # must be parseable
 
     def test_days_to_expiry_are_integers(self):
         from src.market.calendar import get_market_calendar
         with patch("src.market.calendar._live_expiries", return_value={}):
             cal = get_market_calendar()
-        for idx, days in cal["days_to_expiry"].items():
+        for _idx, days in cal["days_to_expiry"].items():
             assert isinstance(days, int)
 
 

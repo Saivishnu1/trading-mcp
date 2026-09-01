@@ -24,7 +24,6 @@ import os as _os_mod
 import time as _time_mod
 from datetime import date, datetime, timedelta
 from datetime import time as _time
-from typing import Optional
 
 import pytz as _pytz
 
@@ -145,7 +144,7 @@ def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
     return last_day - timedelta(days=offset)
 
 
-def _nearest_monthly_expiry(index: str, from_date: date) -> Optional[date]:
+def _nearest_monthly_expiry(index: str, from_date: date) -> date | None:
     """Compute the nearest last-weekday-of-month expiry for a monthly-only index."""
     weekday = _EXPIRY_WEEKDAY.get(index.lower())
     if weekday is None:
@@ -166,7 +165,7 @@ def _nearest_monthly_expiry(index: str, from_date: date) -> Optional[date]:
     return candidate
 
 
-def _nearest_expiry_algorithmic(index: str, from_date: date) -> Optional[date]:
+def _nearest_expiry_algorithmic(index: str, from_date: date) -> date | None:
     """Compute the nearest expiry for an index — weekly for NIFTY/SENSEX
     (the two indices retaining a weekly series), monthly (last weekday of
     month) for all other indices."""
@@ -479,7 +478,7 @@ def get_market_calendar() -> dict:
     monthly_expiries: dict[str, str] = {}
     from datetime import datetime as _dt
     for idx in ("nifty", "banknifty", "finnifty", "midcap_nifty", "sensex", "bankex"):
-        exp_date: Optional[date] = None
+        exp_date: date | None = None
         src = "algorithmic"
 
         # Always compute monthly expiry for reference

@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.db.config import get_session
 
@@ -44,7 +44,7 @@ class MonitorBootstrap:
                     "DEFAULT_TELEGRAM_BOT_TOKEN + DEFAULT_TELEGRAM_CHAT_ID) are not all set."
                 )
 
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             user = MonitorUser(
                 id=str(uuid.uuid4()),
                 name=name,
@@ -76,7 +76,7 @@ class MonitorBootstrap:
             return
         session.add(MonitorSettings(
             user_id=user_id,
-            updated_at=datetime.now(timezone.utc).isoformat(),
+            updated_at=datetime.now(UTC).isoformat(),
         ))
 
     async def ensure_default_settings(self, user_id: str) -> None:

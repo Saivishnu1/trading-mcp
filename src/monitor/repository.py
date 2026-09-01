@@ -14,7 +14,7 @@ service actually calls these methods.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytz
@@ -25,7 +25,7 @@ _IST = pytz.timezone("Asia/Kolkata")
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _today_ist() -> str:
@@ -185,7 +185,7 @@ class MonitorRepository:
         from sqlalchemy import select
 
         from src.db.models import MonitorAlert
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
         async with get_session() as session:
             result = await session.execute(
                 select(MonitorAlert)
@@ -363,7 +363,7 @@ class MonitorRepository:
             )
             row = result.scalar_one_or_none()
             now = _now()
-            expires_at = (datetime.now(timezone.utc) + timedelta(hours=ttl_hours)).isoformat()
+            expires_at = (datetime.now(UTC) + timedelta(hours=ttl_hours)).isoformat()
             if row is None:
                 session.add(MonitorInstrumentCache(
                     broker=broker,

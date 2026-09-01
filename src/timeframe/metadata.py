@@ -15,7 +15,7 @@ system-wide retrofit of every indicator-returning function.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Calculation periods hardcoded identically in both backends this engine
 # dispatches to (src/analysis/regime.py's _analyze_technicals and
@@ -55,7 +55,7 @@ def _parse_candle_timestamp(raw: str | None) -> datetime | None:
     raw = str(raw).strip()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
-            return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(raw, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
     return None
@@ -65,7 +65,7 @@ def _age_seconds(candle_timestamp: str | None) -> float | None:
     dt = _parse_candle_timestamp(candle_timestamp)
     if dt is None:
         return None
-    return max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
+    return max(0.0, (datetime.now(UTC) - dt).total_seconds())
 
 
 # Public aliases — src.timeframe.engine (Priority 3, freshness refusal) needs

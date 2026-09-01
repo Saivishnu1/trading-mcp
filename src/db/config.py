@@ -6,8 +6,8 @@ the session should call get_session() as an async context manager.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 # Guard: do not crash on Windows dev where asyncpg is not installed.
 try:

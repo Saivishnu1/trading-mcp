@@ -12,7 +12,7 @@ IM-9  generate_trade_setup_tf's output includes indicator_metadata
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -23,8 +23,8 @@ from src.timeframe.metadata import (
 
 
 def _fresh_daily_date() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).date().isoformat()
+    from datetime import datetime
+    return datetime.now(UTC).date().isoformat()
 
 
 def _iso(dt: datetime) -> str:
@@ -83,17 +83,17 @@ class TestIM4MacdCalculationDetail:
 
 class TestIM5FreshnessClassification:
     def test_live_when_under_60_seconds(self):
-        ts = _iso(datetime.now(timezone.utc) - timedelta(seconds=10))
+        ts = _iso(datetime.now(UTC) - timedelta(seconds=10))
         entry = build_indicator_metadata("rsi", 50.0, timeframe="5minute", candle_timestamp=ts, source="yahoo")
         assert entry["freshness"] == "LIVE"
 
     def test_recent_when_within_intraday_threshold(self):
-        ts = _iso(datetime.now(timezone.utc) - timedelta(seconds=120))
+        ts = _iso(datetime.now(UTC) - timedelta(seconds=120))
         entry = build_indicator_metadata("rsi", 50.0, timeframe="5minute", candle_timestamp=ts, source="yahoo")
         assert entry["freshness"] == "RECENT"
 
     def test_stale_when_beyond_intraday_threshold(self):
-        ts = _iso(datetime.now(timezone.utc) - timedelta(seconds=600))
+        ts = _iso(datetime.now(UTC) - timedelta(seconds=600))
         entry = build_indicator_metadata("rsi", 50.0, timeframe="5minute", candle_timestamp=ts, source="yahoo")
         assert entry["freshness"] == "STALE"
 
@@ -110,12 +110,12 @@ class TestIM6IntradayVsEodStaleThreshold:
     def test_daily_candle_2_hours_old_is_not_stale(self):
         # 2 hours is normal mid-session for a daily candle; would be very
         # stale for a 5-minute one.
-        ts = _iso(datetime.now(timezone.utc) - timedelta(hours=2))
+        ts = _iso(datetime.now(UTC) - timedelta(hours=2))
         entry = build_indicator_metadata("rsi", 50.0, timeframe="day", candle_timestamp=ts, source="yahoo")
         assert entry["freshness"] != "STALE"
 
     def test_5minute_candle_2_hours_old_is_stale(self):
-        ts = _iso(datetime.now(timezone.utc) - timedelta(hours=2))
+        ts = _iso(datetime.now(UTC) - timedelta(hours=2))
         entry = build_indicator_metadata("rsi", 50.0, timeframe="5minute", candle_timestamp=ts, source="yahoo")
         assert entry["freshness"] == "STALE"
 

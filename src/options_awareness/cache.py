@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 _IST = timezone(timedelta(hours=5, minutes=30))
@@ -59,7 +59,7 @@ def read_cache(symbol: str, expiry: str | None) -> dict | None:
     try:
         entry = json.loads(path.read_text(encoding="utf-8"))
         cached_at = datetime.fromisoformat(entry["cached_at"])
-        age = (datetime.now(timezone.utc) - cached_at).total_seconds()
+        age = (datetime.now(UTC) - cached_at).total_seconds()
         if age <= _ttl():
             return entry
     except Exception:
@@ -70,7 +70,7 @@ def read_cache(symbol: str, expiry: str | None) -> dict | None:
 def write_cache(symbol: str, expiry: str | None, chain: dict, resolved: str | None) -> None:
     """Persist chain to cache file. Silent on failure."""
     path = _cache_path(symbol, expiry)
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     now_ist = now_utc.astimezone(_IST)
     entry = {
         "chain":         chain,

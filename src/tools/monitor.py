@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from mcp.server.fastmcp import FastMCP
 
@@ -15,7 +15,7 @@ def _staleness(last_heartbeat: str | None) -> tuple[bool, str]:
 
     if last_heartbeat is None:
         return False, "NEVER_STARTED"
-    age_seconds = (datetime.now(timezone.utc) - datetime.fromisoformat(last_heartbeat)).total_seconds()
+    age_seconds = (datetime.now(UTC) - datetime.fromisoformat(last_heartbeat)).total_seconds()
     if age_seconds > MarketMonitor.STALE_AFTER_SECONDS:
         return False, "STALE"
     return True, "ACTIVE"
@@ -105,7 +105,7 @@ def register(mcp: FastMCP) -> None:
         checked_at = (session_state or {}).get("live_price_checked_at")
         age_seconds = None
         if checked_at:
-            age_seconds = (datetime.now(timezone.utc) - datetime.fromisoformat(checked_at)).total_seconds()
+            age_seconds = (datetime.now(UTC) - datetime.fromisoformat(checked_at)).total_seconds()
         live_price_cache = {
             "checked_at": checked_at,
             "age_seconds": age_seconds,
@@ -274,7 +274,7 @@ def register(mcp: FastMCP) -> None:
             updates["risk_off_count_threshold"] = risk_off_count_threshold
 
         if updates:
-            from datetime import datetime, timezone
+            from datetime import datetime
             async with get_session() as session:
                 result = await session.execute(
                     select(MonitorSettings).where(MonitorSettings.user_id == user_id)
@@ -283,7 +283,7 @@ def register(mcp: FastMCP) -> None:
                 if row is not None:
                     for k, v in updates.items():
                         setattr(row, k, v)
-                    row.updated_at = datetime.now(timezone.utc).isoformat()
+                    row.updated_at = datetime.now(UTC).isoformat()
 
         settings = await repo.get_user_settings(user_id)
         return _meta.wrap({"settings": settings, "updated": list(updates.keys())}, _meta.build_meta(

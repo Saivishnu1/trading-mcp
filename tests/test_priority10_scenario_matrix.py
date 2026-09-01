@@ -24,7 +24,7 @@ check that would duplicate src/market/calendar.py's own logic.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import patch
 
 from src.analysis.regime import generate_trade_setup_tf
@@ -55,7 +55,7 @@ class TestP10HolidayScenario:
         # A multi-day holiday closure (e.g. a festival block) leaving the
         # most recent daily candle beyond the 5-calendar-day EOD staleness
         # threshold (src.timeframe.metadata's _EOD_STALE_SECONDS).
-        stale_date = (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat()
+        stale_date = (datetime.now(UTC).date() - timedelta(days=10)).isoformat()
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",
                             lambda symbol, lookback_days=150, interval="daily": _daily_technicals(stale_date))
         result = generate_trade_setup_tf("NIFTY", "SWING", "day")
@@ -71,7 +71,7 @@ class TestP10MarketClosedScenario:
     now" is not itself a staleness problem for a daily-EXECUTION horizon."""
 
     def test_after_hours_same_day_candle_not_refused(self, monkeypatch):
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",
                             lambda symbol, lookback_days=150, interval="daily": _daily_technicals(today))
         result = generate_trade_setup_tf("NIFTY", "SWING", "day")
@@ -82,7 +82,7 @@ class TestP10MarketClosedScenario:
         # current session (e.g. market closed hours ago, last tick is old)
         # must be refused for the EXECUTION-role intraday interval.
         stale_candles = [
-            {"datetime": (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
+            {"datetime": (datetime.now(UTC) - timedelta(hours=5)).strftime("%Y-%m-%d %H:%M:%S"),
              "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 1000}
         ]
         with patch("src.chart_awareness.engine.fetch_candles", return_value=(stale_candles, "yahoo")):
@@ -139,7 +139,7 @@ class TestP10IncorrectTimestamps:
         # A corrupt feed reporting a candle "from the future" — age would be
         # negative; must clamp to non-negative, not crash or refuse
         # spuriously due to a negative-duration computation.
-        future_date = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        future_date = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",
                             lambda symbol, lookback_days=150, interval="daily": _daily_technicals(future_date))
         result = generate_trade_setup_tf("NIFTY", "SWING", "day")

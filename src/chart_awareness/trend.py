@@ -123,9 +123,7 @@ def _trend_duration(closes: list[float], direction: str) -> int:
     # Count consecutive bars where close > prev close (uptrend) or < prev (downtrend)
     count = 0
     for i in range(len(closes) - 1, 0, -1):
-        if direction == "uptrend" and closes[i] >= closes[i - 1]:
-            count += 1
-        elif direction == "downtrend" and closes[i] <= closes[i - 1]:
+        if (direction == "uptrend" and closes[i] >= closes[i - 1]) or (direction == "downtrend" and closes[i] <= closes[i - 1]):
             count += 1
         else:
             break

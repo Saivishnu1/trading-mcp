@@ -9,7 +9,7 @@ DB, or WhatsApp calls.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -222,7 +222,7 @@ class TestOiWallBreak:
 
     def setup_method(self):
         self.mi = MarketIntelligence()
-        self.t0 = datetime(2026, 7, 13, 10, 0, 0, tzinfo=timezone.utc)
+        self.t0 = datetime(2026, 7, 13, 10, 0, 0, tzinfo=UTC)
 
     def test_single_touch_logs_raw_event_but_does_not_confirm(self):
         alerts, holds = self.mi.check_oi_walls(
@@ -495,7 +495,7 @@ class TestSchedulerCheckMarketConditions:
             "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
         }
         # Alert already sent 10 seconds ago — well within any cooldown window.
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(seconds=10)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(seconds=10)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {}, "vix": 16.0,
             "nifty_spot": 24650, "sensex_spot": 80000,
@@ -541,7 +541,7 @@ class TestSchedulerCheckMarketConditions:
         }
         # Cooldown (900s = 15min) has cleared, but only 20 min have passed —
         # still inside the 30-minute dedup window.
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=20)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=20)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {}, "vix": 0.0,
             "nifty_spot": 24400, "sensex_spot": 80000,
@@ -561,7 +561,7 @@ class TestSchedulerCheckMarketConditions:
             "open_call_wall": None, "open_put_wall": None, "open_pcr": 1.0,
             "last_fired_pcr": 1.32,
         }
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=20)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=20)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {}, "vix": 0.0,
             "nifty_spot": 24400, "sensex_spot": 80000,
@@ -590,7 +590,7 @@ class TestSchedulerCheckMarketConditions:
         }
         # Cooldown (1800s=30min) has cleared (31 min passed) — under the old
         # code this alone was enough to re-fire.
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=31)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {"assets": {
                 "crude_oil": {"change_pct": 3.1},  # 0.1 delta — below the 0.5 threshold
@@ -613,7 +613,7 @@ class TestSchedulerCheckMarketConditions:
             "open_call_wall": None, "open_put_wall": None, "open_pcr": None,
             "last_fired_crude_pct": 3.0,
         }
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=31)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {"assets": {
                 "crude_oil": {"change_pct": 4.0},  # 1.0 delta — past the 0.5 threshold
@@ -641,7 +641,7 @@ class TestSchedulerCheckMarketConditions:
             "last_fired_pinning_distance": 5.0,
             "last_fired_pinning_max_pain": 24200.0,
         }
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=31)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {}, "vix": 0.0,
             "nifty_spot": 24206, "sensex_spot": 80000,  # distance 6 — same max_pain, <15pt move
@@ -666,7 +666,7 @@ class TestSchedulerCheckMarketConditions:
             "last_fired_pinning_distance": 5.0,
             "last_fired_pinning_max_pain": 24200.0,
         }
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=31)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {}, "vix": 0.0,
             "nifty_spot": 24255, "sensex_spot": 80000,  # distance ~5 again, but...
@@ -688,7 +688,7 @@ class TestSchedulerCheckMarketConditions:
             "last_fired_pinning_distance": 5.0,
             "last_fired_pinning_max_pain": 24200.0,
         }
-        self.monitor.repo.get_last_alert_time.return_value = datetime.now(timezone.utc) - timedelta(minutes=31)
+        self.monitor.repo.get_last_alert_time.return_value = datetime.now(UTC) - timedelta(minutes=31)
         self.monitor._get_market_intelligence_data = AsyncMock(return_value={
             "global_pulse": {}, "vix": 0.0,
             "nifty_spot": 24230, "sensex_spot": 80000,  # distance 30 — >15pt move, same max_pain

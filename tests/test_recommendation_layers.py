@@ -12,7 +12,7 @@ RL-9  both layers can be requested together independently
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import patch
 
 from src.analysis.regime import generate_trade_setup_tf
@@ -20,7 +20,7 @@ from src.timeframe.layers import attach_options_layer, attach_risk_layer
 
 
 def _fresh_daily_date() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _fake_tech_bull():

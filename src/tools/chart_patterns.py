@@ -127,7 +127,7 @@ def register(mcp: FastMCP) -> None:
 
 def _build_observations(symbol: str, patterns: list[dict], min_bars: int) -> list[str]:
     if not patterns:
-        return [f"No chart patterns detected in the lookback window"]
+        return ["No chart patterns detected in the lookback window"]
 
     obs = []
     for p in patterns:

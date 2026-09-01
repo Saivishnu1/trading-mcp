@@ -15,7 +15,7 @@ FR-7  generate_trade_setup_tf propagates the engine's stale refusal unchanged
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -26,7 +26,7 @@ from src.timeframe.policy import HoldingHorizon
 
 
 def _daily_technicals(days_old: int) -> dict:
-    stale_date = (datetime.now(timezone.utc).date() - timedelta(days=days_old)).isoformat()
+    stale_date = (datetime.now(UTC).date() - timedelta(days=days_old)).isoformat()
     return {
         "symbol": "NIFTY", "last_close": 100.0, "candles_used": 150,
         "data_source": "yfinance_eod_adjusted", "last_candle_date": stale_date,
@@ -38,7 +38,7 @@ def _daily_technicals(days_old: int) -> dict:
 
 
 def _intraday_candles(minutes_old: int, count: int = 30) -> list[dict]:
-    base = datetime.now(timezone.utc) - timedelta(minutes=minutes_old)
+    base = datetime.now(UTC) - timedelta(minutes=minutes_old)
     return [
         {"datetime": (base - timedelta(minutes=count - i)).strftime("%Y-%m-%d %H:%M:%S"),
          "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 1000}
@@ -119,7 +119,7 @@ class TestFR5ThresholdsScaleByInterval:
 
     def test_2_hour_old_daily_candle_is_not_stale(self, monkeypatch):
         # 2 hours is nothing for an EOD candle (5-day threshold).
-        stale_ts = (datetime.now(timezone.utc) - timedelta(hours=2))
+        stale_ts = (datetime.now(UTC) - timedelta(hours=2))
         tech = _daily_technicals(0)
         tech["last_candle_date"] = stale_ts.date().isoformat()
         monkeypatch.setattr("src.analysis.regime._analyze_technicals",

@@ -14,7 +14,6 @@ Results are cached for 60 seconds. No authentication required.
 import logging
 import threading
 import time
-from typing import Optional
 
 import httpx
 
@@ -46,7 +45,7 @@ class OptionsService:
             follow_redirects=True,
             timeout=20.0,
         )
-        self._cache: dict[tuple[str, Optional[str]], tuple[dict, float]] = {}
+        self._cache: dict[tuple[str, str | None], tuple[dict, float]] = {}
         self._lock = threading.Lock()
         self._cookies_ready = False
         self._nse_live: object | None = None  # jugaad_data.nse.NSELive, imported lazily; False sentinel = tried and failed
@@ -75,7 +74,7 @@ class OptionsService:
             return symbol.split(":", 1)[1]
         return symbol
 
-    def _fetch_via_jugaad(self, symbol: str, expiry: Optional[str] = None) -> dict | None:
+    def _fetch_via_jugaad(self, symbol: str, expiry: str | None = None) -> dict | None:
         nse = self._get_nse_live()
         if nse is None:
             return None
@@ -109,7 +108,7 @@ class OptionsService:
         except Exception as exc:
             logger.warning("NSE cookie prime failed: %s", exc)
 
-    def _fetch_via_httpx(self, symbol: str, expiry: Optional[str] = None) -> dict | None:
+    def _fetch_via_httpx(self, symbol: str, expiry: str | None = None) -> dict | None:
         self._prime_cookies()
         try:
             option_type = "Indices" if self._is_index_symbol(symbol) else "Equity"
@@ -153,7 +152,7 @@ class OptionsService:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_option_chain(self, symbol: str, expiry: Optional[str] = None) -> dict:
+    def get_option_chain(self, symbol: str, expiry: str | None = None) -> dict:
         """Return the normalised NSE option chain for *symbol*.
 
         Tries jugaad-data NSELive first, then the direct v3 endpoint.

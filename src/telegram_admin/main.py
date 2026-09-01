@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 from telegram import BotCommand
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
@@ -37,6 +36,12 @@ from src.telegram_admin.handlers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Holds a strong reference to the fire-and-forget instrument-cache warm-up
+# task below -- asyncio.create_task() only holds a WEAK reference
+# internally, so with nothing else referencing it, the task can be
+# garbage-collected mid-download before the cache warm-up completes.
+_background_tasks: set[asyncio.Task] = set()
 
 # Shown in Telegram's native "/" autocomplete menu — deliberately just the
 # daily-trading commands + /admin + /help/cancel, NOT all 21 commands, so
@@ -88,7 +93,9 @@ async def _warm_instrument_cache() -> None:
 async def _post_init(application: Application) -> None:
     await application.bot.set_my_commands(_BOT_COMMANDS)
     # Fire-and-forget so bot startup isn't blocked by the instrument download.
-    asyncio.create_task(_warm_instrument_cache())
+    task = asyncio.create_task(_warm_instrument_cache())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 def main() -> None:

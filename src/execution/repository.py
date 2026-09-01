@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from src.db.config import get_session
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _row_to_dict(row: Any) -> dict:
@@ -50,8 +50,6 @@ class ExecutionRepository:
             result:  the broker place_order() response dict.
         """
         try:
-            from sqlalchemy.exc import SQLAlchemyError  # noqa: F401 (import guard)
-
             from src.db.models import OrderLog
         except ImportError:
             logger.warning("save_order skipped: sqlalchemy/models unavailable (dev env)")

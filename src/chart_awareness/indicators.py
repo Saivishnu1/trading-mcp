@@ -82,7 +82,7 @@ def compute(candles: list[dict]) -> dict:
 def _empty() -> dict:
     keys = ["ema20", "ema50", "ema200", "rsi", "macd", "macd_signal",
             "macd_histogram", "adx", "atr", "bb_upper", "bb_mid", "bb_lower", "vwap"]
-    return {k: None for k in keys}
+    return dict.fromkeys(keys)
 
 
 def _bollinger(closes: list[float], period: int = 20, std_mult: float = 2.0):

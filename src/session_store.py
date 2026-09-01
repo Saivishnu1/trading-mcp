@@ -5,13 +5,13 @@ Replaces the old .session.json file approach. Each session is keyed by
 user_id so the table is ready for multi-user support when needed.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.journal.db import _get_connection
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def save(user_id: str, enctoken: str | None) -> None:

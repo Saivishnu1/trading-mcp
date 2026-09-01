@@ -31,12 +31,11 @@ class TestTieredIndicatorSource:
         zerodha_candles = [
             {"datetime": "2026-07-10", "open": 24100.0, "high": 24250.0, "low": 24050.0, "close": 24200.0, "volume": 0},
         ]
-        with patch("src.tools.technicals.get_market") as mock_get_market:
-            with patch(
-                "src.chart_awareness.data_fetcher.fetch_candles",
-                new=AsyncMock(return_value=(zerodha_candles, "zerodha")),
-            ):
-                candles, source = technicals._load_candles_with_source("NIFTY", 60)
+        with patch("src.tools.technicals.get_market") as mock_get_market, patch(
+            "src.chart_awareness.data_fetcher.fetch_candles",
+            new=AsyncMock(return_value=(zerodha_candles, "zerodha")),
+        ):
+            candles, source = technicals._load_candles_with_source("NIFTY", 60)
 
         assert source == "zerodha"
         assert candles[0]["close"] == 24200.0
