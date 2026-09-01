@@ -1,808 +1,289 @@
 # Zerodha Personal MCP Server
 
-A remote [Model Context Protocol](https://modelcontextprotocol.io) server for your personal Zerodha account.
-Gives Claude (or any MCP client) live access to your portfolio, NSE market data, technical analysis,
-trade planning, options analytics, journal, and trading intelligence —
-**no paid Kite Connect subscription required**.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP%20%2B%20SSE-6b5bd6)](https://modelcontextprotocol.io)
 
-> **69 tools across 18 domains.** All responses are wrapped with a trust metadata envelope
-> that labels data type (FACT / INDICATOR / INTERPRETATION), validation status, data quality,
-> and market hours. Analysis tools embed Phase 20A and Phase 21 research findings directly
-> in their docstrings so Claude cannot mistake structural descriptors for directional signals.
+A remote [Model Context Protocol](https://modelcontextprotocol.io) server for a personal Zerodha
+trading account. Gives Claude (or any MCP client) live access to portfolio, NSE market data,
+technical analysis, trade planning, options analytics, a trade journal, and a web UI for
+order entry and live positions — **no paid Kite Connect subscription required**.
 
----
-
-## Table of contents
-
-1. [How it works](#how-it-works)
-2. [Prerequisites](#prerequisites)
-3. [Getting your credentials](#getting-your-credentials)
-   - [ZERODHA\_USER\_ID](#zerodha_user_id)
-   - [ZERODHA\_PASSWORD](#zerodha_password)
-   - [ZERODHA\_TOTP\_SECRET](#zerodha_totp_secret)
-4. [Setup](#setup)
-   - [Clone and configure](#1-clone-and-configure)
-   - [Run with Docker](#2-run-with-docker)
-   - [Run locally with uv](#run-locally-with-uv-no-docker)
-5. [First login](#first-login)
-6. [Add to your MCP client](#add-to-your-mcp-client)
-7. [MCP tools reference](#mcp-tools-reference)
-8. [Tool response format](#tool-response-format)
-9. [Environment variables](#environment-variables)
-10. [Session lifetime and daily re-login](#session-lifetime-and-daily-re-login)
-11. [Switching broker backends](#switching-broker-backends)
-12. [Deploying remotely](#deploying-remotely)
-13. [Research findings](#research-findings)
-14. [Limitations](#limitations)
+> ### ⚠️ Real money. Read this first.
+>
+> This connects to a **live Zerodha brokerage account** and can **place, modify, and cancel
+> real orders with real money**. It authenticates by using the same session Zerodha's own web
+> app (`kite.zerodha.com`) uses, rather than the official paid Kite Connect API — this is an
+> **unofficial integration** that may break, or fall out of step with Zerodha's terms, if they
+> change their web client.
+>
+> Nothing this server produces is financial advice. Analysis tools return *structural
+> descriptors* (e.g. "price is above its 20-day average"), not directional predictions — see
+> [Research findings](#research-findings) below, including a negative result from testing the
+> server's own regime-detection logic.
+>
+> Provided **as-is, with no warranty** (see [LICENSE](LICENSE)). You are solely responsible for
+> every order placed through it and for any resulting gain or loss. Try it against a small
+> position size or a fresh account first.
 
 ---
 
-## How it works
+## Why it exists
+
+Kite Connect, Zerodha's official trading API, costs ₹2,000/month. This project instead
+authenticates the same way Zerodha's own web app does, and layers a full MCP tool surface —
+plus a self-hosted web UI — on top, for free.
 
 | Layer | What runs | Data source |
-|-------|-----------|-------------|
-| Auth + portfolio | Direct HTTPS to `kite.zerodha.com` using `enctoken` | Your personal Zerodha account |
-| Live NSE quotes | `jugaad-data` NSELive | NSE public market feed (free) |
+|---|---|---|
+| Auth + portfolio | Direct HTTPS to `kite.zerodha.com`, `jugaad-trader` fallback | Your personal Zerodha account |
+| Live NSE quotes, option chains | `jugaad-data` NSELive | NSE public market feed (free) |
 | Historical OHLCV | Yahoo Finance (`yfinance`) | Free, no account needed |
 | Instrument search | NSE public `EQUITY_L.csv` | Free |
-| Options chain | `jugaad-data` NSELive | NSE public options data |
-| Broker fallback | `jugaad-trader` (opt-in via env var) | Reverse-engineered Kite web client |
-
-The server exposes all functionality as MCP tools over **Streamable HTTP** (`/mcp`) and **SSE** (`/sse`),
-so any MCP-compatible client (Claude Desktop, Claude Code, claude.ai web connector, etc.) can connect.
 
 ---
 
-## Prerequisites
+## Architecture
 
-- A **Zerodha trading account** (free, at [zerodha.com](https://zerodha.com))
-- **2-Factor Authentication (TOTP)** enabled on your Zerodha account
-- Docker + Docker Compose **or** Python 3.12+ with [uv](https://github.com/astral-sh/uv)
+```mermaid
+flowchart LR
+    subgraph Clients
+        A1[claude.ai / Claude Code / Claude Desktop]
+        A2[Any MCP client]
+        A3[Browser]
+    end
 
-> **Using the hosted Railway deployment?** No env vars, Docker, or credentials setup needed.
-> Visit `https://zerodha-mcp-production.up.railway.app`, log in through the browser UI,
-> and connect your AI client. Skip to [Add to your MCP client](#add-to-your-mcp-client).
+    subgraph "Oracle VM (nginx + systemd)"
+        N[nginx]
+        subgraph "ASGI app (Starlette/uvicorn)"
+            O[OAuth guard\nRFC 7591 + PKCE]
+            T[78 MCP tools]
+            UI[Web UI\n/, /positions, /trade]
+            WS[/ws/prices]
+        end
+        MON[zerodha-monitor\nalerts · trailing SL]
+        TG[telegram-admin]
+    end
 
----
+    subgraph Backends
+        BR[Zerodha session\n+ jugaad-trader fallback]
+        MD[NSE / yfinance]
+        PG[(PostgreSQL 17)]
+    end
 
-## Getting your credentials
-
-You need three values from your Zerodha account. Here is exactly where to find each one.
-
----
-
-### `ZERODHA_USER_ID`
-
-This is your **Zerodha Client ID** — a 6-character alphanumeric code printed on all Zerodha
-communications (e.g. `ZK1234`, `AB5678`).
-
-**Where to find it:**
-
-1. Open [kite.zerodha.com](https://kite.zerodha.com) in your browser and log in.
-2. Click your **name / avatar** in the top-right corner.
-3. Select **My Profile**.
-4. Your Client ID appears at the top of the profile page under your name.
-
-Alternatively, check any email from Zerodha — it appears in the subject line and footer of every
-account-related email as *"Client ID: ZK1234"*.
-
-```env
-ZERODHA_USER_ID=ZK1234
+    A1 -- "/mcp, /sse" --> N
+    A2 -- "/mcp, /sse" --> N
+    A3 -- HTTPS --> N
+    N --> O --> T
+    N --> UI
+    N --> WS
+    T --> BR
+    T --> MD
+    T --> PG
+    MON --> PG
+    MON --> BR
+    TG --> PG
 ```
 
----
-
-### `ZERODHA_PASSWORD`
-
-This is the **password you use to log in to Kite** (the Zerodha trading platform).
-
-It is the same password you type on the [kite.zerodha.com](https://kite.zerodha.com) login page —
-**not** your Zerodha account PIN, not your UPI PIN, not your bank password.
-
-> **Tip:** If you have forgotten it, reset it at  
-> `Console → My Account → Password & Security → Reset Login Password`  
-> ([console.zerodha.com](https://console.zerodha.com))
-
-```env
-ZERODHA_PASSWORD=your_kite_login_password
-```
+Full auth-flow detail (OAuth discovery, PKCE, the three identity states) and the module map
+are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
-### `ZERODHA_TOTP_SECRET`
+## What makes it different
 
-This is the **base32 secret key** behind your Zerodha TOTP authenticator. It is the raw key that
-Google Authenticator / Authy encodes as a QR code. Providing this lets the server generate the
-6-digit code automatically — useful for unattended/remote deployments.
+**Trust metadata envelope.** Every tool response is wrapped with a type label
+(`FACT` / `INDICATOR` / `INTERPRETATION`), a validation status, a data-quality flag, and
+market-hours state — so a model consuming these tools can't mistake a structural descriptor
+("price is above its 20-day average") for a directional signal. See
+[`src/meta.py`](src/meta.py) and [Tool response format](#tool-response-format).
 
-> If `ZERODHA_TOTP_SECRET` is not set, you will be prompted for the 6-digit code on the
-> `/login` browser page each time you log in.
+**Real OAuth 2.0, not an API-key shim.** RFC 7591 dynamic client registration, PKCE, and the
+`/.well-known/oauth-authorization-server` / `/.well-known/oauth-protected-resource` discovery
+endpoints, so `claude.ai` and other OAuth-aware MCP clients connect with a login popup, not a
+pasted token. Three identity states — authenticated, guest, anonymous — with guest queries
+row-level isolated at the database layer (`_user_filter()` returns `WHERE 1=0` for guests, not
+an application-level check that can be bypassed).
 
-#### How to get your TOTP secret (step by step)
+**A negative result, published rather than buried.** A walk-forward audit
+([`scripts/regime_audit.py`](scripts/regime_audit.py)) tested the server's own EMA20/EMA50 +
+ADX regime-detection logic against 2022–2025 NSE data and found it has **no demonstrated
+directional edge** — see [Research findings](#research-findings). That finding is embedded
+directly in the relevant tool docstrings, so the model using them is told the limitation at
+the point of use, not left to assume a working signal exists.
 
-Zerodha shows you this secret **only once** — when you first set up TOTP.
-If you have already set up TOTP and did not save the secret, you must reset 2FA to get a new one.
-
-**Option A — Setting up TOTP for the first time**
-
-1. Go to [console.zerodha.com](https://console.zerodha.com) and log in.
-2. Navigate to **My Account → Password & Security**.
-3. Under the **Two-factor authentication** section, click **Set up TOTP**.
-4. Zerodha displays a **QR code** and, below it, a text string that says something like:
-   ```
-   Can't scan? Enter this key manually: JBSWY3DPEHPK3PXP
-   ```
-   That `JBSWY3DPEHPK3PXP` is your **TOTP secret**. Copy it exactly.
-5. Scan the QR code with Google Authenticator / Authy to register it.
-6. Enter the 6-digit code from your authenticator app to confirm setup.
-7. Paste the secret into your `.env`:
-   ```env
-   ZERODHA_TOTP_SECRET=JBSWY3DPEHPK3PXP
-   ```
-
-**Option B — You already have TOTP set up but never saved the secret**
-
-You need to reset 2FA to get a new secret:
-
-1. Go to [console.zerodha.com](https://console.zerodha.com) → **My Account → Password & Security**.
-2. Under **Two-factor authentication**, click **Reset TOTP**.
-3. Zerodha will send a verification to your registered email/mobile.
-4. After verifying, a new QR code and secret are shown — follow steps 4–7 from Option A above.
-
-> **Security note:** Treat the TOTP secret like a password. Anyone with it can generate valid
-> one-time codes for your account. Store it only in your `.env` file (which is git-ignored) or
-> in your hosting platform's secret manager.
-
-```env
-ZERODHA_TOTP_SECRET=YOUR_BASE32_SECRET_HERE
-```
+**A production deployment that has actually run.** Oracle Cloud VM, PostgreSQL 17, three
+systemd units (`zerodha-mcp`, `zerodha-monitor`, `telegram-admin`), Alembic migrations gated
+before service restart, an idempotent nginx WebSocket config patcher, a daily backup timer,
+and a one-command rollback script. See [`infra/`](infra/) and
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — the latter's comments record
+two real production incidents and how the pipeline was hardened against each.
 
 ---
 
-## Setup
-
-### 1. Clone and configure
+## Quick start
 
 ```bash
 git clone https://github.com/Saivishnu1/trading-mcp.git
 cd trading-mcp
-cp .env.example .env
-```
+cp .env.example .env      # fill in ZERODHA_USER_ID / PASSWORD / TOTP_SECRET
 
-Open `.env` and fill in your credentials:
-
-```env
-ZERODHA_USER_ID=ZK1234
-ZERODHA_PASSWORD=your_kite_password
-ZERODHA_TOTP_SECRET=YOUR_BASE32_TOTP_SECRET
-
-BROKER_BACKEND=zerodha_web
-SESSION_FILE=.session.json
-HOST=0.0.0.0
-PORT=8000
-LOG_LEVEL=INFO
-```
-
----
-
-### 2. Run with Docker
-
-```bash
-docker compose up -d
-```
-
-The server starts on port `8000`. Check it is running:
-
-```bash
-docker compose logs -f
-```
-
-You should see:
-
-```
-INFO:     Started server process
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
-**Stop the server:**
-
-```bash
-docker compose down
-```
-
----
-
-### Run locally with uv (no Docker)
-
-```bash
-# Install uv if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies
 uv sync
-
-# Run
-uv run zerodha-mcp
+uv run zerodha-mcp        # -> http://localhost:8000
 ```
+
+Or with Docker: `docker compose up -d`.
+
+Open `http://localhost:8000/login` to authenticate (credentials are entered directly into the
+server's own login page — see [Connecting an MCP client](#connecting-an-mcp-client) for why
+that matters), or click **Continue as guest** for immediate access to the 50+ tools that don't
+need a Zerodha session at all.
+
+Full credential walkthrough (where to find your Client ID, password, and TOTP secret):
+[`docs/CREDENTIALS.md`](docs/CREDENTIALS.md).
 
 ---
 
-## Connecting — guest vs full login
+## Connecting an MCP client
 
-The server has two access tiers:
+The server has **two access tiers** — market data, technicals, options, and dashboards work
+for anyone as a guest; portfolio, orders, journal, and recommendations require a full Zerodha
+login. Credentials never pass through the agent: the `zerodha_login()` tool returns a URL, you
+authenticate directly on the server's own page, and only a Bearer token comes back into the
+client.
 
-| Tier | Who | How | Tools available |
-|------|-----|-----|-----------------|
-| **Guest** | Anyone | Click "Continue as guest" on the OAuth login page | 50+ free tools: market data, options, technicals, dashboards, analysis |
-| **Full login** | Account owner | Enter Zerodha credentials on the OAuth login page | All 69 tools including portfolio, journal, recommendations |
+**claude.ai** — Settings → Integrations → Add MCP Server → paste
+`https://140-245-202-88.sslip.io/mcp`. A login popup appears automatically (OAuth 2.0 + PKCE);
+choose "Continue as guest" or sign in for full access.
 
-**Market data tools work immediately — no login required.**
-Portfolio tools (`get_holdings`, `get_positions`, `get_margins`), journal, and recommendations
-require a full Zerodha login.
-
-> **Security design:** Credentials never pass through the agent. The `zerodha_login()` MCP tool
-> takes no parameters — it returns a URL. You open the URL in your browser and enter credentials
-> directly into the server's login page. Nothing sensitive appears in agent context, tool logs,
-> or MCP traffic.
-
-### How the login page works
-
-When you (or an MCP client) connect to `/mcp` or `/sse` without a token, the server returns
-a `401` response with `WWW-Authenticate: Bearer resource_metadata=...`. MCP clients that
-support OAuth (claude.ai, Claude Desktop) automatically open a login popup.
-
-The `/oauth/authorize` page shows:
-- A **Zerodha login form** (Client ID + password + TOTP) for full access
-- A **"Continue as guest"** button at the bottom for immediate free-tools access
-
-Clicking "Continue as guest" issues an OAuth Bearer token instantly — no Zerodha credentials
-needed. Guest tokens give access to all public market data tools; personal tools return
-`"not_authenticated"` for guest users.
-
-### Option A — Via agent (recommended for full login)
-
-Ask any connected agent:
-
-> *"Log in to Zerodha"*
-
-The agent calls `zerodha_login()` and returns a login URL:
-
-```json
-{
-  "authenticated": false,
-  "login_url": "https://zerodha-mcp-production.up.railway.app/login",
-  "message": "Open login_url in your browser. Credentials are entered directly — they never pass through the agent."
-}
-```
-
-Open that URL in your browser, fill in your Client ID, Kite password, and current TOTP code,
-and click **Log in securely**. The server authenticates with Zerodha and saves the session.
-Your API key is shown on the success page — copy it for use with non-OAuth clients (Claude Code,
-Claude Desktop with Bearer header, Cursor, Postman).
-
-### Option B — Open the login page directly
-
-Navigate to the login page in your browser without involving an agent:
-
-- **Local:** `http://localhost:8000/login`
-- **Railway:** `https://zerodha-mcp-production.up.railway.app/login`
-
-The same page with the Zerodha form and "Continue as guest" button is shown.
-
-### Option C — Auto-login on server startup
-
-If `ZERODHA_USER_ID`, `ZERODHA_PASSWORD`, and `ZERODHA_TOTP_SECRET` are all set in `.env`
-(or Railway environment variables), the server logs in automatically on startup. This is the
-recommended approach for Railway deployments — credentials stay in Railway's secret manager,
-never in agent context.
-
-### Check session status
-
-```
-check_auth_status()
-```
-
-Returns `authenticated: true` only for a full Zerodha login. Guest tokens return `authenticated: false`.
-
-```json
-{
-  "authenticated": true,
-  "backend": "ZerodhaWebClient"
-}
-```
-
-Or hit the JSON status endpoint directly: `GET /auth/status`
-
----
-
-## Add to your MCP client
-
-The server exposes two transports — use whichever your client supports:
-
-| Transport | URL | Use for |
-|-----------|-----|---------|
-| Streamable HTTP | `/mcp` | claude.ai, Claude Code, Cursor, Postman, modern MCP clients |
-| SSE | `/sse` | Claude Desktop, legacy MCP clients |
-
-Replace `localhost:8000` with your Railway URL for the hosted deployment.
-
-### Security model
-
-| Tool category | Auth required | How |
-|---------------|---------------|-----|
-| Market data, technicals, options, dashboards | No | Works for both guest and full-login tokens |
-| Portfolio, orders, journal, recommendations | Full login only | Guest tokens return "not_authenticated"; full Bearer token required |
-
-Your Bearer token travels in the HTTP header — it is never visible in chat or tool arguments.
-The AI model never sees it.
-
-Connecting without a token to `/mcp` or `/sse` returns `401 + WWW-Authenticate: Bearer resource_metadata=...`,
-which triggers automatic OAuth discovery in supporting MCP clients.
-
-### claude.ai (OAuth — no API key needed)
-
-1. Open claude.ai → **Settings → Integrations → Add MCP Server**
-2. Paste the MCP endpoint URL: `https://zerodha-mcp-production.up.railway.app/mcp`
-3. A login popup appears automatically (OAuth 2.0 + PKCE).
-4. Choose **"Continue as guest"** for immediate access to free market data tools, **or** sign in with your Zerodha credentials for full access to all 69 tools.
-5. Done — the token is managed automatically. No API key to copy or paste.
-
-### Claude Code (CLI)
-
+**Claude Code** —
 ```bash
-# Get your API key from /login first, then:
-claude mcp add --transport http zerodha https://zerodha-mcp-production.up.railway.app/mcp \
+claude mcp add --transport http zerodha https://140-245-202-88.sslip.io/mcp \
   --header "Authorization: Bearer <your-api-key>"
 ```
 
-For local development:
-
-```bash
-claude mcp add --transport http zerodha http://localhost:8000/mcp \
-  --header "Authorization: Bearer <your-api-key>"
-```
-
-### Claude Desktop
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or
-`%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
+**Claude Desktop** — add to `claude_desktop_config.json`:
 ```json
-{
-  "mcpServers": {
-    "zerodha": {
-      "url": "https://zerodha-mcp-production.up.railway.app/sse",
-      "headers": { "Authorization": "Bearer <your-api-key>" }
-    }
-  }
-}
+{ "mcpServers": { "zerodha": {
+  "url": "https://140-245-202-88.sslip.io/sse",
+  "headers": { "Authorization": "Bearer <your-api-key>" }
+} } }
 ```
 
-Restart Claude Desktop after saving. An OAuth popup may appear on first connection.
-
-### Cursor
-
-Create or edit `.cursor/mcp.json` in your project root:
-
-```json
-{
-  "mcpServers": {
-    "zerodha": {
-      "url": "https://zerodha-mcp-production.up.railway.app/mcp",
-      "headers": { "Authorization": "Bearer <your-api-key>" }
-    }
-  }
-}
-```
-
-### Postman
-
-**New → MCP Server → Streamable HTTP** → paste the `/mcp` endpoint URL.
-Free market data tools work with no auth header. For portfolio tools, add
-`Authorization: Bearer <your-api-key>`.
-
-### Any MCP-compatible agent or framework
-
-The server follows the [MCP specification](https://modelcontextprotocol.io) — it works with any
-client or agent framework that speaks MCP over HTTP. Examples:
-
-```python
-# Python MCP client
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-
-async with streamablehttp_client("http://localhost:8000/mcp") as (read, write, _):
-    async with ClientSession(read, write) as session:
-        await session.initialize()
-        tools = await session.list_tools()
-```
-
-```typescript
-// TypeScript / Node.js
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-
-const client = new Client({ name: "my-agent", version: "1.0.0" });
-const transport = new StreamableHTTPClientTransport(
-  new URL("http://localhost:8000/mcp")
-);
-await client.connect(transport);
-```
-
-Works with: Claude Desktop, Claude Code, claude.ai web connectors, LangChain MCP adapters,
-LlamaIndex MCP tool loaders, custom agent loops, or any other MCP client.
+Any other MCP-compatible client (Cursor, Postman, a custom agent loop) works the same way —
+`/mcp` for Streamable HTTP, `/sse` for legacy SSE. Full walkthrough for every client, plus the
+guest-vs-full-login flow in detail: [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 
 ---
 
-## MCP tools reference
+## Tools
 
-### Authentication (2 tools)
+**78 tools**, grouped by domain:
 
-| Tool | Auth needed | Description |
-|------|-------------|-------------|
-| `zerodha_login(user_id, password, totp_code?, totp_secret?)` | No | Log in to Zerodha. Pass either `totp_code` (6-digit) or `totp_secret` (base32). |
-| `check_auth_status()` | No | Returns `{authenticated, backend}` without an API call. |
+| Domain | Examples |
+|---|---|
+| Portfolio & broker | holdings, positions, margins, multi-broker abstraction |
+| Market data | quotes, OHLC, LTP, historical candles |
+| Options & derivatives | option chains, PCR, max pain, OI analysis |
+| Technicals | RSI, EMA, MACD, ADX, ATR |
+| Analysis | market-structure descriptors, trade setups, regime alignment |
+| Trade journal & calibration | log/close trades, performance analytics, Brier score |
+| Trade recommendations & sizing | portfolio-aware ENTER/WAIT/AVOID, position sizing |
+| Market & portfolio intelligence | VIX, global pulse, event risk, exposure breakdown |
+| Order execution & monitoring | order placement, trailing stop-loss, live alerts |
+| Charts | price/indicator/option chart image generation |
 
-### Portfolio (4 tools)
-
-Require an active session.
-
-| Tool | Description |
-|------|-------------|
-| `get_profile()` | Your name, email, broker, and enabled exchanges |
-| `get_holdings()` | Long-term demat holdings with P&L |
-| `get_positions()` | Intraday and carry-forward positions |
-| `get_margins(segment?)` | Available fund margins (`equity` or `commodity`) |
-
-### Market data (7 tools)
-
-No authentication required. Data via NSE public feed and Yahoo Finance.
-
-| Tool | Description |
-|------|-------------|
-| `get_quote(instruments)` | Full quote: last price, OHLC, change, volume |
-| `get_ohlc(instruments)` | Today's OHLC snapshot |
-| `get_ltp(instruments)` | Last traded price only (fastest) |
-| `get_historical_data(symbol, from_date, to_date, interval)` | Historical OHLCV candles (adjusted) |
-
-Symbol format: `NSE:INFY`, `BSE:RELIANCE`, `NSE:NIFTY 50`, or raw yfinance ticker (`INFY.NS`, `^NSEI`).
-
-### Options & derivatives (8 tools)
-
-| Tool | Description |
-|------|-------------|
-| `get_expiries(symbol)` | Available expiry dates |
-| `get_nifty_option_chain(expiry?)` | NIFTY chain: CE/PE OI, IV, LTP |
-| `get_banknifty_option_chain(expiry?)` | BANKNIFTY chain |
-| `get_equity_option_chain(symbol)` | Any NSE F&O equity chain |
-| `calculate_pcr(symbol)` | Put-call ratio + sentiment |
-| `get_oi_analysis(symbol)` | Top OI strikes |
-| `identify_support_resistance_from_oi(symbol)` | S/R levels from OI concentration |
-| `calculate_max_pain(symbol)` | Max pain strike |
-
-### Instruments (3 tools)
-
-| Tool | Description |
-|------|-------------|
-| `search_instruments(query, exchange?, limit?)` | Search by name or symbol |
-| `get_instruments(exchange?)` | Full NSE equity list (~2000 rows) |
-| `invalidate_instruments_cache()` | Force refresh from NSE CSV |
-
-### Technicals (6 tools)
-
-Daily EOD adjusted candles via Yahoo Finance.
-
-| Tool | Description |
-|------|-------------|
-| `calculate_rsi(symbol, period?)` | Relative Strength Index |
-| `calculate_ema(symbol, period?)` | Exponential Moving Average |
-| `calculate_macd(symbol)` | MACD 12/26/9 |
-| `calculate_adx(symbol)` | ADX + DI± (trend strength) |
-| `calculate_atr(symbol)` | Average True Range |
-| `analyze_technicals(symbol)` | All indicators in one call |
-
-### Analysis (6 tools)
-
-⚠️ See [Research findings](#research-findings) before using these tools.
-
-| Tool | Description |
-|------|-------------|
-| `detect_market_regime(symbol)` | Market structure descriptor: observed boolean facts (price_above_ema20, ema20_above_ema50, adx_above_25, rsi_above_60) + auto-generated descriptor array. **Not a directional signal.** |
-| `generate_trade_setup(symbol)` | Entry/stoploss/target reference levels + market_structure + observation-only reasoning. **No demonstrated edge.** |
-| `get_regime_alignment(symbol)` | Daily/weekly/monthly regime agreement (STRONG/PARTIAL/CONFLICT/MIXED) |
-| `recommend_strategy(symbol)` | Maps market structure to options strategy type |
-| `calculate_risk_reward(entry, stoploss, target)` | Absolute risk, reward, and RR ratio |
-| `calculate_position_size(capital, risk_percent, entry, stoploss)` | Quantity from capital and risk % |
-
-### Dashboard (2 tools)
-
-| Tool | Description |
-|------|-------------|
-| `get_nifty_dashboard()` | Full NIFTY snapshot: technicals, regime, OI, VIX, risk score |
-| `get_banknifty_dashboard()` | Full BANKNIFTY snapshot |
-
-### Trade planner (1 tool)
-
-| Tool | Description |
-|------|-------------|
-| `create_trade_plan(symbol, direction, capital)` | Entry/sizing/quality plan from analysis; includes calibration adjustment if journal has enough trades |
-
-### Option strategy builder (1 tool)
-
-| Tool | Description |
-|------|-------------|
-| `build_option_strategy(symbol, strategy_type, expiry?, strikes?)` | Builds specific options structures with strikes, premiums, max profit/loss, breakevens |
-
-### Trade review (1 tool)
-
-| Tool | Description |
-|------|-------------|
-| `review_trade(trade_id)` | HOLD/REDUCE/EXIT verdict with thesis evaluation, P&L, and stop analysis |
-
-### Market intelligence (4 tools)
-
-| Tool | Description |
-|------|-------------|
-| `get_india_vix()` | India VIX with regime classification (LOW/ELEVATED/HIGH/EXTREME) |
-| `get_global_pulse()` | US futures, Dollar Index, crude, gold — global risk sentiment |
-| `get_upcoming_events()` | RBI MPC, FOMC, CPI, NFP, GDP — upcoming macro events with impact ratings |
-| `get_market_risk_score()` | Composite risk score (0–100) from VIX, PCR, global pulse, events |
-
-### Portfolio intelligence (3 tools)
-
-| Tool | Description |
-|------|-------------|
-| `get_portfolio_risk_report()` | Per-position risk scores, value-weighted portfolio score, HHI diversification |
-| `get_portfolio_regime_analysis()` | Regime distribution across holdings |
-| `get_portfolio_exposure_breakdown()` | Exposure by sector and instrument type |
-
-### Catalyst intelligence (4 tools)
-
-| Tool | Description |
-|------|-------------|
-| `get_symbol_news(symbol)` | Recent news headlines with keyword-based sentiment |
-| `get_news_sentiment(symbol)` | Aggregated sentiment score |
-| `get_earnings_calendar(symbol)` | Next earnings date, proximity scoring, corporate actions |
-| `get_event_risk(symbol)` | Composite event risk: earnings 40% + news 30% + market risk 30% |
-
-### Trade journal (7 tools)
-
-| Tool | Description |
-|------|-------------|
-| `log_trade(symbol, direction, entry, quantity, ...)` | Open a trade record |
-| `close_trade(trade_id, exit_price)` | Close a trade, calculate P&L |
-| `get_open_trades()` | All open positions in the journal |
-| `get_trade_history(status?, symbol?)` | Closed trade history |
-| `get_performance_analytics()` | P&L by signal, regime, and confidence band |
-| `get_orders()` | Today's Zerodha orders (requires session) |
-| `sync_trades_from_zerodha()` | Auto-import completed Zerodha orders into journal |
-
-### Calibration (1 tool)
-
-| Tool | Description |
-|------|-------------|
-| `get_calibration_report()` | Brier score, reliability curve, overconfidence analysis from journal history |
-
-### Trade recommendations (3 tools)
-
-| Tool | Description |
-|------|-------------|
-| `recommend_trade(symbol, direction?, capital?)` | Portfolio-aware ENTER/WAIT/AVOID — gates on event risk, VIX, duplicate exposure |
-| `review_open_trades()` | HOLD/REDUCE/EXIT verdict for all open journal trades |
-| `get_daily_brief()` | Morning briefing: market context, VIX, upcoming events, open trade alerts |
-
-### Position sizing (3 tools)
-
-| Tool | Description |
-|------|-------------|
-| `size_equity_trade(symbol, direction, capital, risk_percent)` | Lot size from risk budget and stoploss distance |
-| `size_options_trade(symbol, strategy, capital, risk_percent)` | Options lots from premium distance and lot size |
-| `size_from_recommendation(symbol, capital)` | Full pipeline: recommend_trade → size → portfolio heat adjustment |
-
-### Decision quality / Phase 22 (5 tools)
-
-| Tool | Description |
-|------|-------------|
-| `log_recommendation(symbol, user_question, market_snapshot, mcp_facts, claude_reasoning_summary, recommendation_type, uncertainty_level)` | Log a Claude recommendation for later blind postmortem review |
-| `update_recommendation_outcome(id, user_action?, mcp_changed_decision?, decision_quality?, outcome_1d?, ...)` | Fill postmortem during weekly review |
-| `get_recommendation_stats()` | Partition counts (bootstrap / clean / baseline) and analysis readiness |
-| `get_full_market_context(symbol, include_options?)` | Single call replacing 6 separate calls: quote + OHLC + technicals + market_structure + VIX + events |
-| `detect_recommendation(text)` | Scan text for ENTER/EXIT/HOLD/AVOID trigger phrases (does not auto-log) |
+Full tool-by-tool reference with signatures: [`docs/TOOLS.md`](docs/TOOLS.md).
 
 ---
 
 ## Tool response format
 
-Every tool response is wrapped in a trust metadata envelope:
+Every tool response carries the trust metadata envelope described above:
 
 ```json
 {
   "data": { "...actual output..." },
   "meta": {
     "type": "FACT | INDICATOR | INTERPRETATION",
-    "validation": {
-      "status": "VERIFIED | MATHEMATICALLY_COMPUTED | UNVALIDATED",
-      "backtested": false,
-      "research_status": "EXPERIMENTAL | INVALIDATED | NOT_TESTED"
-    },
+    "validation": { "status": "VERIFIED | MATHEMATICALLY_COMPUTED | UNVALIDATED", "backtested": false },
     "data_quality": "VALID | NaN_DETECTED | STALE | INVALID",
     "market_hours": true,
     "source": "yfinance | NSELive | internal_journal",
-    "deprecated_fields_present": [],
-    "schema_version": 5,
-    "as_of": "2026-06-20T08:00:00Z"
-  }
-}
-```
-
-`detect_market_regime` and `generate_trade_setup` return structural descriptors, not signals:
-
-```json
-{
-  "data": {
-    "market_structure": {
-      "price_above_ema20": true,
-      "ema20_above_ema50": true,
-      "adx_above_25": true,
-      "rsi_above_60": true,
-      "descriptor": ["price_above_ema20", "ema20_above_ema50", "adx_above_25", "rsi_above_60"],
-      "indicator_interpretation": {
-        "type": "INTERPRETATION",
-        "validation_status": "UNVALIDATED",
-        "adx_note": "trend_present",
-        "rsi_note": "momentum_elevated"
-      }
-    }
+    "as_of": "2026-09-01T08:00:00Z"
   }
 }
 ```
 
 ---
 
-## Environment variables
+## Tech stack
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `ZERODHA_USER_ID` | **Yes** | — | Your Zerodha client ID (e.g. `ZK1234`) |
-| `ZERODHA_PASSWORD` | **Yes** | — | Your Kite login password |
-| `ZERODHA_TOTP_SECRET` | No | — | Base32 TOTP secret for automatic code generation |
-| `BROKER_BACKEND` | No | `zerodha_web` | `zerodha_web` (primary) or `jugaad` (fallback) |
-| `SESSION_FILE` | No | `.session.json` | Where the enctoken is persisted between restarts |
-| `HOST` | No | `0.0.0.0` | Server bind address |
-| `PORT` | No | `8000` | Server port |
-| `LOG_LEVEL` | No | `INFO` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
-| `TURSO_DATABASE_URL` | No | — | Turso cloud SQLite URL (uses local `journal.db` if unset) |
-| `TURSO_AUTH_TOKEN` | No | — | Turso auth token (required if `TURSO_DATABASE_URL` is set) |
+| | |
+|---|---|
+| Runtime | Python 3.12–3.13, Starlette/uvicorn (raw ASGI, no framework) |
+| Broker | `httpx` primary, `jugaad-trader` fallback |
+| Market data | `jugaad-data` (NSE live), `yfinance` (historical) |
+| Persistence | PostgreSQL 17 + SQLAlchemy async + Alembic (prod); Turso/libSQL (alt) |
+| Charts | `matplotlib` / `mplfinance` → PNG |
+| Web UI | Hand-rolled HTML/CSS/JS, no build step, no framework |
+| Packaging | `hatchling` + `uv` |
 
 ---
 
-## Session lifetime and daily re-login
-
-Zerodha's `enctoken` (the session token) **expires every day at approximately 07:30 IST**
-when Zerodha resets all active sessions for their end-of-day processing.
-
-This means:
-- The server saves the token to `.session.json` and reloads it on restart.
-- After 07:30 IST, portfolio tools will return `401 Unauthorized` until you log in again.
-- Market data tools (`get_quote`, `get_ltp`, `get_historical_data`) are **not affected** — they
-  never need a Zerodha session.
-
-### Automating daily re-login
-
-If `ZERODHA_TOTP_SECRET` is set in your `.env`, you can automate re-login with a cron job that
-restarts the container every morning after the reset:
+## Development
 
 ```bash
-# Restart the container at 07:45 IST (02:15 UTC) every day
-# Add to crontab: crontab -e
-15 2 * * * docker compose -f /path/to/trading-mcp/docker-compose.yml restart
+make install     # uv sync
+make test        # uv run pytest
+make lint        # ruff check
+make typecheck   # mypy src
+make check       # everything CI runs
 ```
 
-On startup, the server auto-calls `zerodha_login()` using the credentials in `.env` if a valid
-`ZERODHA_TOTP_SECRET` is present. No manual intervention needed.
-
-> **Alternative:** Ask Claude to log you back in each morning — it takes one message.
+~2,600 tests, 12–30s. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for switching broker
+backends, session lifetime / re-login automation, and environment variable reference.
 
 ---
 
-## Switching broker backends
+## Deployment
 
-The server has two broker implementations behind an abstract interface. Switching does not change
-any MCP tool behaviour.
-
-| Backend | When to use |
-|---------|-------------|
-| `zerodha_web` (default) | Direct `httpx` calls to `kite.zerodha.com`. Fastest, no extra deps. |
-| `jugaad` | If Zerodha changes their internal web API and the primary client breaks. Uses `jugaad-trader`. |
-
-To switch:
-
-```env
-# .env
-BROKER_BACKEND=jugaad
-```
-
-Restart the server. Switch back by setting `BROKER_BACKEND=zerodha_web` or removing the variable.
-
----
-
-## Deploying remotely
-
-### Railway
-
-```bash
-railway login
-railway init
-railway up
-```
-
-Set environment variables in the Railway dashboard under **Variables**.
-The `Dockerfile` is auto-detected.
-
-### Render
-
-1. Create a new **Web Service** in the Render dashboard.
-2. Connect this GitHub repo.
-3. Set **Runtime** to `Docker`.
-4. Add all required environment variables under **Environment**.
-5. Set **Port** to `8000`.
-
-### Any VPS (Ubuntu/Debian)
-
-```bash
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-
-# Clone and configure
-git clone https://github.com/Saivishnu1/trading-mcp.git
-cd trading-mcp
-cp .env.example .env
-nano .env   # fill in your credentials
-
-# Start
-docker compose up -d
-
-# (optional) open firewall port
-ufw allow 8000
-```
-
-Your MCP endpoint is then: `http://<your-server-ip>:8000/sse`
+Production runs on an Oracle Cloud VM: PostgreSQL 17, three systemd services, and a
+push-to-`main` CI/CD pipeline that runs the test suite, SSHes in, runs migrations, and
+restarts services with a health check. See [`infra/README.md`](infra/README.md) for the full
+setup and [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for local Docker Compose.
 
 ---
 
 ## Research findings
 
-Two research phases found **no demonstrated directional edge** in the analysis tools:
+Two research phases tested the server's own analysis tools for directional edge on NSE data
+and found none:
 
-**Phase 20A — Regime classifier walk-forward audit (2022–2025, Nifty 50)**
-BULL_TREND average 10-day return: −0.354% aggregate, −0.608% at run-start.
-Monotonicity violated. The EMA20/EMA50 + ADX regime engine does not demonstrate directional
-predictive value on NSE equities.
+- **Regime classifier walk-forward audit** (2022–2025, Nifty 50) — the EMA20/EMA50 + ADX
+  regime engine does not demonstrate directional predictive value; monotonicity across regime
+  buckets was violated.
+- **Cross-sectional momentum screen** (Nifty 50, 968 dates, 46,464 observations) — no large,
+  stable, tradeable momentum edge found across 6- and 12-month lookbacks.
 
-**Phase 21 — Cross-sectional momentum screen (Nifty 50, 968 dates, 46,464 obs)**
-RS_6m Q5−Q1 spread: −0.286% per 10 days. RS_12m1: −0.141%. Both non-monotone.
-No large, stable, tradeable cross-sectional momentum edge.
-
-**What this means for the tools:**
-- `detect_market_regime` → returns structural facts (`price_above_ema20`, etc.), not predictions
-- `generate_trade_setup` → returns reference levels (entry/stoploss/target) and observation-only reasoning, not signals
-- `recommend_strategy` → maps structure to options strategy type; not a trade recommendation
-- Confidence and signal fields have been removed entirely from analysis tool outputs
-
-The research audit framework and cross-sectional screen scripts are retained in `scripts/` for
-evaluating future models.
+As a result: `detect_market_regime` and `generate_trade_setup` return structural facts and
+reference levels, not predictions or confidence scores — those fields were removed entirely
+rather than left in with a caveat. The audit scripts are kept in [`scripts/`](scripts/) for
+evaluating future models against the same bar.
 
 ---
 
 ## Limitations
 
-| Feature | Status | Alternative |
-|---------|--------|-------------|
-| Order placement | Not available | Zerodha blocks programmatic orders via web sessions. Use the Kite app. |
-| F&O / MCX instrument dump | Not available | NSE equity list only. Search by symbol works for most lookups. |
-| Real-time WebSocket ticker | Not available | Poll `get_ltp()` every few seconds for price updates. |
-| Intraday history older than 60 days | Not available | Use `interval="1d"` for full daily history going back years. |
-| BSE instrument list | Not available | Use `search_instruments(query, exchange="BSE")` or yfinance tickers directly. |
-| Directional trade signals | Intentionally removed | Phase 20A and 21 found no edge. Use structural descriptors for context only. |
+| Feature | Status |
+|---|---|
+| F&O / MCX instrument dump | NSE equity list only; symbol search covers most lookups |
+| Intraday history older than 60 days | Use `interval="1d"` for full daily history |
+| BSE instrument list | Use `search_instruments(exchange="BSE")` or a raw yfinance ticker |
+| Directional trade signals | Intentionally not provided — see Research findings above |
+
+---
+
+## License
+
+[MIT](LICENSE) — provided as-is, see the risk disclaimer above.

@@ -1,3 +1,7 @@
+# zerodha-mcp — connects to a live Zerodha brokerage account and can place
+# real orders with real money. Unofficial integration, provided as-is with
+# no warranty. See README.md for the full risk disclaimer before deploying.
+
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
