@@ -7,14 +7,28 @@ from unittest.mock import patch
 import pytest
 
 from src.meta import (
-    TYPE_FACT, TYPE_INDICATOR, TYPE_INTERPRETATION, TYPE_PREDICTION,
-    VALIDATION_VERIFIED, VALIDATION_COMPUTED, VALIDATION_UNVALIDATED,
-    DQ_VALID, DQ_NAN, DQ_STALE, DQ_INVALID,
-    RS_EXPERIMENTAL, RS_NOT_TESTED,
-    build_meta, wrap, is_market_hours, detect_data_quality,
-    market_meta, indicator_meta, interpretation_meta, journal_meta,
+    DQ_INVALID,
+    DQ_NAN,
+    DQ_STALE,
+    DQ_VALID,
+    RS_EXPERIMENTAL,
+    RS_NOT_TESTED,
+    TYPE_FACT,
+    TYPE_INDICATOR,
+    TYPE_INTERPRETATION,
+    TYPE_PREDICTION,
+    VALIDATION_COMPUTED,
+    VALIDATION_UNVALIDATED,
+    VALIDATION_VERIFIED,
+    build_meta,
+    detect_data_quality,
+    indicator_meta,
+    interpretation_meta,
+    is_market_hours,
+    journal_meta,
+    market_meta,
+    wrap,
 )
-
 
 # ---------------------------------------------------------------------------
 # is_market_hours
@@ -22,13 +36,13 @@ from src.meta import (
 
 class TestIsMarketHours:
     def _patch_now(self, hour, minute):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         IST = timezone(timedelta(hours=5, minutes=30))
         dt = datetime(2026, 6, 19, hour, minute, 0, tzinfo=IST)
         return patch("src.meta.datetime", wraps=__import__("datetime").datetime)
 
     def test_inside_session(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         IST = timezone(timedelta(hours=5, minutes=30))
         dt = datetime(2026, 6, 19, 10, 30, 0, tzinfo=IST)
         with patch("src.meta.datetime") as mock_dt:
@@ -37,7 +51,7 @@ class TestIsMarketHours:
             assert is_market_hours() is True
 
     def test_before_open(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         IST = timezone(timedelta(hours=5, minutes=30))
         dt = datetime(2026, 6, 19, 9, 0, 0, tzinfo=IST)
         with patch("src.meta.datetime") as mock_dt:
@@ -45,7 +59,7 @@ class TestIsMarketHours:
             assert is_market_hours() is False
 
     def test_after_close(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         IST = timezone(timedelta(hours=5, minutes=30))
         dt = datetime(2026, 6, 19, 16, 0, 0, tzinfo=IST)
         with patch("src.meta.datetime") as mock_dt:
@@ -53,7 +67,7 @@ class TestIsMarketHours:
             assert is_market_hours() is False
 
     def test_at_open_exact(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         IST = timezone(timedelta(hours=5, minutes=30))
         dt = datetime(2026, 6, 19, 9, 15, 0, tzinfo=IST)
         with patch("src.meta.datetime") as mock_dt:
@@ -61,7 +75,7 @@ class TestIsMarketHours:
             assert is_market_hours() is True
 
     def test_at_close_exact(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         IST = timezone(timedelta(hours=5, minutes=30))
         dt = datetime(2026, 6, 19, 15, 30, 0, tzinfo=IST)
         with patch("src.meta.datetime") as mock_dt:

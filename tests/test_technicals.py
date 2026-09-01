@@ -387,6 +387,7 @@ class TestLoadCandlesTieredFromRunningLoop:
     @pytest.mark.anyio
     async def test_succeeds_when_called_from_a_running_event_loop(self):
         from unittest.mock import AsyncMock, patch
+
         import src.tools.technicals as tech
 
         fake_candles = [{
@@ -406,6 +407,7 @@ class TestLoadCandlesTieredFromRunningLoop:
     @pytest.mark.anyio
     async def test_propagates_fetch_failure_as_empty_result_not_a_crash(self):
         from unittest.mock import AsyncMock, patch
+
         import src.tools.technicals as tech
 
         with patch(

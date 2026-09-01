@@ -1,6 +1,7 @@
-import subprocess
 import logging
-from src.telegram_admin.config import SERVICE_NAME, RESTART_SERVICES
+import subprocess
+
+from src.telegram_admin.config import RESTART_SERVICES, SERVICE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def are_restart_services_active() -> dict[str, bool]:
 
 def get_service_status() -> dict[str, str]:
     """Retrieves service status and parses key fields.
-    
+
     Returns a dict with:
     - active: Active state string
     - pid: Process ID
@@ -74,7 +75,7 @@ def get_service_status() -> dict[str, str]:
         "memory": "N/A",
         "last_log": "N/A"
     }
-    
+
     try:
         # systemctl status might return non-zero exit code if inactive/failed,
         # so we handle CalledProcessError as a normal source of stdout.
@@ -87,21 +88,21 @@ def get_service_status() -> dict[str, str]:
         stdout = result.stdout
     except subprocess.CalledProcessError as exc:
         stdout = exc.stdout or exc.stderr or ""
-        
+
     lines = stdout.splitlines()
     log_lines = []
-    
+
     # Header prefixes to identify non-log metadata lines in systemctl status
     header_prefixes = (
-        "Loaded:", "Active:", "Main PID:", "Tasks:", "Memory:", "CPU:", 
+        "Loaded:", "Active:", "Main PID:", "Tasks:", "Memory:", "CPU:",
         "CGroup:", "Docs:", "Drop-In:", "Status:", "Process:", "●"
     )
-    
+
     for line in lines:
         line_stripped = line.strip()
         if not line_stripped:
             continue
-            
+
         if "Active:" in line_stripped:
             res["active"] = line_stripped.split("Active:", 1)[1].strip()
             # Extract uptime (the part after the semicolon, e.g. "since Mon...; 10h ago")
@@ -114,15 +115,15 @@ def get_service_status() -> dict[str, str]:
             res["memory"] = line_stripped.split("Memory:", 1)[1].strip()
         elif not any(line_stripped.startswith(p) for p in header_prefixes):
             log_lines.append(line_stripped)
-            
+
     if log_lines:
         res["last_log"] = log_lines[-1]
-        
+
     return res
 
 def get_service_logs(n: int = 20) -> str:
     """Fetches the last n journal logs for the service.
-    
+
     Uses sudo journalctl.
     """
     try:

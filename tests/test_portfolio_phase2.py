@@ -6,15 +6,15 @@ No real network calls — all broker interactions are mocked.
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from src.brokers.models import Holding, Position, Fund
-from src.portfolio.analyzer import PortfolioAnalyzer
-from src.portfolio.allocator import AssetAllocator
-from src.portfolio.risk import RiskAnalyzer
-from src.portfolio.sector_map import get_sector, SECTOR_MAP
+import pytest
 
+from src.brokers.models import Fund, Holding, Position
+from src.portfolio.allocator import AssetAllocator
+from src.portfolio.analyzer import PortfolioAnalyzer
+from src.portfolio.risk import RiskAnalyzer
+from src.portfolio.sector_map import SECTOR_MAP, get_sector
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -346,9 +346,11 @@ class TestAnalyzePortfolioTool:
     @pytest.mark.anyio
     async def test_tool_returns_wrapped_response(self):
         """analyze_portfolio wraps result with data + meta."""
-        from src.tools.portfolio import register
-        from mcp.server.fastmcp import FastMCP
         from unittest.mock import AsyncMock, MagicMock
+
+        from mcp.server.fastmcp import FastMCP
+
+        from src.tools.portfolio import register
 
         captured = {}
 

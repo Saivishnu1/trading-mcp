@@ -5,9 +5,9 @@ only pay for one upstream subscription."""
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 
 async def _fake_stream(messages):
@@ -66,15 +66,17 @@ class TestSnapshot:
         assert relay.snapshot("NSE:2885") is None
 
     def test_returns_cached_value(self):
-        from src.execution.browser_price_relay import BrowserPriceRelay
         import time
+
+        from src.execution.browser_price_relay import BrowserPriceRelay
         relay = BrowserPriceRelay()
         relay._prices["NSE:2885"] = (1426.5, time.monotonic())
         assert relay.snapshot("NSE:2885") == 1426.5
 
     def test_returns_none_when_stale(self):
-        from src.execution.browser_price_relay import BrowserPriceRelay
         import time
+
+        from src.execution.browser_price_relay import BrowserPriceRelay
         relay = BrowserPriceRelay()
         relay._prices["NSE:2885"] = (1426.5, time.monotonic() - 999)
         assert relay.snapshot("NSE:2885") is None

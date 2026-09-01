@@ -24,7 +24,7 @@ from datetime import date, datetime
 import pytest
 
 import src.market.calendar as calendar_mod
-from src.market.calendar import get_market_calendar, is_market_session_open, _IST
+from src.market.calendar import _IST, get_market_calendar, is_market_session_open
 
 
 @pytest.fixture(autouse=True)

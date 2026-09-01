@@ -12,7 +12,6 @@ so callers can degrade gracefully instead of raising.
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Building blocks
 # ---------------------------------------------------------------------------

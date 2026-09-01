@@ -11,7 +11,7 @@ one of the two processes actually came back up.
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.telegram_admin import service_manager
 from src.telegram_admin.config import RESTART_SERVICES

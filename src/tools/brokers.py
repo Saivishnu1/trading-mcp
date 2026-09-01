@@ -8,14 +8,14 @@ MCP tools for unified multi-broker portfolio access:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, time as _time
+from datetime import datetime
+from datetime import time as _time
 
 import pytz
 from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
 from src.brokers.factory import (
-    get_broker_adapter,
     get_broker_status as _get_broker_status,
 )
 from src.brokers.indmoney import INDmoneyBroker
@@ -99,8 +99,9 @@ async def _unified(method_name: str, broker: str, *, indmoney_kwargs: dict | Non
                 combined.extend(brokers_result["indmoney"]["data"])
         else:
             # Distinguish "token not set" from "token set but invalid"
-            from src.brokers.indmoney import _TOKEN_ENV
             import os
+
+            from src.brokers.indmoney import _TOKEN_ENV
             if not os.environ.get(_TOKEN_ENV, ""):
                 brokers_result["indmoney"] = {"status": "not_configured"}
             else:

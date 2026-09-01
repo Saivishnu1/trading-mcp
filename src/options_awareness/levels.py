@@ -3,7 +3,7 @@ OI-derived key levels — aggregates wall, max pain, PCR, and S/R into one dict.
 """
 from __future__ import annotations
 
-from src.options.analytics import calculate_max_pain, calculate_pcr, _underlying
+from src.options.analytics import _underlying, calculate_max_pain, calculate_pcr
 
 
 class OILevelDetector:

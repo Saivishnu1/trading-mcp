@@ -11,10 +11,10 @@ from __future__ import annotations
 import inspect
 
 import pytest
-import src.sizer.engine as sizer_engine
-from src.sizer.engine import _apply_size_factors
-from src.journal.service import log_trade as _log_trade
 
+import src.sizer.engine as sizer_engine
+from src.journal.service import log_trade as _log_trade
+from src.sizer.engine import _apply_size_factors
 
 # ---------------------------------------------------------------------------
 # Helpers

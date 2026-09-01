@@ -9,11 +9,11 @@ import pandas as pd
 from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
+from src.candle_awareness.classifier import build_context, classify_strength
+from src.candle_awareness.patterns import PatternDetector
+from src.chart_awareness import indicators as _ind
 from src.chart_awareness.data_fetcher import fetch_candles
 from src.chart_awareness.levels import detect_levels
-from src.chart_awareness import indicators as _ind
-from src.candle_awareness.patterns import PatternDetector
-from src.candle_awareness.classifier import classify_strength, build_context
 
 _STRENGTH_RANK = {"weak": 0, "moderate": 1, "strong": 2}
 

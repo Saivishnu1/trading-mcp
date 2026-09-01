@@ -1335,16 +1335,16 @@ class TestStaleness:
         assert status == "ACTIVE"
 
     def test_old_heartbeat_is_stale(self):
-        from src.tools.monitor import _staleness
         from src.monitor.scheduler import MarketMonitor
+        from src.tools.monitor import _staleness
         old = (datetime.now(timezone.utc) - timedelta(seconds=MarketMonitor.STALE_AFTER_SECONDS + 60)).isoformat()
         healthy, status = _staleness(old)
         assert healthy is False
         assert status == "STALE"
 
     def test_boundary_just_under_threshold_is_healthy(self):
-        from src.tools.monitor import _staleness
         from src.monitor.scheduler import MarketMonitor
+        from src.tools.monitor import _staleness
         just_under = (datetime.now(timezone.utc) - timedelta(seconds=MarketMonitor.STALE_AFTER_SECONDS - 60)).isoformat()
         healthy, status = _staleness(just_under)
         assert healthy is True
@@ -1393,6 +1393,7 @@ class TestSingletonLock:
         monkeypatch.setenv("MONITOR_LOCK_FILE", lock_path)
 
         import importlib
+
         import src.monitor.service as service_module
         importlib.reload(service_module)
 
@@ -1408,6 +1409,7 @@ class TestSingletonLock:
         monkeypatch.setenv("MONITOR_LOCK_FILE", lock_path)
 
         import importlib
+
         import src.monitor.service as service_module
         importlib.reload(service_module)
 
@@ -1568,6 +1570,7 @@ class TestGetMonitorStatusBrokerVisibility:
     @pytest.mark.anyio
     async def test_positions_by_broker_summary_present(self):
         from mcp.server.fastmcp import FastMCP as _FastMCP
+
         from src.tools import monitor as monitor_tools
 
         mcp = _FastMCP("test")
@@ -1598,6 +1601,7 @@ class TestGetMonitorStatusLivePriceCache:
 
     async def _call(self, session_state: dict):
         from mcp.server.fastmcp import FastMCP as _FastMCP
+
         from src.tools import monitor as monitor_tools
 
         mcp = _FastMCP("test")
@@ -1918,6 +1922,7 @@ class TestOnIndexTick:
 class TestGetRecentAlertsDeliveredFilter:
     def _tools(self):
         from mcp.server.fastmcp import FastMCP as _FastMCP
+
         from src.tools import monitor as monitor_tools
 
         mcp = _FastMCP("test")
@@ -1960,6 +1965,7 @@ class TestGetRecentAlertsDeliveredFilter:
 class TestGetMarketAlertsDeliveredFilter:
     def _tools(self):
         from mcp.server.fastmcp import FastMCP as _FastMCP
+
         from src.tools import monitor as monitor_tools
 
         mcp = _FastMCP("test")

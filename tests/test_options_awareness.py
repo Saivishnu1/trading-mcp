@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.options_awareness.oi_analyzer import OIAnalyzer
 from src.options_awareness.iv_analyzer import IVAnalyzer
 from src.options_awareness.levels import OILevelDetector
-
+from src.options_awareness.oi_analyzer import OIAnalyzer
 
 # ---------------------------------------------------------------------------
 # Synthetic chain builder (raw NSE records.data format)
@@ -377,7 +376,7 @@ class TestOptionCache:
             path.unlink()
 
     def test_write_then_read_returns_entry(self):
-        from src.options_awareness.cache import write_cache, read_cache
+        from src.options_awareness.cache import read_cache, write_cache
         chain = _make_chain()
         symbol, expiry = "NIFTY_TEST", "27-Jun-2024"
         try:
@@ -397,9 +396,10 @@ class TestOptionCache:
         assert result is None
 
     def test_expired_cache_returns_none(self):
-        from src.options_awareness.cache import write_cache, read_cache, _cache_path
         import json
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
+        from src.options_awareness.cache import _cache_path, read_cache, write_cache
 
         chain = _make_chain()
         symbol, expiry = "NIFTY_EXPIRED", "27-Jun-2024"
@@ -417,7 +417,7 @@ class TestOptionCache:
             self._cleanup(symbol, expiry)
 
     def test_cache_metadata_shape(self):
-        from src.options_awareness.cache import write_cache, read_cache, cache_metadata
+        from src.options_awareness.cache import cache_metadata, read_cache, write_cache
         chain = _make_chain()
         symbol, expiry = "NIFTY_META", "27-Jun-2024"
         try:
@@ -433,7 +433,8 @@ class TestOptionCache:
 
     def test_engine_uses_cache_on_live_failure(self):
         from unittest.mock import patch
-        from src.options_awareness.cache import write_cache, _cache_path
+
+        from src.options_awareness.cache import _cache_path, write_cache
         from src.options_awareness.engine import OptionsAwarenessEngine
 
         chain = _make_chain()
@@ -458,8 +459,9 @@ class TestOptionCache:
 
     def test_engine_no_cache_no_live_returns_error(self):
         from unittest.mock import patch
-        from src.options_awareness.engine import OptionsAwarenessEngine
+
         from src.options_awareness.cache import _cache_path
+        from src.options_awareness.engine import OptionsAwarenessEngine
 
         symbol, expiry = "NIFTY_NO_CACHE_XYZ", None
         # Ensure no stale cache
@@ -476,6 +478,7 @@ class TestOptionCache:
 
     def test_live_result_has_no_cache_status(self):
         from unittest.mock import patch
+
         from src.options_awareness.engine import OptionsAwarenessEngine
 
         chain = _make_chain()

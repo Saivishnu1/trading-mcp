@@ -9,16 +9,15 @@ import pytest
 
 import src.journal.db as journal_db
 from src.journal.service import (
-    log_trade,
-    close_trade,
-    get_open_trades,
-    get_trade_history,
-    get_performance_analytics,
-    _calculate_pnl,
     _auto_risk_reward,
     _build_summary,
+    _calculate_pnl,
+    close_trade,
+    get_open_trades,
+    get_performance_analytics,
+    get_trade_history,
+    log_trade,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixture

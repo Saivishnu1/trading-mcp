@@ -7,12 +7,11 @@ production or were hard to catch via normal unit tests.
 """
 import pytest
 
-from src.options.service import OptionsService
 from src.analysis.regime import (
     generate_trade_setup,
 )
+from src.options.service import OptionsService
 from src.planner.trade_plan import _trade_quality, create_trade_plan
-
 
 # ---------------------------------------------------------------------------
 # Helpers

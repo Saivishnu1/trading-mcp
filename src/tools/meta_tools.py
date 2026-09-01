@@ -7,14 +7,16 @@ get_tool_health      — per-tool health snapshot, callable at session start
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from mcp.server.fastmcp import FastMCP
 
 import src.meta as _meta
 from src.market.calendar import (
-    get_market_calendar as _get_market_calendar,
     get_calendar_health as _get_calendar_health,
+)
+from src.market.calendar import (
+    get_market_calendar as _get_market_calendar,
 )
 from src.orchestration.manifest import MCP_MANIFEST, get_kite_mcp_status
 

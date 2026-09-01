@@ -6,11 +6,11 @@ import pytest
 
 import src.journal.db as journal_db
 from src.journal.service import (
-    sync_zerodha_orders,
-    get_open_trades,
-    get_trade_history,
     _parse_order_timestamp,
     _product_to_trade_type,
+    get_open_trades,
+    get_trade_history,
+    sync_zerodha_orders,
 )
 
 # Anchored to the real run date, not a hardcoded string (2026-07-23 bug:

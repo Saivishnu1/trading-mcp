@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .patterns.reversal import ReversalPatterns
-from .patterns.continuation import ContinuationPatterns
 from .patterns.breakout import BreakoutPatterns
+from .patterns.continuation import ContinuationPatterns
+from .patterns.reversal import ReversalPatterns
 
 # Minimum bars required per pattern family
 _MIN_BARS = {

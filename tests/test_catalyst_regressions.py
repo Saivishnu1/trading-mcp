@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -47,9 +46,9 @@ def _empty_ticker():
 
 
 def _clear_caches():
-    import src.catalyst.news as nm
     import src.catalyst.earnings as em
     import src.catalyst.event_risk as erm
+    import src.catalyst.news as nm
     with nm._LOCK: nm._CACHE.clear()
     with em._LOCK: em._CACHE.clear()
     with erm._LOCK: erm._CACHE.clear()
@@ -72,8 +71,8 @@ class TestER1YfinanceRaises:
         assert result["next_earnings_date"] is None
 
     def test_event_risk_survives_all_component_failures(self, monkeypatch):
-        import src.catalyst.news as nm
         import src.catalyst.earnings as em
+        import src.catalyst.news as nm
         _clear_caches()
         monkeypatch.setattr(nm, "_get_ticker", lambda t: _raising_ticker())
         monkeypatch.setattr(em, "_get_ticker", lambda t: _raising_ticker())
@@ -148,8 +147,8 @@ class TestER3NoCalendarData:
 
 class TestER4AllFetchesFail:
     def _setup(self, monkeypatch):
-        import src.catalyst.news as nm
         import src.catalyst.earnings as em
+        import src.catalyst.news as nm
         _clear_caches()
         monkeypatch.setattr(nm, "_get_ticker", lambda t: _raising_ticker())
         monkeypatch.setattr(em, "_get_ticker", lambda t: _raising_ticker())

@@ -311,6 +311,7 @@ async def _fetch_indmoney(symbol: str, interval: str, from_date: str, to_date: s
 def _yf_download_single(yf_sym: str, yf_interval: str, from_date: str, to_date: str) -> list[dict]:
     """Download one ticker from yfinance and return normalized candles. Empty list on failure."""
     import math
+
     import yfinance as yf  # type: ignore[import]
 
     def _normalize(df) -> list[dict]:

@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import sqlite3
+
 import pytest
 
 import src.journal.db as journal_db
-
 
 # ---------------------------------------------------------------------------
 # Fixture

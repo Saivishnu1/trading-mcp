@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import math
 
-from src.journal.service import get_open_trades as _get_open_trades
-from src.portfolio_intelligence.service import get_portfolio_risk_report as _get_portfolio_risk_report
-from src.recommendations.engine import recommend_trade as _recommend_trade
 from src.common.scoring import apply_size_factors as _apply_size_factors
+from src.journal.service import get_open_trades as _get_open_trades
+from src.portfolio_intelligence.service import (
+    get_portfolio_risk_report as _get_portfolio_risk_report,
+)
+from src.recommendations.engine import recommend_trade as _recommend_trade
 
 # ---------------------------------------------------------------------------
 # Constants

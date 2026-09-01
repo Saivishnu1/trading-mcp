@@ -1,6 +1,6 @@
 def split_message(text: str, max_chars: int = 4000) -> list[str]:
     """Splits a string into lines that fit within Telegram's max message length.
-    
+
     Tries to split on line endings (keepends=True) to avoid chopping individual logs.
     If a single line is wider than max_chars, it will be sliced at max_chars boundary.
     """

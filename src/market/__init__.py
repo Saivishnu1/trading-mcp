@@ -1,4 +1,5 @@
 import threading
+
 from src.market.service import MarketService
 
 _service: MarketService | None = None

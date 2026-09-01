@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import json
 import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class _FakeWebSocket:
@@ -104,6 +104,7 @@ class TestSubscriptionUpdates:
     @pytest.mark.anyio
     async def test_subscribe_update_sent_on_live_connection(self):
         import asyncio
+
         from src.brokers import streaming
 
         messages = [
@@ -142,6 +143,7 @@ class TestSubscriptionUpdates:
     @pytest.mark.anyio
     async def test_reconnect_replays_accumulated_subscriptions(self):
         import asyncio
+
         from src.brokers import streaming
 
         ws1 = _FakeWebSocket([], raise_after=ConnectionError("dropped"))
@@ -169,6 +171,7 @@ class TestSubscriptionUpdates:
     @pytest.mark.anyio
     async def test_unsubscribe_removes_from_reconnect_replay(self):
         import asyncio
+
         from src.brokers import streaming
 
         ws1 = _FakeWebSocket([], raise_after=ConnectionError("dropped"))

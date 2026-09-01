@@ -232,7 +232,7 @@ class TestDetectMarketRegime:
 
 class TestConfidenceScale:
     def test_scale_helper_maps_band(self):
-        from src.analysis.regime import _scale_confidence, MAX_CONFIDENCE
+        from src.analysis.regime import MAX_CONFIDENCE, _scale_confidence
         assert _scale_confidence(100) == MAX_CONFIDENCE == 85
         assert _scale_confidence(0) == 0
         # No flat top below the ceiling: distinct internal scores stay distinct.

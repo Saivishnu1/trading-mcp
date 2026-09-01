@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .models import Holding, Position, Fund, Order, OrderRequest, Quote
+from .models import Fund, Holding, Order, OrderRequest, Position, Quote
 
 
 class BrokerAdapter(ABC):

@@ -27,9 +27,9 @@ from datetime import date, datetime
 
 from src.analysis import regime as regime_mod
 from src.intelligence.events import get_upcoming_events, nearest_high_impact_days
+from src.intelligence.global_pulse import get_global_pulse
 from src.intelligence.risk import get_market_risk_score
 from src.intelligence.vix import get_india_vix
-from src.intelligence.global_pulse import get_global_pulse
 from src.options import analytics
 from src.options.bse_service import BSEOptionsError, get_bse_options_service
 from src.options.service import get_options_service

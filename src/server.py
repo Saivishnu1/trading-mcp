@@ -2,17 +2,47 @@ import asyncio
 import contextlib
 import hashlib
 import json
-import os
 import logging
+import os
 import urllib.parse
+
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from src.broker import get_broker, current_user
-from src.tools import auth, portfolio, market, instruments, options, technicals, analysis, dashboard, trade_planner, strategy_builder, trade_review, intelligence, portfolio_intelligence, catalyst, journal, recommendations, sizer, meta_tools, brokers, chart, candles, chart_patterns, options_awareness, market_awareness, charts, monitor, costs, mcx
-import src.session_store as session_store
 import src.api_key_store as api_key_store
+import src.session_store as session_store
+from src.broker import current_user, get_broker
+from src.tools import (
+    analysis,
+    auth,
+    brokers,
+    candles,
+    catalyst,
+    chart,
+    chart_patterns,
+    charts,
+    costs,
+    dashboard,
+    instruments,
+    intelligence,
+    journal,
+    market,
+    market_awareness,
+    mcx,
+    meta_tools,
+    monitor,
+    options,
+    options_awareness,
+    portfolio,
+    portfolio_intelligence,
+    recommendations,
+    sizer,
+    strategy_builder,
+    technicals,
+    trade_planner,
+    trade_review,
+)
 
 load_dotenv()
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -118,6 +148,7 @@ def _warm_instrument_cache_background() -> None:
     def _run() -> None:
         try:
             import asyncio
+
             from src.brokers.factory import get_broker_adapter
             asyncio.run(get_broker_adapter("indmoney").warm_instrument_cache())
             logger.info("Instrument cache pre-warmed (equity + fno).")
@@ -554,6 +585,7 @@ async def _is_market_session_open_safe() -> bool:
     that was actually open; the alternative risks reproducing the bug.
     """
     import asyncio
+
     from src.market.calendar import is_market_session_open
     try:
         return await asyncio.get_running_loop().run_in_executor(None, is_market_session_open)
@@ -565,8 +597,8 @@ async def _is_market_session_open_safe() -> bool:
 _oauth_codes = {}
 
 def _verify_pkce(code_verifier: str, code_challenge: str, method: str) -> bool:
-    import hashlib
     import base64
+    import hashlib
     if method == "S256":
         hashed = hashlib.sha256(code_verifier.encode("utf-8")).digest()
         calculated = base64.urlsafe_b64encode(hashed).decode("utf-8").rstrip("=")
@@ -688,7 +720,7 @@ async def _handle_login_post(scope, receive, send) -> None:
         redirect_url = f"{redirect_uri}?code={code}"
         if state:
             redirect_url += f"&state={urllib.parse.quote(state)}"
-        
+
         await send({
             "type": "http.response.start",
             "status": 302,
@@ -875,10 +907,10 @@ def _get_base_url(scope) -> str:
     public_url = os.environ.get("PUBLIC_URL")
     if public_url:
         return public_url.rstrip("/")
-    
+
     headers = dict(scope.get("headers", []))
     host = headers.get(b"host", b"localhost:8000").decode("utf-8")
-    
+
     proto = "http"
     if headers.get(b"x-forwarded-proto"):
         proto = headers.get(b"x-forwarded-proto").decode("utf-8")
@@ -886,7 +918,7 @@ def _get_base_url(scope) -> str:
         proto = scope.get("scheme")
     elif "443" in host:
         proto = "https"
-        
+
     return f"{proto}://{host}"
 
 
@@ -1030,7 +1062,8 @@ async def _app(scope, receive, send):
 
             # Guest flow: user clicked "Continue as guest" — issue a limited token
             if oauth_params.get("guest", [""])[0] == "1" and redirect_uri:
-                import secrets as _s, time as _t
+                import secrets as _s
+                import time as _t
                 guest_key, _ = api_key_store.get_or_create("__guest__")
                 code = "auth_" + _s.token_hex(16)
                 _oauth_codes[code] = {
@@ -1054,7 +1087,8 @@ async def _app(scope, receive, send):
             if uid_cookie and redirect_uri:
                 enctoken = session_store.load(uid_cookie)
                 if enctoken:
-                    import secrets as _s, time as _t
+                    import secrets as _s
+                    import time as _t
                     api_key, _ = api_key_store.get_or_create(uid_cookie)
                     code = "auth_" + _s.token_hex(16)
                     _oauth_codes[code] = {
@@ -1305,7 +1339,7 @@ async def _app(scope, receive, send):
                     return
                 req.is_amo = True
                 req.validity = "DAY"
-            from src.execution.service import submit_order, resolve_symbol
+            from src.execution.service import resolve_symbol, submit_order
             # If the client already sent a security_id (user picked an exact
             # contract from the /trade/symbols dropdown), trust it — re-resolving
             # by symbol text is ambiguous for weekly index options that share a
@@ -1373,7 +1407,7 @@ async def _app(scope, receive, send):
             if not session_open:
                 req.is_amo = True
                 req.validity = "DAY"
-            from src.execution.service import submit_order, resolve_symbol
+            from src.execution.service import resolve_symbol, submit_order
             if not req.security_id:
                 try:
                     sec_id = await resolve_symbol(req.symbol, exchange=req.exchange, segment=req.segment)

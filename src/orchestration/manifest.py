@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 

@@ -1,8 +1,8 @@
-from typing import Optional
 from mcp.server.fastmcp import FastMCP
-from src.market import get_market
+
 from src import meta as _meta
-from src.market.symbols import normalize_symbol_extended as _norm, parse as _parse
+from src.market import get_market
+from src.market.symbols import normalize_symbol_extended as _norm
 
 # Valid yfinance intervals and a human-readable alias map
 _YF_INTERVALS = {

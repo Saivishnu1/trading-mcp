@@ -20,8 +20,8 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
-from src.journal import db as _db
 from src.broker import current_user
+from src.journal import db as _db
 
 
 def _uid() -> str | None:

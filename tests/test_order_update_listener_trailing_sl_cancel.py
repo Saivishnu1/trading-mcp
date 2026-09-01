@@ -15,8 +15,9 @@ TC-6  deactivate_sl_target is awaited alongside cancel_trailing_sl
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 async def _fake_stream(updates):

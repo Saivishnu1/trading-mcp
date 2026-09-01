@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redesign preview — pick one</title>
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   Shared shell for the preview page itself (not part of any variant).
+   ══════════════════════════════════════════════════════════════════════ */
+html, body {
+  margin: 0; padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: #0e0e11; color: #ddd;
+}
+.intro {
+  padding: 24px 24px 8px;
+  max-width: 1200px;
+}
+.intro h1 { font-size: 20px; margin: 0 0 6px; }
+.intro p { font-size: 14px; color: #999; margin: 0 0 4px; line-height: 1.5; }
+.variants {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(340px, 1fr));
+  gap: 20px;
+  padding: 16px 24px 48px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .variants { grid-template-columns: 1fr; max-width: 480px; }
+}
+.variant-frame {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid #333;
+}
+.variant-label {
+  padding: 10px 16px;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: #1a1a1e;
+  color: #aaa;
+  border-bottom: 2px solid #333;
+}
+.variant-sub { font-weight: 400; text-transform: none; letter-spacing: 0; color: #777; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   VARIANT TOKEN BLOCKS — same shape as the real tokens.css, scoped
+   under a wrapper class instead of :root so all three can render at once.
+   ══════════════════════════════════════════════════════════════════════ */
+.v-warm {
+  --surface-0: #fcfcfa; --surface-1: #ffffff; --surface-2: #f5f4f0;
+  --border-subtle: #e8e6e1; --border-strong: #d3d0c8;
+  --content-primary: #1a1a18; --content-secondary: #6b6862; --content-tertiary: #a3a099;
+  --accent: #2f5d50; --accent-surface: rgba(47,93,80,.08); --accent-strong: #234639;
+  --buy: #2f6f4f; --buy-surface: #e8f2ec; --sell: #a8443a; --sell-surface: #f9ece9;
+  --status-warning: #a06a1f; --status-warning-surface: #f7edda;
+  --radius-sm: 8px; --radius-md: 14px; --radius-full: 999px;
+  --card-pad: 24px; --body-size: 15px; --shadow-card: 0 1px 3px rgba(20,20,15,.06), 0 8px 24px rgba(20,20,15,.04);
+  --card-border: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+.v-slate {
+  --surface-0: #f8fafc; --surface-1: #ffffff; --surface-2: #f1f5f9;
+  --border-subtle: #e2e8f0; --border-strong: #cbd5e1;
+  --content-primary: #0f172a; --content-secondary: #64748b; --content-tertiary: #94a3b8;
+  --accent: #3b82f6; --accent-surface: rgba(59,130,246,.08); --accent-strong: #1d4ed8;
+  --buy: #047857; --buy-surface: #e7f6ef; --sell: #dc2626; --sell-surface: #fbebeb;
+  --status-warning: #b45309; --status-warning-surface: #fef3e2;
+  --radius-sm: 6px; --radius-md: 10px; --radius-full: 999px;
+  --card-pad: 16px; --body-size: 14px; --shadow-card: none;
+  --card-border: 1px solid var(--border-subtle);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+.v-charcoal {
+  --surface-0: #16151a; --surface-1: #1e1d23; --surface-2: #27262d;
+  --border-subtle: rgba(255,252,245,.09); --border-strong: rgba(255,252,245,.18);
+  --content-primary: #e6e3dd; --content-secondary: #9a958c; --content-tertiary: #66625b;
+  --accent: #7c9cf0; --accent-surface: rgba(124,156,240,.12); --accent-strong: #a2bbf5;
+  --buy: #4ec294; --buy-surface: rgba(78,194,148,.12); --sell: #e8736d; --sell-surface: rgba(232,115,109,.12);
+  --status-warning: #e0b565; --status-warning-surface: rgba(224,181,101,.12);
+  --radius-sm: 8px; --radius-md: 12px; --radius-full: 999px;
+  --card-pad: 20px; --body-size: 15px; --shadow-card: 0 2px 8px rgba(0,0,0,.3);
+  --card-border: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Component styles — written against the variant custom properties so
+   the SAME markup renders three ways. This mirrors components.css.
+   ══════════════════════════════════════════════════════════════════════ */
+.demo-page {
+  background: var(--surface-0);
+  color: var(--content-primary);
+  font-size: var(--body-size);
+  padding: var(--card-pad);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.demo-nav {
+  display: flex; gap: 6px; align-items: center;
+  padding-bottom: 12px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.demo-nav .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--buy); }
+.demo-nav .item {
+  padding: 6px 10px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600;
+  color: var(--content-secondary);
+}
+.demo-nav .item.on { background: var(--accent-surface); color: var(--accent); }
+
+.demo-card {
+  background: var(--surface-1);
+  border: var(--card-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--card-pad);
+}
+
+.hero-label { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--content-tertiary); margin-bottom: 6px; }
+.hero-num { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.hero-sub { font-size: 12px; color: var(--content-secondary); margin-top: 4px; }
+
+.demo-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.demo-table th {
+  text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--content-tertiary); padding: 8px 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.demo-table td { padding: 10px 4px; border-bottom: 1px solid var(--border-subtle); font-size: var(--body-size); }
+.demo-table .sym { font-weight: 600; }
+.demo-table .mono { font-family: "JetBrains Mono", "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+.dir-up::before { content: "▲ "; }
+.dir-down::before { content: "▼ "; }
+.up { color: var(--buy); }
+.down { color: var(--sell); }
+
+.badge {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-full);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+}
+.badge-buy { background: var(--buy-surface); color: var(--buy); }
+.badge-sell { background: var(--sell-surface); color: var(--sell); }
+.badge-warn { background: var(--status-warning-surface); color: var(--status-warning); }
+
+.btn-row { display: flex; gap: 8px; margin-top: 4px; }
+.btn {
+  flex: 1; text-align: center; padding: 10px 14px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; border: 1.5px solid transparent; cursor: pointer;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: transparent; color: var(--content-primary); border-color: var(--border-strong); }
+.btn-buy { background: var(--buy); color: #fff; }
+.btn-sell { background: var(--sell); color: #fff; }
+.btn-ghost { background: transparent; color: var(--content-secondary); }
+
+.demo-input {
+  width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 14px;
+  background: var(--surface-2); color: var(--content-primary); border: 1.5px solid var(--border-subtle);
+  box-sizing: border-box; margin-top: 4px;
+}
+.demo-input::placeholder { color: var(--content-tertiary); }
+
+.demo-modal {
+  background: var(--surface-1); border: var(--card-border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card); padding: var(--card-pad);
+}
+.demo-modal h3 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+.demo-modal .row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; color: var(--content-secondary); }
+.demo-modal .row b { color: var(--content-primary); font-family: "JetBrains Mono", monospace; }
+
+.caption { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--content-tertiary); margin: 8px 0 -4px; }
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>Redesign preview — pick one, or call out what's still wrong</h1>
+  <p>Dev-only comparison harness, not shipped. Same real components (nav, positions table, summary card, buttons, input, badges, a modal) rendered three ways so the difference shows up in how a table or card actually feels, not in a swatch.</p>
+  <p>Every text/background pair here holds ≥7:1 body / ≥4.5:1 secondary contrast (WCAG AAA/AA) — verified before this file was written.</p>
+</div>
+
+<div class="variants">
+
+  <!-- ═══════════════ VARIANT A — Warm neutral, light ═══════════════ -->
+  <div class="variant-frame">
+    <div class="variant-label">A · Warm neutral <span class="variant-sub">— editorial, calm, premium</span></div>
+    <div class="v-warm demo-page">
+
+      <div class="demo-nav">
+        <span class="dot"></span>
+        <span class="item on">Home</span>
+        <span class="item">Positions</span>
+        <span class="item">Trade</span>
+      </div>
+
+      <div class="demo-card">
+        <div class="hero-label">Today's P&amp;L</div>
+        <div class="hero-num up dir-up">₹18,420.50</div>
+        <div class="hero-sub">3 open positions · updated 2s ago</div>
+      </div>
+
+      <div class="caption">Positions</div>
+      <div class="demo-card" style="padding: 4px 16px;">
+        <table class="demo-table">
+          <tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>P&amp;L</th></tr>
+          <tr><td class="sym">NIFTY 24800 CE</td><td class="mono">50</td><td class="mono">142.30</td><td class="mono up dir-up">+2,140</td></tr>
+          <tr><td class="sym">RELIANCE</td><td class="mono">10</td><td class="mono">2,847.15</td><td class="mono down dir-down">-612</td></tr>
+          <tr><td class="sym">BANKNIFTY 51200 PE</td><td class="mono">25</td><td class="mono">88.60</td><td class="mono up dir-up">+890</td></tr>
+        </table>
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="badge badge-buy">BUY</span>
+        <span class="badge badge-sell">SELL</span>
+        <span class="badge badge-warn">MARGIN 68%</span>
+      </div>
+
+      <div>
+        <label style="font-size:12px; font-weight:600; color:var(--content-secondary);">Quantity</label>
+        <input class="demo-input" placeholder="50">
+      </div>
+
+      <div class="btn-row">
+        <div class="btn btn-buy">BUY</div>
+        <div class="btn btn-sell">SELL</div>
+        <div class="btn btn-secondary">Cancel</div>
+      </div>
+
+      <div class="demo-modal">
+        <h3>Modify order</h3>
+        <div class="row"><span>Stop loss</span><b>142.00</b></div>
+        <div class="row"><span>Target</span><b>168.50</b></div>
+        <div class="btn-row"><div class="btn btn-primary">Confirm</div><div class="btn btn-ghost">Cancel</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════ VARIANT B — Cool slate, light ═══════════════ -->
+  <div class="variant-frame">
+    <div class="variant-label">B · Cool slate <span class="variant-sub">— technical, crisp, dashboard</span></div>
+    <div class="v-slate demo-page">
+
+      <div class="demo-nav">
+        <span class="dot"></span>
+        <span class="item on">Home</span>
+        <span class="item">Positions</span>
+        <span class="item">Trade</span>
+      </div>
+
+      <div class="demo-card">
+        <div class="hero-label">Today's P&amp;L</div>
+        <div class="hero-num up dir-up">₹18,420.50</div>
+        <div class="hero-sub">3 open positions · updated 2s ago</div>
+      </div>
+
+      <div class="caption">Positions</div>
+      <div class="demo-card" style="padding: 4px 16px;">
+        <table class="demo-table">
+          <tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>P&amp;L</th></tr>
+          <tr><td class="sym">NIFTY 24800 CE</td><td class="mono">50</td><td class="mono">142.30</td><td class="mono up dir-up">+2,140</td></tr>
+          <tr><td class="sym">RELIANCE</td><td class="mono">10</td><td class="mono">2,847.15</td><td class="mono down dir-down">-612</td></tr>
+          <tr><td class="sym">BANKNIFTY 51200 PE</td><td class="mono">25</td><td class="mono">88.60</td><td class="mono up dir-up">+890</td></tr>
+        </table>
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="badge badge-buy">BUY</span>
+        <span class="badge badge-sell">SELL</span>
+        <span class="badge badge-warn">MARGIN 68%</span>
+      </div>
+
+      <div>
+        <label style="font-size:12px; font-weight:600; color:var(--content-secondary);">Quantity</label>
+        <input class="demo-input" placeholder="50">
+      </div>
+
+      <div class="btn-row">
+        <div class="btn btn-buy">BUY</div>
+        <div class="btn btn-sell">SELL</div>
+        <div class="btn btn-secondary">Cancel</div>
+      </div>
+
+      <div class="demo-modal">
+        <h3>Modify order</h3>
+        <div class="row"><span>Stop loss</span><b>142.00</b></div>
+        <div class="row"><span>Target</span><b>168.50</b></div>
+        <div class="btn-row"><div class="btn btn-primary">Confirm</div><div class="btn btn-ghost">Cancel</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══════════════ VARIANT C — Warm charcoal, dark ═══════════════ -->
+  <div class="variant-frame">
+    <div class="variant-label">C · Warm charcoal <span class="variant-sub">— warm, easy on the eyes</span></div>
+    <div class="v-charcoal demo-page">
+
+      <div class="demo-nav">
+        <span class="dot"></span>
+        <span class="item on">Home</span>
+        <span class="item">Positions</span>
+        <span class="item">Trade</span>
+      </div>
+
+      <div class="demo-card">
+        <div class="hero-label">Today's P&amp;L</div>
+        <div class="hero-num up dir-up">₹18,420.50</div>
+        <div class="hero-sub">3 open positions · updated 2s ago</div>
+      </div>
+
+      <div class="caption">Positions</div>
+      <div class="demo-card" style="padding: 4px 16px;">
+        <table class="demo-table">
+          <tr><th>Symbol</th><th>Qty</th><th>LTP</th><th>P&amp;L</th></tr>
+          <tr><td class="sym">NIFTY 24800 CE</td><td class="mono">50</td><td class="mono">142.30</td><td class="mono up dir-up">+2,140</td></tr>
+          <tr><td class="sym">RELIANCE</td><td class="mono">10</td><td class="mono">2,847.15</td><td class="mono down dir-down">-612</td></tr>
+          <tr><td class="sym">BANKNIFTY 51200 PE</td><td class="mono">25</td><td class="mono">88.60</td><td class="mono up dir-up">+890</td></tr>
+        </table>
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="badge badge-buy">BUY</span>
+        <span class="badge badge-sell">SELL</span>
+        <span class="badge badge-warn">MARGIN 68%</span>
+      </div>
+
+      <div>
+        <label style="font-size:12px; font-weight:600; color:var(--content-secondary);">Quantity</label>
+        <input class="demo-input" placeholder="50">
+      </div>
+
+      <div class="btn-row">
+        <div class="btn btn-buy">BUY</div>
+        <div class="btn btn-sell">SELL</div>
+        <div class="btn btn-secondary">Cancel</div>
+      </div>
+
+      <div class="demo-modal">
+        <h3>Modify order</h3>
+        <div class="row"><span>Stop loss</span><b>142.00</b></div>
+        <div class="row"><span>Target</span><b>168.50</b></div>
+        <div class="btn-row"><div class="btn btn-primary">Confirm</div><div class="btn btn-ghost">Cancel</div></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

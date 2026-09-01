@@ -53,8 +53,8 @@ class CalendarProviderChain:
                 pass
         # EmergencyCalendarProvider never returns None, so reaching here means
         # something very unexpected happened — return a failure marker.
+
         from src.providers.base import _now_iso
-        from datetime import date
         failed: ProviderResult = ProviderResult(
             data={},
             provider_name="CalendarProviderChain",

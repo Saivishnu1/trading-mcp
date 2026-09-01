@@ -11,11 +11,11 @@ import pytest
 
 import src.journal.db as journal_db
 from src.journal.service import (
+    _parse_option_symbol,
     close_trade,
     detect_reentry_pattern,
     get_strike_attempts,
     log_trade,
-    _parse_option_symbol,
 )
 
 
@@ -186,6 +186,7 @@ class TestGetStrikeAttempts:
 class TestGetStrikeAttemptsToolRegistration:
     def test_tool_wraps_data_and_meta(self):
         from mcp.server.fastmcp import FastMCP as _FastMCP
+
         from src.tools import journal as journal_tools
 
         log_trade(symbol="NIFTY 24200 CE", direction="LONG", entry_price=100.0)

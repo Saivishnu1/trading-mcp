@@ -7,12 +7,13 @@ from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
 
+
 # Shared market context helpers (imported lazily so server startup stays fast)
 def _market_context_data(symbol: str, include_options: bool) -> dict:
-    from src.market import get_market
     from src.analysis import regime as _regime
-    from src.intelligence.vix import get_india_vix
     from src.intelligence.events import get_upcoming_events
+    from src.intelligence.vix import get_india_vix
+    from src.market import get_market
 
     ctx: dict = {}
 
@@ -33,6 +34,7 @@ def _market_context_data(symbol: str, include_options: bool) -> dict:
     # Technical indicators (150-day strategy-grade lookback)
     try:
         from datetime import date, timedelta
+
         from src.technical import indicators as _ind
         today = date.today()
         start = (today - timedelta(days=150)).isoformat()

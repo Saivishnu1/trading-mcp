@@ -6,7 +6,6 @@ import time
 from datetime import date, timedelta
 from unittest.mock import patch
 
-
 # ---------------------------------------------------------------------------
 # nearest_high_impact_days
 # ---------------------------------------------------------------------------
@@ -143,8 +142,9 @@ class TestEnvVarOverride:
 
 class TestScheduleExpiryWarning:
     def test_warning_logged_near_expiry(self, monkeypatch, caplog):
-        import src.intelligence.events as ev_mod
         import logging
+
+        import src.intelligence.events as ev_mod
         with ev_mod._LOCK:
             ev_mod._CACHE.clear()
 

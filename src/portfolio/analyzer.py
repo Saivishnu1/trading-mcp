@@ -7,7 +7,7 @@ scores, or probability estimates.
 """
 from __future__ import annotations
 
-from src.brokers.models import Holding, Position, Fund
+from src.brokers.models import Fund, Holding, Position
 from src.portfolio.allocator import AssetAllocator
 from src.portfolio.risk import RiskAnalyzer
 

@@ -51,6 +51,7 @@ class ExecutionRepository:
         """
         try:
             from sqlalchemy.exc import SQLAlchemyError  # noqa: F401 (import guard)
+
             from src.db.models import OrderLog
         except ImportError:
             logger.warning("save_order skipped: sqlalchemy/models unavailable (dev env)")
@@ -169,6 +170,7 @@ class ExecutionRepository:
         rehydrate in-flight trailing-SL tasks. [] if the DB is unavailable."""
         try:
             from sqlalchemy import select
+
             from src.db.models import TrailingSlState
         except ImportError:
             return []
@@ -195,6 +197,7 @@ class ExecutionRepository:
         order-update listener does), the most recent one wins."""
         try:
             from sqlalchemy import select
+
             from src.db.models import OrderLog
         except ImportError:
             return None
@@ -221,6 +224,7 @@ class ExecutionRepository:
         closes. No-op if the DB is unavailable or no matching row exists."""
         try:
             from sqlalchemy import select
+
             from src.db.models import OrderLog
         except ImportError:
             return
@@ -243,6 +247,7 @@ class ExecutionRepository:
         push with human-readable context. None if not found or DB down."""
         try:
             from sqlalchemy import select
+
             from src.db.models import OrderLog
         except ImportError:
             return None
@@ -262,6 +267,7 @@ class ExecutionRepository:
         """Return the most recent submitted orders (newest first). [] if DB down."""
         try:
             from sqlalchemy import select
+
             from src.db.models import OrderLog
         except ImportError:
             return []

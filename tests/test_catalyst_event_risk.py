@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -119,11 +118,11 @@ class TestConfidenceModel:
 
 class TestBuildCatalysts:
     def _nearest(self, earnings_result):
-        from src.catalyst.event_risk import _nearest_catalyst, _all_catalysts
+        from src.catalyst.event_risk import _all_catalysts, _nearest_catalyst
         return _nearest_catalyst(_all_catalysts(earnings_result))
 
     def _highest(self, earnings_result):
-        from src.catalyst.event_risk import _highest_impact_catalyst, _all_catalysts
+        from src.catalyst.event_risk import _all_catalysts, _highest_impact_catalyst
         return _highest_impact_catalyst(_all_catalysts(earnings_result))
 
     def test_nearest_when_only_earnings(self):

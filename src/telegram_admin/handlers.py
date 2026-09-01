@@ -1,26 +1,27 @@
 import logging
-import time
-import tarfile
 import shutil
-import os
 import subprocess
+import tarfile
+import time
 from datetime import datetime
 from pathlib import Path
+
 from telegram import ForceReply, Update
 from telegram.ext import ContextTypes
-from src.telegram_admin.auth import admin_only
-from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH, SERVICE_NAME, reload_config
+
 import src.telegram_admin.env_manager as env_manager
 import src.telegram_admin.service_manager as service_manager
+from src.telegram_admin.auth import admin_only
+from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH, SERVICE_NAME, reload_config
 from src.telegram_admin.keyboards import (
-    get_cmd_restart_keyboard,
-    get_backup_env_keyboard,
-    get_order_confirm_keyboard,
-    get_admin_menu_keyboard,
-    get_admin_category_keyboard,
     ADMIN_CATEGORIES,
+    get_admin_category_keyboard,
+    get_admin_menu_keyboard,
+    get_backup_env_keyboard,
+    get_cmd_restart_keyboard,
+    get_order_confirm_keyboard,
 )
-from src.telegram_admin.order_parser import parse_order_args, format_order_summary, ParseError
+from src.telegram_admin.order_parser import ParseError, format_order_summary, parse_order_args
 from src.telegram_admin.utils import split_message
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ async def cmd_restart_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     """Handles the callback for the /restart command confirmation."""
     query = update.callback_query
     await query.answer()
-    
+
     try:
         data = query.data or ""
         if data == "cmd_restart:yes":
@@ -126,7 +127,7 @@ async def show_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             else:
                 display_val = val
             lines.append(f"{var:<25} {display_val}")
-        
+
         await update.message.reply_text(
             f"```\n" + "\n".join(lines) + "\n```",
             parse_mode="Markdown"
@@ -160,10 +161,10 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Check systemd is-active
         is_active = service_manager.is_service_active()
         sysctl_status = "🟢 active (running)" if is_active else "🔴 inactive"
-        
+
         # Check HTTP status
-        import urllib.request
         import json
+        import urllib.request
         try:
             # Short timeout of 2.0s for the local HTTP call
             with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2.0) as response:
@@ -179,7 +180,7 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     http_status = f"🔴 Failed (status {response.status})"
         except Exception as http_exc:
             http_status = f"🔴 Failed: {http_exc}"
-            
+
         msg = (
             f"● Service Health Status:\n"
             f"  • systemctl: {sysctl_status}\n"
@@ -204,7 +205,7 @@ async def tail_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             except ValueError:
                 await update.message.reply_text("Usage: /tail [number]")
                 return
-                
+
         logs = service_manager.get_service_logs(n)
         if not logs or not logs.strip():
             await update.message.reply_text("No logs found.")
@@ -239,50 +240,50 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Creates a timestamped SAFE backup archive (excludes secrets .env files)."""
     try:
         await update.message.reply_text("📦 Generating safe backup archive...")
-        
+
         # Workspace directories
         workspace_dir = Path(".").resolve()
-        
+
         # Create timestamp and names
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         archive_name = f"zerodha_mcp_safe_backup_{timestamp}.tar.gz"
-        
+
         # Create temp directory inside workspace
         temp_backup_dir = workspace_dir / f"safe_backup_temp_{timestamp}"
         temp_backup_dir.mkdir(exist_ok=True)
-        
+
         # 1. Copy journal.db (Database)
         db_path = workspace_dir / "journal.db"
         if db_path.exists():
             shutil.copy2(db_path, temp_backup_dir / "journal.db")
-            
+
         # 2. Copy systemd unit files
         sysd_dir = temp_backup_dir / "systemd"
         sysd_dir.mkdir(exist_ok=True)
-        
+
         mcp_service = Path("/etc/systemd/system/zerodha-mcp.service")
         if mcp_service.exists():
             shutil.copy2(mcp_service, sysd_dir / "zerodha-mcp.service")
-            
+
         admin_service = Path("/etc/systemd/system/telegram-admin.service")
         if admin_service.exists():
             shutil.copy2(admin_service, sysd_dir / "telegram-admin.service")
-            
+
         # 3. Fetch last 200 logs and save to a file
         try:
             logs = service_manager.get_service_logs(200)
             (temp_backup_dir / "zerodha-mcp.log").write_text(logs, encoding="utf-8")
         except Exception as log_exc:
             logger.warning("Could not include logs in backup: %s", log_exc)
-            
+
         # Create compressed tarball
         archive_path = workspace_dir / archive_name
         with tarfile.open(archive_path, "w:gz") as tar:
             tar.add(temp_backup_dir, arcname="safe_backup")
-            
+
         # Cleanup temp directory
         shutil.rmtree(temp_backup_dir)
-        
+
         # Send document to Telegram
         with open(archive_path, "rb") as f:
             await update.message.reply_document(
@@ -290,11 +291,11 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 filename=archive_name,
                 caption="✅ Safe backup completed successfully (excludes .env secrets)."
             )
-            
+
         # Delete local archive after sending
         if archive_path.exists():
             archive_path.unlink()
-            
+
     except Exception as exc:
         logger.error("Error in backup_command: %s", exc, exc_info=True)
         await update.message.reply_text(f"❌ Backup failed: {exc}")
@@ -323,39 +324,39 @@ async def backup_env_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Handles the callback confirmation query for backing up sensitive env variables."""
     query = update.callback_query
     await query.answer()
-    
+
     try:
         data = query.data or ""
         if data == "backup_env:yes":
             await query.message.edit_text("🔒 Packaging credentials...")
-            
+
             workspace_dir = Path(".").resolve()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             archive_name = f"zerodha_mcp_secrets_{timestamp}.tar.gz"
-            
+
             temp_backup_dir = workspace_dir / f"secrets_temp_{timestamp}"
             temp_backup_dir.mkdir(exist_ok=True)
-            
+
             # Copy .env and .env.bak
             if ENV_FILE_PATH.exists():
                 shutil.copy2(ENV_FILE_PATH, temp_backup_dir / ".env")
             bak_env = ENV_FILE_PATH.with_suffix(".env.bak")
             if bak_env.exists():
                 shutil.copy2(bak_env, temp_backup_dir / ".env.bak")
-                
+
             archive_path = workspace_dir / archive_name
             with tarfile.open(archive_path, "w:gz") as tar:
                 tar.add(temp_backup_dir, arcname="secrets_backup")
-                
+
             shutil.rmtree(temp_backup_dir)
-            
+
             with open(archive_path, "rb") as f:
                 await query.message.reply_document(
                     document=f,
                     filename=archive_name,
                     caption="🔑 Sensitive credentials backup completed."
                 )
-                
+
             if archive_path.exists():
                 archive_path.unlink()
         elif data == "backup_env:no":
@@ -408,7 +409,7 @@ async def disk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             uptime_str = subprocess.run(["uptime"], check=True, text=True, capture_output=True).stdout.strip()
         except Exception as e:
             uptime_str = f"Error: {e}"
-            
+
         msg = (
             "💿 **Disk Usage (Root /)**\n"
             f"```\n{df}\n```\n"
@@ -434,11 +435,11 @@ async def uptime_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 vm_up = subprocess.run(["uptime"], check=True, text=True, capture_output=True).stdout.strip()
             except Exception as e:
                 vm_up = f"Unknown ({e})"
-                
+
         # Services uptime
         mcp_up = _get_service_uptime("zerodha-mcp")
         admin_up = _get_service_uptime("telegram-admin")
-        
+
         msg = (
             "⏱️ **System Uptimes**\n\n"
             f"• **Oracle VM**:\n  {vm_up}\n\n"
@@ -472,7 +473,7 @@ async def ip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """Queries and returns the VM's public and private network IPs."""
     try:
         await update.message.reply_text("🌐 Resolving network IPs...")
-        
+
         # Public IP
         public_ip = "Unknown"
         try:
@@ -482,7 +483,7 @@ async def ip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 public_ip = resp.read().decode().strip()
         except Exception as exc:
             public_ip = f"Error ({exc})"
-            
+
         # Private IP
         private_ip = "Unknown"
         try:
@@ -494,7 +495,7 @@ async def ip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 private_ip = socket.gethostbyname(socket.gethostname())
             except Exception as exc:
                 private_ip = f"Error ({exc})"
-                
+
         msg = (
             "🌐 **Network IP Addresses**\n\n"
             f"• **Public IP**: `{public_ip}`\n"

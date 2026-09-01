@@ -9,7 +9,6 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 # Index alias → yfinance ticker
 # ---------------------------------------------------------------------------
-
 # Index alias table is the canonical one in src/market/symbols.py.
 # Catalyst keeps its own NSE-centric equity rule (BSE:X → X.NS, since news and
 # earnings are per-company and keyed on the NSE listing), but shares the index

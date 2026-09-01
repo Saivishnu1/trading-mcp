@@ -20,8 +20,8 @@ import pytest
 
 from src.market.calendar import (
     _last_weekday_of_month,
-    _nearest_monthly_expiry,
     _nearest_expiry_algorithmic,
+    _nearest_monthly_expiry,
     _reset_holiday_cache,
     get_market_calendar,
 )
@@ -127,9 +127,10 @@ class TestLiveExpiriesUsesBSEOptionsService:
     Zerodha instruments CSV is unavailable."""
 
     def test_bse_indices_use_bse_options_service(self, monkeypatch):
-        from unittest.mock import MagicMock, AsyncMock
-        from src.market import calendar as cal_mod
+        from unittest.mock import AsyncMock, MagicMock
+
         from src.calendar import CalendarFetcher
+        from src.market import calendar as cal_mod
 
         # Zerodha CSV unavailable (no cache, fetch returns empty)
         monkeypatch.setattr(cal_mod, "_load_zerodha_expiries_cache", lambda: {})

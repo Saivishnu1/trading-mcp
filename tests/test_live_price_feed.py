@@ -9,9 +9,9 @@ also instant/no-I/O for the symbols these tests use.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 
 async def _fake_stream(messages, subscription_updates=None, **_kw):
@@ -102,7 +102,8 @@ class TestCacheGet:
 
     def test_get_returns_none_for_stale_entry(self):
         import time
-        from src.monitor.live_price_feed import LivePriceCache, _MAX_STALENESS_SECONDS
+
+        from src.monitor.live_price_feed import _MAX_STALENESS_SECONDS, LivePriceCache
 
         cache = LivePriceCache()
         cache._symbol_to_instrument = {"NIFTY": "NIDX:26000"}
@@ -111,6 +112,7 @@ class TestCacheGet:
 
     def test_get_returns_fresh_value(self):
         import time
+
         from src.monitor.live_price_feed import LivePriceCache
 
         cache = LivePriceCache()
@@ -120,6 +122,7 @@ class TestCacheGet:
 
     def test_get_is_case_insensitive(self):
         import time
+
         from src.monitor.live_price_feed import LivePriceCache
 
         cache = LivePriceCache()
@@ -293,6 +296,7 @@ class TestPersistentConnectionSubscribeUnsubscribe:
     @pytest.mark.anyio
     async def test_closed_position_price_evicted_from_cache(self):
         import time
+
         from src.monitor.live_price_feed import LivePriceCache
 
         cache = LivePriceCache()
@@ -306,8 +310,9 @@ class TestPersistentConnectionSubscribeUnsubscribe:
             assert "NIDX:26009" not in cache._prices
 
     def test_stop_cancels_running_task_and_clears_updates_queue(self):
-        from src.monitor.live_price_feed import LivePriceCache
         from unittest.mock import MagicMock
+
+        from src.monitor.live_price_feed import LivePriceCache
 
         cache = LivePriceCache()
         fake_task = MagicMock()

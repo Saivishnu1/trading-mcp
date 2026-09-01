@@ -10,12 +10,10 @@ Only refresh_calendar() contacts the official NSE source.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
 
 from src.providers.calendar.chain import reset_calendar_provider
 from src.providers.calendar.json_provider import JSONCalendarProvider
 from src.providers.calendar.nse_provider import NSEOfficialProvider
-
 
 # ---------------------------------------------------------------------------
 # Mandatory holiday keywords — at least one from each group is expected.

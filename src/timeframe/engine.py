@@ -164,6 +164,7 @@ def get_technicals(
     # test under pytest-anyio, or a future async caller), run the fetch on a
     # separate thread with its own loop instead of asyncio.run() raising.
     import asyncio
+
     from src.chart_awareness.engine import ChartEngine
 
     async def _fetch() -> dict:

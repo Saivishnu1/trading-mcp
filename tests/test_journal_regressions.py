@@ -9,16 +9,16 @@ JR-5: get_trade_history with days=0 → empty/valid list, no crash
 from __future__ import annotations
 
 import sqlite3
+
 import pytest
 
 import src.journal.db as journal_db
 from src.journal.service import (
-    log_trade,
     close_trade,
     get_open_trades,
     get_trade_history,
+    log_trade,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixture

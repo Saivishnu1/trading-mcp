@@ -20,8 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.market_awareness.narrator import MarketNarrator
 from src import meta as _meta
+from src.market_awareness.narrator import MarketNarrator
 
 
 def _base_result(**overrides):

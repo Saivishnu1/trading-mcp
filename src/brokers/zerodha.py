@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from .base import BrokerAdapter
-from .models import Holding, Position, Fund, Order, OrderRequest, Quote
+from .models import Fund, Holding, Order, OrderRequest, Position, Quote
 
 logger = logging.getLogger(__name__)
 

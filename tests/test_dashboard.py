@@ -346,6 +346,7 @@ class _raise_svc:
 class TestDashboardToolRegistration:
     def test_get_sensex_dashboard_is_registered(self):
         from mcp.server.fastmcp import FastMCP
+
         from src.tools import dashboard as dashboard_tools
 
         mcp = FastMCP("test")
@@ -358,6 +359,7 @@ class TestDashboardToolRegistration:
 
     def test_get_sensex_dashboard_calls_build_dashboard_with_sensex(self, monkeypatch):
         from mcp.server.fastmcp import FastMCP
+
         from src.tools import dashboard as dashboard_tools
 
         calls = []

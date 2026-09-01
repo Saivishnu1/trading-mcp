@@ -17,6 +17,7 @@ class MonitorBootstrap:
 
     async def ensure_default_user(self) -> dict:
         from sqlalchemy import select
+
         from src.db.models import MonitorUser
 
         async with get_session() as session:
@@ -65,6 +66,7 @@ class MonitorBootstrap:
 
     async def _ensure_default_settings(self, session, user_id: str) -> None:
         from sqlalchemy import select
+
         from src.db.models import MonitorSettings
 
         result = await session.execute(

@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from mcp.server.fastmcp import FastMCP as _FastMCP
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -124,6 +123,7 @@ class TestOptionsRuntimeExecution:
     def test_fetch_uses_symbol_parameter_not_free_variable(self):
         """Regression: _fetch must NOT reference nse_sym as a free variable."""
         import inspect
+
         from src.tools import options as opts_mod
         tools = _opts_mcp()
         # The real test: execution doesn't raise NameError.

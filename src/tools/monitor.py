@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
-from src import meta as _meta
 
-from src.monitor.repository import MonitorRepository
+from src import meta as _meta
 from src.monitor.alerts import WhatsAppAlerter
+from src.monitor.repository import MonitorRepository
 
 
 def _staleness(last_heartbeat: str | None) -> tuple[bool, str]:
@@ -245,6 +245,7 @@ def register(mcp: FastMCP) -> None:
         No authentication required.
         """
         from sqlalchemy import select
+
         from src.db.base import get_session
         from src.db.models import MonitorSettings
 

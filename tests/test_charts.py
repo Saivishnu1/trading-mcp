@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.tools.charts import get_price_chart_impl, get_indicator_chart_impl, get_option_chart_impl
+import pytest
+
 from src.charts.utils import validate_png
+from src.tools.charts import get_indicator_chart_impl, get_option_chart_impl, get_price_chart_impl
 
 
 def _make_mock_candles(count: int) -> list[dict]:

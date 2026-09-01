@@ -2,13 +2,12 @@
 import pytest
 
 from src.analysis.regime import (
-    _classify_regime,
-    _regime_direction,
     _alignment_level,
     _alignment_summary,
+    _classify_regime,
+    _regime_direction,
     get_regime_alignment,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

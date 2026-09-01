@@ -15,7 +15,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # D1 — get_market_calendar
 # ---------------------------------------------------------------------------
-
 from src.market.calendar import get_market_calendar
 
 
@@ -65,8 +64,9 @@ class TestMarketCalendar:
 # D1 MCP wrapper — get_market_calendar via meta_tools
 # ---------------------------------------------------------------------------
 
-from src.tools.meta_tools import register as _register_meta
 from mcp.server.fastmcp import FastMCP as _FastMCP
+
+from src.tools.meta_tools import register as _register_meta
 
 
 def _make_mcp():
@@ -333,6 +333,7 @@ class TestNormKwInTechnicalsResponse:
 
     def test_atr_with_nse_prefix_records_correction(self):
         from unittest.mock import patch
+
         from src.tools import technicals
 
         with patch("src.market.service.MarketService.get_historical") as mock_hist:

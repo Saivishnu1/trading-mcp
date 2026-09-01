@@ -1,18 +1,20 @@
 import logging
+
 from telegram import Update
 from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     ConversationHandler,
-    CommandHandler,
-    CallbackQueryHandler,
     MessageHandler,
     filters,
 )
+
+import src.telegram_admin.service_manager as service_manager
 from src.telegram_admin.auth import admin_only
 from src.telegram_admin.config import ALLOWED_VARIABLES, ENV_FILE_PATH
 from src.telegram_admin.env_manager import update_variable
 from src.telegram_admin.keyboards import get_env_keyboard, get_restart_keyboard
-import src.telegram_admin.service_manager as service_manager
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +42,22 @@ async def select_variable(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Callback query handler when a variable button is clicked."""
     query = update.callback_query
     await query.answer()
-    
+
     try:
         data = query.data or ""
         if not data.startswith("edit_env:"):
             logger.warning("Invalid callback data in select_variable: %s", data)
             await query.message.reply_text("❌ Invalid variable selection.")
             return ConversationHandler.END
-            
+
         var_name = data.split(":", 1)[1]
         if var_name not in ALLOWED_VARIABLES:
             logger.warning("Attempted to edit non-allowed variable: %s", var_name)
             await query.message.reply_text("❌ Modifying that variable is not permitted.")
             return ConversationHandler.END
-            
+
         context.user_data["selected_var"] = var_name
-        
+
         await query.message.edit_text(
             f"Selected:\n\n"
             f"`{var_name}`\n\n"
@@ -74,15 +76,15 @@ async def receive_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     try:
         new_value = update.message.text
         var_name = context.user_data.get("selected_var")
-        
+
         if not var_name or var_name not in ALLOWED_VARIABLES:
             logger.warning("receive_value called without a valid selected variable in context")
             await update.message.reply_text("❌ No variable selected. Please restart the process with /env.")
             return ConversationHandler.END
-            
+
         # Update in the .env file
         update_variable(ENV_FILE_PATH, var_name, new_value)
-        
+
         reply_markup = get_restart_keyboard()
         await update.message.reply_text(
             f"✅ `{var_name}` updated.\n\n"
@@ -101,7 +103,7 @@ async def confirm_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Callback query handler for the restart confirmation YES/NO buttons."""
     query = update.callback_query
     await query.answer()
-    
+
     try:
         data = query.data or ""
         if data == "restart:yes":
@@ -134,7 +136,7 @@ async def confirm_restart(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         else:
             logger.warning("Invalid callback data in confirm_restart: %s", data)
             await query.message.reply_text("❌ Invalid selection.")
-            
+
         context.user_data.clear()
         return ConversationHandler.END
     except Exception as exc:

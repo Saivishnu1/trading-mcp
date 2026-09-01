@@ -1,9 +1,9 @@
 from mcp.server.fastmcp import FastMCP
-from src import meta as _meta
 
-from src.market.symbols import normalize_symbol_extended as _norm
+from src import meta as _meta
 from src.catalyst.earnings import get_earnings_calendar as _get_earnings_calendar
 from src.catalyst.news import check_move_news_correlation as _check_move_news_correlation
+from src.market.symbols import normalize_symbol_extended as _norm
 
 
 def register(mcp: FastMCP) -> None:

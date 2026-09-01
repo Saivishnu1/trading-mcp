@@ -19,7 +19,6 @@ from src.catalyst.constants import (
     _NEGATIVE_KEYWORDS,
     _POSITIVE_KEYWORDS,
     _to_yf_ticker,
-    is_index,
 )
 
 logger = logging.getLogger(__name__)

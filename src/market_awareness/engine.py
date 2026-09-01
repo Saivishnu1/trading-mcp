@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
-from .aggregator import MarketAggregator
-from .narrator import MarketNarrator, get_calendar_index_key
 from src.analysis.regime import detect_market_regime
 from src.options import analytics
+
+from .aggregator import MarketAggregator
+from .narrator import MarketNarrator, get_calendar_index_key
 
 
 class MarketAwarenessEngine:
@@ -26,7 +27,7 @@ class MarketAwarenessEngine:
 
         # Run aggregation and regime detection concurrently
         loop = asyncio.get_running_loop()
-        
+
         agg_task = aggregator.collect(
             symbol=symbol_upper,
             interval=interval,
@@ -35,7 +36,7 @@ class MarketAwarenessEngine:
             include_global=include_global,
             include_patterns=include_patterns,
         )
-        
+
         regime_task = loop.run_in_executor(None, detect_market_regime, symbol_upper)
 
         raw_data, regime_res = await asyncio.gather(agg_task, regime_task, return_exceptions=True)
@@ -244,7 +245,7 @@ class MarketAwarenessEngine:
             "vix": vix,
             "calendar": calendar,
         }
-        
+
         final_data["observations"] = narrator.narrate(raw_components, missing_data)
 
         return final_data

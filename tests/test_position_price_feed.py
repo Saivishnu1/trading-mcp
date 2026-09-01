@@ -5,8 +5,9 @@ no real network calls.
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 async def _fake_stream(messages, subscription_updates=None, **_kw):
@@ -125,7 +126,8 @@ class TestPositionPriceCacheGet:
 
     def test_get_returns_none_for_stale_entry(self):
         import time
-        from src.monitor.position_price_feed import PositionPriceCache, _MAX_STALENESS_SECONDS
+
+        from src.monitor.position_price_feed import _MAX_STALENESS_SECONDS, PositionPriceCache
 
         cache = PositionPriceCache()
         cache._position_to_instrument = {"pos-1": "NFO:12345"}
@@ -134,6 +136,7 @@ class TestPositionPriceCacheGet:
 
     def test_get_returns_fresh_value(self):
         import time
+
         from src.monitor.position_price_feed import PositionPriceCache
 
         cache = PositionPriceCache()
@@ -175,6 +178,7 @@ class TestPositionPriceCacheSubscriptions:
     @pytest.mark.anyio
     async def test_closed_position_pushes_unsubscribe_and_evicts_price(self):
         import time
+
         from src.monitor.position_price_feed import PositionPriceCache
 
         cache = PositionPriceCache()
@@ -191,8 +195,9 @@ class TestPositionPriceCacheSubscriptions:
         assert update == {"action": "unsubscribe", "mode": "ltp", "instruments": ["NFO:12345"]}
 
     def test_stop_cancels_task_and_clears_updates(self):
-        from src.monitor.position_price_feed import PositionPriceCache
         from unittest.mock import MagicMock
+
+        from src.monitor.position_price_feed import PositionPriceCache
 
         cache = PositionPriceCache()
         fake_task = MagicMock()

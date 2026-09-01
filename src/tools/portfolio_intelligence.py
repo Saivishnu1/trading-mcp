@@ -1,8 +1,10 @@
 from mcp.server.fastmcp import FastMCP
 
 from src.portfolio_intelligence.service import (
-    get_portfolio_risk_report as _get_portfolio_risk_report,
     get_portfolio_exposure_breakdown as _get_portfolio_exposure_breakdown,
+)
+from src.portfolio_intelligence.service import (
+    get_portfolio_risk_report as _get_portfolio_risk_report,
 )
 
 

@@ -25,12 +25,14 @@ logger = logging.getLogger(__name__)
 # Symbol resolution lives in src/market/symbols.py (single source of truth).
 # Local aliases kept so the rest of this module reads unchanged.
 from src.market.symbols import (  # noqa: E402
-    INDEX_YF as _INDEX_YF,
     is_nse_stock as _is_nse_stock,
+)
+from src.market.symbols import (
     parse as _parse,
+)
+from src.market.symbols import (
     to_yf as _to_yf,
 )
-
 
 # ---------------------------------------------------------------------------
 # NSELive (primary for live quotes)
@@ -250,6 +252,7 @@ class MarketService:
         misreported to callers as "no price data" for a perfectly valid symbol.
         """
         import time
+
         import yfinance as yf  # type: ignore[import]
         yf_sym = _to_yf(symbol)
 

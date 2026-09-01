@@ -275,8 +275,9 @@ class TestJSONCalendarProvider:
 
     def test_missing_both_years_returns_none(self):
         """No JSON files for current or next year → returns None (chain tries Emergency)."""
-        from src.providers.calendar.json_provider import JSONCalendarProvider
         import tempfile
+
+        from src.providers.calendar.json_provider import JSONCalendarProvider
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = JSONCalendarProvider(resources_dir=Path(tmpdir))
             result = provider.fetch()
@@ -284,8 +285,9 @@ class TestJSONCalendarProvider:
 
     def test_malformed_json_returns_none(self):
         """Malformed JSON file → provider returns None."""
-        from src.providers.calendar.json_provider import JSONCalendarProvider
         import tempfile
+
+        from src.providers.calendar.json_provider import JSONCalendarProvider
         today = date.today()
         with tempfile.TemporaryDirectory() as tmpdir:
             d = Path(tmpdir)
@@ -720,7 +722,7 @@ class TestCalendarProviderIntegration:
 
     def test_holiday_from_json_is_recognized(self):
         """A holiday from the JSON file is correctly identified as is_holiday=True."""
-        from src.market.calendar import get_market_calendar, _today_ist
+        from src.market.calendar import _today_ist, get_market_calendar
         # get_market_calendar() keys its holiday lookup on _today_ist(), not
         # date.today() — using date.today() here made this test flaky on
         # UTC CI runners during IST 00:00-05:29 (UTC still "yesterday"),
@@ -802,6 +804,7 @@ class TestCalendarEdgeCases:
     def test_leap_year_feb29_in_json_loads_correctly(self):
         """Dates like 2028-02-29 (leap day) must parse correctly from JSON."""
         import tempfile
+
         from src.providers.calendar.json_provider import JSONCalendarProvider
         # 2028 is a leap year
         data = [{"date": "2028-02-29", "name": "Leap Day Holiday"}]
@@ -816,6 +819,7 @@ class TestCalendarEdgeCases:
     def test_missing_year_json_falls_to_next_year(self):
         """Missing current year JSON doesn't crash — uses next year if available."""
         import tempfile
+
         from src.providers.calendar.json_provider import JSONCalendarProvider
         today = date.today()
         next_year = today.year + 1

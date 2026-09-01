@@ -1,9 +1,9 @@
 from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
-from src.intelligence.vix import get_india_vix as _get_india_vix
-from src.intelligence.global_pulse import get_global_pulse as _get_global_pulse
 from src.intelligence.events import get_upcoming_events as _get_upcoming_events
+from src.intelligence.global_pulse import get_global_pulse as _get_global_pulse
+from src.intelligence.vix import get_india_vix as _get_india_vix
 
 
 def register(mcp: FastMCP) -> None:

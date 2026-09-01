@@ -1,7 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 
-from src.analysis import regime
 from src import meta as _meta
+from src.analysis import regime
 
 # Synthetic conviction fields deleted in Phase 22F (Commit 6).
 # No longer present in any tool output — fully removed, not just deprecated.

@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures and helpers
 # ---------------------------------------------------------------------------
@@ -229,7 +228,8 @@ class TestJSONCalendarProviderPersistence:
     def teardown_method(self): _reset()
 
     def _temp_provider(self, initial_files: dict[str, object] | None = None):
-        import tempfile, json as _json
+        import json as _json
+        import tempfile
         tmpdir = tempfile.mkdtemp()
         d = Path(tmpdir)
         if initial_files:
@@ -509,9 +509,9 @@ class TestRefreshCalendar:
 
     def test_refresh_validation_fail_preserves_json(self):
         """If validation fails, save() must NOT be called."""
-        from src.providers.calendar.refresh import refresh_calendar
         # 0 holidays → validation fails
         from src.providers.base import ProviderResult
+        from src.providers.calendar.refresh import refresh_calendar
         mock = MagicMock()
         mock.fetch.return_value = ProviderResult(
             data={}, provider_name="NSEOfficialProvider",
@@ -660,8 +660,9 @@ class TestValidateHolidays:
         assert any("duplicate" in e.lower() for e in errors)
 
     def test_too_many_holidays_fail(self):
-        from src.providers.calendar.refresh import validate_holidays
         from datetime import timedelta
+
+        from src.providers.calendar.refresh import validate_holidays
         many: dict[date, str] = {}
         d = date(2026, 1, 5)  # Monday
         while len(many) < 31:
@@ -723,9 +724,10 @@ class TestCalendarHealthPhase24B:
 
     def test_health_version_is_string_after_save(self):
         """After save() with a version, health.version reflects the file's version."""
+        import tempfile
+
         from src.providers.calendar.chain import get_calendar_provider, reset_calendar_provider
         from src.providers.calendar.json_provider import JSONCalendarProvider
-        import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
             d = Path(tmpdir)
             # Create a JSON file for current year with new schema
@@ -737,8 +739,8 @@ class TestCalendarHealthPhase24B:
             p.save(today.year + 1, {date(today.year + 1, 8, 15): "Independence Day"},
                    version=f"{today.year + 1}.1")
             # Use a fresh chain with the temp directory
-            from src.providers.calendar.emergency import EmergencyCalendarProvider
             from src.providers.calendar.chain import CalendarProviderChain
+            from src.providers.calendar.emergency import EmergencyCalendarProvider
             chain = CalendarProviderChain()
             chain._json_provider = JSONCalendarProvider(resources_dir=d)
             chain._providers = [chain._json_provider, chain._emergency_provider]

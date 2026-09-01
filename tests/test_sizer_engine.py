@@ -5,9 +5,9 @@ import math
 import sqlite3
 
 import pytest
+
 import src.sizer.engine as sizer_engine
 from src.sizer.engine import _apply_size_factors, _compute_portfolio_heat
-
 
 # ---------------------------------------------------------------------------
 # Mock factories

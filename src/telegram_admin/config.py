@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 ENV_FILE_PATH = Path("/etc/zerodha-mcp/.env")
@@ -37,17 +38,17 @@ BOT_TOKEN = ""
 def reload_config() -> None:
     """Reloads environment variables from the dotenv file and updates config values."""
     global ADMIN_ID, BOT_TOKEN
-    
+
     if ENV_FILE_PATH.exists():
         load_dotenv(ENV_FILE_PATH, override=True)
     else:
         load_dotenv(override=True)
-        
+
     try:
         ADMIN_ID = int(os.environ.get("TELEGRAM_ADMIN_ID", "1344481918"))
     except ValueError:
         ADMIN_ID = 1344481918
-        
+
     BOT_TOKEN = os.environ.get("TELEGRAM_ADMIN_BOT_TOKEN", "")
 
 # Perform initial load of config values

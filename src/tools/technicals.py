@@ -10,14 +10,13 @@ No auth required — Zerodha is simply skipped when not authenticated.
 
 import logging
 from datetime import date, timedelta
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from src.market import get_market
-from src.technical import indicators
 from src import meta as _meta
+from src.market import get_market
 from src.market.symbols import normalize_symbol_extended as _norm
+from src.technical import indicators
 
 logger = logging.getLogger(__name__)
 

@@ -21,15 +21,14 @@ import pytest
 
 from scripts.regime_audit import (
     CLASSIFY_FROM,
-    ClassificationRow,
     LOOKBACK,
     TAIL_EXCLUSION,
+    ClassificationRow,
     compute_metrics,
     monotonicity_check,
     run_start_vs_continuation,
     run_symbol_audit,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture

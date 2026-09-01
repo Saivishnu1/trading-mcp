@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # IR-1: Dashboard must not break when intelligence section fails
 # ---------------------------------------------------------------------------
@@ -146,10 +145,10 @@ class TestIR2TradePlanRiskScoreFailure:
 
     def test_risk_score_none_when_unavailable(self, monkeypatch):
         """_risk_score_context returns None on any exception."""
-        import src.planner.trade_plan as tp
-
         # Force the import inside _risk_score_context to fail
         import importlib
+
+        import src.planner.trade_plan as tp
         original = __builtins__.__import__ if hasattr(__builtins__, "__import__") else None
 
         # Simpler: just call it with the intelligence module patched to raise

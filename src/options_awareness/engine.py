@@ -6,10 +6,11 @@ from __future__ import annotations
 import logging
 
 from src.options.analytics import _underlying
-from .oi_analyzer import OIAnalyzer
+
+from .cache import cache_metadata, read_cache, write_cache
 from .iv_analyzer import IVAnalyzer
 from .levels import OILevelDetector
-from .cache import read_cache, write_cache, cache_metadata
+from .oi_analyzer import OIAnalyzer
 
 _BSE_SYMBOLS = {"SENSEX", "BANKEX"}
 logger = logging.getLogger(__name__)

@@ -1,10 +1,13 @@
 from typing import Optional
+
 from mcp.server.fastmcp import FastMCP
+
 from src import meta as _meta
-from src.options.service import get_options_service
-from src.options.bse_service import get_bse_options_service
+from src.market.symbols import normalize_symbol_extended as _norm
+from src.market.symbols import parse as _parse
 from src.options import analytics
-from src.market.symbols import normalize_symbol_extended as _norm, parse as _parse
+from src.options.bse_service import get_bse_options_service
+from src.options.service import get_options_service
 
 
 def register(mcp: FastMCP) -> None:

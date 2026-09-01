@@ -3,7 +3,7 @@ Candlestick pattern data classes and high-level detector orchestrator.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pandas as pd
 
@@ -36,7 +36,7 @@ class PatternDetector:
         window = df.iloc[-10:].reset_index(drop=True)
         avg_vol = float(df["volume"].replace(0, float("nan")).mean() or 1)
 
-        from .detector import SingleCandleDetectors, TwoCandleDetectors, ThreeCandleDetectors
+        from .detector import SingleCandleDetectors, ThreeCandleDetectors, TwoCandleDetectors
 
         single = SingleCandleDetectors()
         two = TwoCandleDetectors()

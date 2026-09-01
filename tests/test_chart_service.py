@@ -7,8 +7,9 @@ is mocked at the adapter-factory boundary.
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from src.execution import chart_service
 

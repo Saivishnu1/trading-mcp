@@ -26,6 +26,7 @@ from src.analysis.regime import (
 from src.options import analytics
 from src.options.service import get_options_service
 
+
 def _risk_score_context(symbol: str) -> dict | None:
     """Fetch market risk score for visibility only. Never affects trade logic."""
     try:

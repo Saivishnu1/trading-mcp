@@ -8,10 +8,10 @@ Sprint 2 D2     : get_intraday_snapshot
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
-from mcp.server.fastmcp import FastMCP as _FastMCP
 
+import pytest
+from mcp.server.fastmcp import FastMCP as _FastMCP
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,8 +50,8 @@ class TestToolTimeGatedContract:
 
     def test_time_gated_list_is_valid(self):
         """_TIME_GATED only contains tools that still exist."""
-        from src.tools.meta_tools import _TIME_GATED
         from src.tools import market as _market
+        from src.tools.meta_tools import _TIME_GATED
         mcp = _FastMCP("test")
         _market.register(mcp)
         registered = {t.name for t in mcp._tool_manager.list_tools()}

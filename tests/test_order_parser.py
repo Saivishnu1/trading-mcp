@@ -1,7 +1,7 @@
 """Phase 23 — /buy /sell argument parser tests (pure, Telegram-free)."""
 from __future__ import annotations
 
-from src.telegram_admin.order_parser import parse_order_args, ParseError, _is_derivative_symbol
+from src.telegram_admin.order_parser import ParseError, _is_derivative_symbol, parse_order_args
 
 
 def _ok(args, side="BUY"):

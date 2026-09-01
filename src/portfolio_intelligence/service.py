@@ -91,8 +91,8 @@ def _analyze_position(pos: dict) -> dict:
 
     Errors in either call are isolated — partial results are returned.
     """
-    from src.review.reviewer import review_trade
     from src.intelligence.risk import get_market_risk_score
+    from src.review.reviewer import review_trade
 
     sym = pos["symbol"]
     direction = pos["direction"]

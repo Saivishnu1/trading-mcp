@@ -6,6 +6,7 @@ user_id so the table is ready for multi-user support when needed.
 """
 
 from datetime import datetime, timezone
+
 from src.journal.db import _get_connection
 
 

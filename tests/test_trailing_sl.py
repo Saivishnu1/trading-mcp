@@ -8,9 +8,9 @@ is mocked — no real network calls.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 async def _fake_stream(messages):

@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from src import meta as _meta
 from src.broker import require_broker as _require_broker
 from src.brokers.indmoney import INDmoneyBroker
-from src import meta as _meta
 
 # Zerodha's flat per-order brokerage on the app-based tier — directionally
 # useful default, not a precise reconciliation (configurable via param).

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from src.options.analytics import _strikes_for_expiry, _underlying
 
-
 # How many top strikes to surface for walls / S/R
 _TOP_N = 5
 # OI change threshold for buildup/unwinding: must differ from zero

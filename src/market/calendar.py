@@ -18,12 +18,12 @@ Expiry resolution order:
 """
 from __future__ import annotations
 
-from datetime import date, datetime, time as _time, timedelta
-from typing import Optional
-
 import json as _json_mod
 import os as _os_mod
 import time as _time_mod
+from datetime import date, datetime, timedelta
+from datetime import time as _time
+from typing import Optional
 
 import pytz as _pytz
 
@@ -230,6 +230,7 @@ def _live_expiries() -> dict[str, str]:
     # Priority 1: Zerodha instruments CSV — NFO + BFO, no enctoken needed
     try:
         import asyncio
+
         from src.calendar import CalendarFetcher
         fetcher = CalendarFetcher()
         try:

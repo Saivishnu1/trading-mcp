@@ -3,8 +3,9 @@ Tests for Phase 3 — Chart Awareness Engine.
 
 All tests use synthetic OHLCV data — no real API calls.
 """
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # Synthetic data builders

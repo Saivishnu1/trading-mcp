@@ -122,9 +122,9 @@ class TestPR2BrokerAuthFailure:
         monkeypatch.setattr(broker_mod, "get_broker", lambda: _ErrorBroker())
 
         from src.portfolio_intelligence.service import (
-            get_portfolio_risk_report,
-            get_portfolio_regime_analysis,
             get_portfolio_exposure_breakdown,
+            get_portfolio_regime_analysis,
+            get_portfolio_risk_report,
         )
         # None of these should raise
         get_portfolio_risk_report()
@@ -160,8 +160,8 @@ class TestPR3PerSymbolAnalysisFailure:
 
         # _analyze_position already isolates exceptions — patch the inner functions
         # to simulate failure by patching review_trade and get_market_risk_score
-        from src.review import reviewer
         from src.intelligence import risk as risk_mod
+        from src.review import reviewer
 
         call_tracker = {"infy": 0, "tcs": 0}
 
@@ -205,8 +205,8 @@ class TestPR3PerSymbolAnalysisFailure:
 class TestPR4AllAnalysisFailed:
     def test_exposure_keys_present_when_all_analysis_fails(self, monkeypatch):
         import src.broker as broker_mod
-        from src.review import reviewer
         from src.intelligence import risk as risk_mod
+        from src.review import reviewer
 
         monkeypatch.setattr(broker_mod, "get_broker", lambda: _fake_broker(
             holdings=[_holding("INFY"), _holding("TCS")],
@@ -227,8 +227,8 @@ class TestPR4AllAnalysisFailed:
 
     def test_portfolio_score_falls_back_to_neutral(self, monkeypatch):
         import src.broker as broker_mod
-        from src.review import reviewer
         from src.intelligence import risk as risk_mod
+        from src.review import reviewer
 
         monkeypatch.setattr(broker_mod, "get_broker", lambda: _fake_broker(
             holdings=[_holding("INFY")],
@@ -254,8 +254,8 @@ class TestPR5SymbolDeduplication:
     def test_deduplication_in_risk_report(self, monkeypatch):
         import src.broker as broker_mod
         import src.portfolio_intelligence.service as svc
-        from src.review import reviewer
         from src.intelligence import risk as risk_mod
+        from src.review import reviewer
 
         # RELIANCE in both holdings AND net positions
         monkeypatch.setattr(broker_mod, "get_broker", lambda: _fake_broker(

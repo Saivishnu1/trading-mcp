@@ -290,8 +290,9 @@ class TestMarketAwarenessPinningRisk:
 
 class TestDashboardPinningRisk:
     def test_options_section_flags_pinning_risk_during_expiry_week(self, chain_data):
-        from src.dashboard import service
         from datetime import date, timedelta
+
+        from src.dashboard import service
 
         near_expiry = (date.today() + timedelta(days=2)).strftime("%d-%b-%Y")
         chain_data["records"]["expiryDates"] = [near_expiry]

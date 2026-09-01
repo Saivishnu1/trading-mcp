@@ -7,11 +7,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from src.pattern_awareness.patterns.reversal import ReversalPatterns
-from src.pattern_awareness.patterns.continuation import ContinuationPatterns
-from src.pattern_awareness.patterns.breakout import BreakoutPatterns
 from src.pattern_awareness.detector import ChartPatternDetector
-
+from src.pattern_awareness.patterns.breakout import BreakoutPatterns
+from src.pattern_awareness.patterns.continuation import ContinuationPatterns
+from src.pattern_awareness.patterns.reversal import ReversalPatterns
 
 # ---------------------------------------------------------------------------
 # Helpers

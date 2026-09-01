@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 
+
 def get_calendar_index_key(symbol: str) -> str:
     sym = symbol.upper().strip()
     if "BANKNIFTY" in sym:
@@ -98,7 +99,7 @@ class MarketNarrator:
                 except Exception:
                     date_str = exp_date
                     weekday = ""
-                
+
                 day_suffix = "day" if days == 1 else "days"
                 if days == 0:
                     obs.append(f"Expiry today ({date_str}) — theta accelerating.")

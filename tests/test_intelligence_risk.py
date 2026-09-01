@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import time
 
-
 # ---------------------------------------------------------------------------
 # PCR score lookup (B3: keyed on stable code, not display prose)
 # ---------------------------------------------------------------------------
@@ -35,8 +34,8 @@ class TestPcrScore:
 
     def test_codes_match_analytics_output(self):
         # B3 contract: the codes risk.py keys on are exactly the ones analytics emits.
-        from src.options.analytics import _pcr_code
         from src.intelligence.risk import _PCR_CODE_RISK
+        from src.options.analytics import _pcr_code
         for pcr in (None, 1.5, 1.1, 0.8, 0.5):
             assert _pcr_code(pcr) in _PCR_CODE_RISK
 

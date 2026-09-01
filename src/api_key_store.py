@@ -8,6 +8,7 @@ it to a user_id without the agent ever seeing the key.
 
 import secrets
 from datetime import datetime, timezone
+
 from src.journal.db import _get_connection
 
 

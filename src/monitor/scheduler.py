@@ -365,7 +365,11 @@ class MarketMonitor:
         sub-fetch is independently guarded — a single failing source (e.g.
         NSE option chain soft-blocked) must not prevent the other checks
         (macro, VIX) from running."""
-        from src.options.analytics import calculate_max_pain, calculate_pcr, identify_support_resistance_from_oi
+        from src.options.analytics import (
+            calculate_max_pain,
+            calculate_pcr,
+            identify_support_resistance_from_oi,
+        )
 
         async def _nifty_chain_data() -> dict:
             try:

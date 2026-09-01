@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from src.server import _app, _is_market_session_open_safe
 

@@ -6,8 +6,9 @@ security_id resolution, and the submit_order orchestrator. No network calls.
 from __future__ import annotations
 
 import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 def _make_httpx_response(status_code: int, json_data=None, text_data: str = ""):
@@ -539,6 +540,7 @@ class TestResolveSecurityName:
         # of warming ahead of the user's first search.
         import asyncio
         import time
+
         from src.brokers import indmoney as indmoney_module
         indmoney_module._instrument_cache.clear()
         b = _broker()
@@ -806,6 +808,7 @@ class TestSearchSymbols:
         # search (two ~sequential CSV downloads instead of one wall-clock wait).
         import asyncio
         import time
+
         import src.execution.service as svc
         adapter = MagicMock()
 

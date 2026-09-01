@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from src.server import app
 
@@ -105,8 +105,9 @@ async def test_multiple_instruments_parsed_from_csv():
 
 @pytest.mark.anyio
 async def test_ticks_from_queue_are_forwarded_to_client():
-    from src.execution import browser_price_relay as bpr
     import asyncio
+
+    from src.execution import browser_price_relay as bpr
     relay = bpr.BrowserPriceRelay()
     queue: asyncio.Queue = asyncio.Queue()
     queue.put_nowait({"instrument": "NSE:2885", "ltp": 1430.0})

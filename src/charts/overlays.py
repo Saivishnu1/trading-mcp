@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from src.technical.indicators import ema_series, _wilder_smooth
-
+from src.technical.indicators import _wilder_smooth, ema_series
 
 # ---------------------------------------------------------------------------
 # Indicator series helpers
@@ -142,7 +141,7 @@ class ChartOverlays:
         upper_arr = clean_series(upper)
         lower_arr = clean_series(lower)
         mid_arr = clean_series(mid)
-        
+
         ax.plot(df.index, upper_arr, color=color, alpha=0.5, linestyle=":", label="BB Upper")
         ax.plot(df.index, lower_arr, color=color, alpha=0.5, linestyle=":", label="BB Lower")
         ax.plot(df.index, mid_arr, color=color, alpha=0.3, linestyle="-.", label="BB Basis")
@@ -180,10 +179,10 @@ class ChartOverlays:
         macd_arr = clean_series(macd_line)
         sig_arr = clean_series(sig_line)
         hist_arr = clean_series(hist)
-        
+
         ax.plot(df.index, macd_arr, color=colors["macd"], label="MACD", linewidth=1.2)
         ax.plot(df.index, sig_arr, color=colors["signal"], label="Signal", linewidth=1.2)
-        
+
         hist_colors = []
         for h in hist:
             if h is None or (isinstance(h, float) and np.isnan(h)):
@@ -192,9 +191,9 @@ class ChartOverlays:
                 hist_colors.append(colors["histogram_pos"])
             else:
                 hist_colors.append(colors["histogram_neg"])
-                
+
         ax.bar(df.index, hist_arr, color=hist_colors, width=0.6, alpha=0.6, label="Histogram")
-        
+
         ax.axhline(0, color=colors["grid"], linestyle="-", alpha=0.5, linewidth=0.8)
         ax.set_ylabel("MACD", fontsize=9)
         ax.legend(loc="upper left", frameon=False, fontsize=8)
@@ -203,13 +202,13 @@ class ChartOverlays:
     def add_rsi(ax: plt.Axes, df: pd.DataFrame, color: str, grid_color: str) -> None:
         closes = df["close"].tolist()
         rsi = clean_series(get_rsi_series(closes))
-        
+
         ax.plot(df.index, rsi, color=color, label="RSI(14)", linewidth=1.2)
-        
+
         ax.axhline(70, color="#ef5350", linestyle="--", alpha=0.5, linewidth=0.8)
         ax.axhline(30, color="#26a69a", linestyle="--", alpha=0.5, linewidth=0.8)
         ax.axhline(50, color=grid_color, linestyle=":", alpha=0.5, linewidth=0.8)
-        
+
         ax.set_ylabel("RSI", fontsize=9)
         ax.set_ylim(10, 90)
         ax.legend(loc="upper left", frameon=False, fontsize=8)

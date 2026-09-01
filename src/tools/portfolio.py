@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 
 from mcp.server.fastmcp import FastMCP
-from src.broker import require_broker
+
 from src import meta as _meta
+from src.broker import require_broker
 
 
 def register(mcp: FastMCP) -> None:
@@ -53,8 +54,8 @@ def register(mcp: FastMCP) -> None:
         observations. Does not generate recommendations or price targets.
         """
         from src.brokers.indmoney import INDmoneyBroker
+        from src.brokers.models import Fund, Holding, Position
         from src.brokers.zerodha import ZerodhaBroker
-        from src.brokers.models import Holding, Position, Fund
         from src.portfolio.analyzer import PortfolioAnalyzer
 
         all_holdings: list[Holding] = []

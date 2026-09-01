@@ -6,11 +6,11 @@ math, signal→direction mapping, and regime-name coverage across modules.
 """
 from __future__ import annotations
 
-from src.common.scoring import risk_rating, apply_size_factors
+from src.common.scoring import apply_size_factors, risk_rating
 from src.common.signals import (
     LONG_SIGNALS,
-    SHORT_SIGNALS,
     NEUTRAL_SIGNALS,
+    SHORT_SIGNALS,
     direction_from_signal,
 )
 
@@ -28,8 +28,8 @@ class TestRiskRating:
 
     def test_matches_both_former_callers(self):
         # risk.py and event_risk.py both alias this now.
-        from src.intelligence.risk import _rating as risk_alias
         from src.catalyst.event_risk import _rating as event_alias
+        from src.intelligence.risk import _rating as risk_alias
         for score in (10, 35, 70, 95):
             assert risk_alias(score) == event_alias(score) == risk_rating(score)
 

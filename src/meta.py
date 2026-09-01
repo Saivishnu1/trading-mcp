@@ -16,7 +16,7 @@ make_time_gated_error() — structured TOOL_TIME_GATED response
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 # ---------------------------------------------------------------------------

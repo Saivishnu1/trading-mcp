@@ -2,14 +2,13 @@
 import pytest
 
 from src.feedback.calibration_adjustment import (
-    get_calibrated_confidence,
-    calibration_size_factor,
-    _bucket_for_confidence,
-    _adjustment_for_bucket,
-    _MIN_CALIBRATION_SAMPLE,
     _CONFIDENCE_SCALE,
+    _MIN_CALIBRATION_SAMPLE,
+    _adjustment_for_bucket,
+    _bucket_for_confidence,
+    calibration_size_factor,
+    get_calibrated_confidence,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

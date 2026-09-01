@@ -125,8 +125,8 @@ class NSEOfficialProvider(BaseProvider):
         This is the primary mock target in tests.  Production code uses
         urllib.request so there is no extra dependency beyond stdlib.
         """
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         req = urllib.request.Request(_NSE_API_URL, headers=_HEADERS)
         with urllib.request.urlopen(req, timeout=15) as resp:

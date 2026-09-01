@@ -45,6 +45,7 @@ class MonitorRepository:
 
     async def get_active_users(self) -> list[dict]:
         from sqlalchemy import select
+
         from src.db.models import MonitorUser
         async with get_session() as session:
             result = await session.execute(
@@ -54,6 +55,7 @@ class MonitorRepository:
 
     async def get_user_settings(self, user_id: str) -> dict:
         from sqlalchemy import select
+
         from src.db.models import MonitorSettings
         async with get_session() as session:
             result = await session.execute(
@@ -64,6 +66,7 @@ class MonitorRepository:
 
     async def get_active_positions(self, user_id: str) -> list[dict]:
         from sqlalchemy import select
+
         from src.db.models import MonitorPosition
         async with get_session() as session:
             result = await session.execute(
@@ -76,6 +79,7 @@ class MonitorRepository:
 
     async def upsert_position(self, user_id: str, position: dict) -> dict:
         from sqlalchemy import select
+
         from src.db.models import MonitorPosition
         key = dict(
             user_id=user_id,
@@ -113,6 +117,7 @@ class MonitorRepository:
 
     async def close_position(self, user_id: str, position_id: str) -> None:
         from sqlalchemy import update
+
         from src.db.models import MonitorPosition
         async with get_session() as session:
             await session.execute(
@@ -123,6 +128,7 @@ class MonitorRepository:
 
     async def get_peak(self, position_id: str) -> dict | None:
         from sqlalchemy import select
+
         from src.db.models import MonitorPeak
         async with get_session() as session:
             result = await session.execute(
@@ -133,6 +139,7 @@ class MonitorRepository:
 
     async def upsert_peak(self, position_id: str, peak: dict) -> None:
         from sqlalchemy import select
+
         from src.db.models import MonitorPeak
         async with get_session() as session:
             result = await session.execute(
@@ -176,6 +183,7 @@ class MonitorRepository:
 
     async def get_recent_alerts(self, user_id: str, hours: int = 24) -> list[dict]:
         from sqlalchemy import select
+
         from src.db.models import MonitorAlert
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         async with get_session() as session:
@@ -188,6 +196,7 @@ class MonitorRepository:
 
     async def get_last_alert_time(self, user_id: str, alert_type: str, symbol: str) -> datetime | None:
         from sqlalchemy import select
+
         from src.db.models import MonitorAlert
         async with get_session() as session:
             result = await session.execute(
@@ -207,6 +216,7 @@ class MonitorRepository:
 
     async def get_session_state(self, user_id: str) -> dict | None:
         from sqlalchemy import select
+
         from src.db.models import MonitorSessionState
         async with get_session() as session:
             result = await session.execute(
@@ -217,6 +227,7 @@ class MonitorRepository:
 
     async def save_session_state(self, user_id: str, state: dict) -> None:
         from sqlalchemy import select
+
         from src.db.models import MonitorSessionState
         async with get_session() as session:
             result = await session.execute(
@@ -299,6 +310,7 @@ class MonitorRepository:
         if field not in ("last_heartbeat", "last_market_check", "last_position_check", "last_alert_sent"):
             raise ValueError(f"Unknown heartbeat field: {field}")
         from sqlalchemy import select
+
         from src.db.models import MonitorSessionState
         async with get_session() as session:
             result = await session.execute(
@@ -320,6 +332,7 @@ class MonitorRepository:
     async def get_cached_instrument(self, broker: str, instrument_id: str) -> dict | None:
         """Return the cached instrument, or None if missing or past expires_at."""
         from sqlalchemy import select
+
         from src.db.models import MonitorInstrumentCache
         async with get_session() as session:
             result = await session.execute(
@@ -339,6 +352,7 @@ class MonitorRepository:
         self, broker: str, instrument_id: str, resolved: dict, ttl_hours: int = 24
     ) -> None:
         from sqlalchemy import select
+
         from src.db.models import MonitorInstrumentCache
         async with get_session() as session:
             result = await session.execute(

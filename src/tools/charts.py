@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+
 import pandas as pd
 from mcp.server.fastmcp import FastMCP
 
 from src import meta as _meta
+from src.chart_awareness import indicators as _ind
 from src.chart_awareness.data_fetcher import fetch_candles
 from src.chart_awareness.levels import detect_levels
-from src.chart_awareness import indicators as _ind
-from src.pattern_awareness.detector import ChartPatternDetector
-from src.options_awareness.engine import _get_chain_with_cache
-from src.options.analytics import _underlying
-from src.charts.renderer import ChartRenderer
 from src.charts.config import CHART_SPECS
+from src.charts.renderer import ChartRenderer
 from src.charts.utils import get_pixel_dimensions
+from src.options.analytics import _underlying
+from src.options_awareness.engine import _get_chain_with_cache
+from src.pattern_awareness.detector import ChartPatternDetector
 
 
 async def get_price_chart_impl(

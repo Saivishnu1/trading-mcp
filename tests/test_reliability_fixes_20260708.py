@@ -8,14 +8,13 @@ Regression tests for 4 reliability issues found during a live session (2026-07-0
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from mcp.server.fastmcp import FastMCP as _FastMCP
 
-from src.market_awareness.engine import MarketAwarenessEngine
 from src import meta as _meta
-
+from src.market_awareness.engine import MarketAwarenessEngine
 
 # ---------------------------------------------------------------------------
 # 1. Chart failure -> null indicators, not zeros

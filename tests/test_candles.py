@@ -7,14 +7,13 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from src.candle_awareness.classifier import build_context, classify_strength
 from src.candle_awareness.detector import (
     SingleCandleDetectors,
-    TwoCandleDetectors,
     ThreeCandleDetectors,
+    TwoCandleDetectors,
 )
 from src.candle_awareness.patterns import CandlePattern, PatternDetector
-from src.candle_awareness.classifier import classify_strength, build_context
-
 
 # ---------------------------------------------------------------------------
 # Helpers

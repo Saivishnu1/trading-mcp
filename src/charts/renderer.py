@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from src.charts.styles import get_theme
-from src.charts.overlays import ChartOverlays
 from src.charts.config import CHART_SPECS
+from src.charts.overlays import ChartOverlays
+from src.charts.styles import get_theme
 from src.charts.utils import fig_to_base64
-from src.options_awareness.oi_analyzer import OIAnalyzer
 from src.options.analytics import calculate_max_pain
+from src.options_awareness.oi_analyzer import OIAnalyzer
 
 
 class ChartRenderer:

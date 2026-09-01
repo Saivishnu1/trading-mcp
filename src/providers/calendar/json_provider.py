@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 from typing import Any
 

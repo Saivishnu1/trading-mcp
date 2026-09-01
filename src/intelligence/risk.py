@@ -17,8 +17,8 @@ import logging
 import threading
 import time
 
-from src.intelligence.vix import get_india_vix
 from src.intelligence.events import get_upcoming_events, nearest_high_impact_days
+from src.intelligence.vix import get_india_vix
 
 logger = logging.getLogger(__name__)
 
@@ -125,9 +125,9 @@ _BSE_INDICES = {"SENSEX", "BANKEX"}
 
 def _pcr_component(symbol: str) -> tuple[int, str, bool]:
     try:
-        from src.options.service import get_options_service
-        from src.options.bse_service import get_bse_options_service
         from src.options import analytics as oa
+        from src.options.bse_service import get_bse_options_service
+        from src.options.service import get_options_service
         svc = get_bse_options_service() if symbol.upper() in _BSE_INDICES else get_options_service()
         chain = svc.get_option_chain(symbol)
         if not isinstance(chain, dict):

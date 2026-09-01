@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 
 from src.monitor.conditions import MarketConditions
 
@@ -183,7 +184,8 @@ class MarketIntelligence:
         (even when empty) so callers persist it via save_session_state
         regardless of whether an alert fired this call.
         """
-        from datetime import datetime as _datetime, timezone as _timezone
+        from datetime import datetime as _datetime
+        from datetime import timezone as _timezone
 
         session_state = session_state or {}
         settings = settings or {}

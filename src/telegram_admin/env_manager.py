@@ -1,10 +1,11 @@
 import contextlib
 import logging
-import shutil
-import tempfile
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
+
 from src.telegram_admin.config import ALLOWED_VARIABLES
 
 logger = logging.getLogger(__name__)
@@ -15,13 +16,13 @@ class EnvVerificationError(Exception):
 
 def read_env(file_path: Path) -> dict[str, str]:
     """Reads a dotenv file and returns a dictionary of keys and values.
-    
+
     Removes surrounding single/double quotes from values if present.
     """
     if not file_path.exists():
         logger.warning("Dotenv file does not exist at %s", file_path)
         return {}
-    
+
     variables = {}
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -31,22 +32,22 @@ def read_env(file_path: Path) -> dict[str, str]:
                 continue
             if "=" not in line:
                 continue
-            
+
             key, val = stripped.split("=", 1)
             key_clean = key.strip()
             val_clean = val.strip()
-            
+
             # Strip quotes if they enclose the value
             if len(val_clean) >= 2 and (
                 (val_clean.startswith('"') and val_clean.endswith('"')) or
                 (val_clean.startswith("'") and val_clean.endswith("'"))
             ):
                 val_clean = val_clean[1:-1]
-                
+
             variables[key_clean] = val_clean
     except Exception as exc:
         logger.error("Error reading dotenv file %s: %s", file_path, exc, exc_info=True)
-        
+
     return variables
 
 @contextlib.contextmanager
@@ -56,14 +57,14 @@ def dotenv_lock(file_path: Path):
         lock_path = Path(tempfile.gettempdir()) / "zerodha-mcp-env.lock"
     else:
         lock_path = Path("/var/tmp/zerodha-mcp-env.lock")
-        
+
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
         # Fallback to system temp directory if /var/tmp is unavailable or not writable
         lock_path = Path(tempfile.gettempdir()) / "zerodha-mcp-env.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
     # Open the lock file in append mode (standard practice for locks)
     f = open(lock_path, "a", encoding="utf-8")
     fd = f.fileno()
@@ -84,9 +85,9 @@ def dotenv_lock(file_path: Path):
             except (ImportError, OSError):
                 # Fallback: if locking is not supported, log warning and continue
                 logger.warning("File locking not supported on this platform/configuration.")
-        
+
         yield
-        
+
     finally:
         if locked:
             try:
@@ -103,7 +104,7 @@ def dotenv_lock(file_path: Path):
 
 def update_variable(file_path: Path, key: str, value: str) -> None:
     """Updates a single variable in the dotenv file atomically and verifies correctness.
-    
+
     Enforces that the key is whitelisted in ALLOWED_VARIABLES.
     Locks the file during updates.
     Detects duplicate variable definitions and raises EnvVerificationError.
@@ -116,15 +117,15 @@ def update_variable(file_path: Path, key: str, value: str) -> None:
         raise ValueError(f"Variable '{key}' is not whitelisted for modification.")
 
     bak_path = file_path.with_suffix(".env.bak")
-    
+
     with dotenv_lock(file_path):
         # 1. Read values of all allowed variables before modification to check for corruption later
         before_vars = read_env(file_path)
-        
+
         try:
             # Create directories if they do not exist
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # 2. Create backup copy (.env.bak) if the file exists
             if file_path.exists():
                 try:
@@ -164,7 +165,7 @@ def update_variable(file_path: Path, key: str, value: str) -> None:
                 parts = line.split("=", 1)
                 left = parts[0]
                 right = parts[1]
-                
+
                 # Extract spaces/tabs immediately after '='
                 space_match = re.match(r"^([ \t]*)", right)
                 space_after = space_match.group(1) if space_match else ""
@@ -209,7 +210,7 @@ def update_variable(file_path: Path, key: str, value: str) -> None:
             # 4. Verification Check
             # Re-read the file to check modifications
             after_vars = read_env(file_path)
-            
+
             # Verify the requested variable has the new value
             # Strip quotes from target value if any, to match read_env behavior
             target_value_clean = value.strip()
@@ -218,12 +219,12 @@ def update_variable(file_path: Path, key: str, value: str) -> None:
                 (target_value_clean.startswith("'") and target_value_clean.endswith("'"))
             ):
                 target_value_clean = target_value_clean[1:-1]
-                
+
             if after_vars.get(key) != target_value_clean:
                 raise EnvVerificationError(
                     f"Verification failed: expected {key} to be '{target_value_clean}', but got '{after_vars.get(key)}'"
                 )
-                
+
             # Verify that no other whitelisted variable changed
             for var in ALLOWED_VARIABLES:
                 if var == key:
@@ -232,12 +233,12 @@ def update_variable(file_path: Path, key: str, value: str) -> None:
                     raise EnvVerificationError(
                         f"Verification failed: variable '{var}' was mutated from '{before_vars.get(var)}' to '{after_vars.get(var)}' during save."
                     )
-                    
+
             logger.info("Atomic update verified successfully for key: %s", key)
 
         except Exception as exc:
             logger.error("Error updating dotenv file %s for key %s: %s", file_path, key, exc, exc_info=True)
-            
+
             # 5. Restore backup if modification failed or verification failed
             if bak_path.exists():
                 try:
@@ -245,5 +246,5 @@ def update_variable(file_path: Path, key: str, value: str) -> None:
                     logger.warning("Restored dotenv file from backup %s due to update error/failed verification", bak_path)
                 except Exception as restore_exc:
                     logger.critical("Failed to restore dotenv file from backup %s: %s", bak_path, restore_exc)
-                    
+
             raise

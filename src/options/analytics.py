@@ -7,7 +7,6 @@ and an optional *expiry* string. No I/O is performed here.
 
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

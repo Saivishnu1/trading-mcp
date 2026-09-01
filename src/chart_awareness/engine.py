@@ -5,11 +5,11 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from .data_fetcher import fetch_candles
-from .trend import detect_trend
-from .structure import detect_structure
-from .levels import detect_levels
 from . import indicators as _ind
+from .data_fetcher import fetch_candles
+from .levels import detect_levels
+from .structure import detect_structure
+from .trend import detect_trend
 
 
 class ChartEngine:

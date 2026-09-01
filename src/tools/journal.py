@@ -1,22 +1,35 @@
 from mcp.server.fastmcp import FastMCP
 
-from src.broker import require_broker as _require_broker, current_user as _current_user
+from src.broker import current_user as _current_user
+from src.broker import require_broker as _require_broker
 
 _NOT_AUTHED = {"error": "not_authenticated", "message": "You are not logged in. Call zerodha_login() first to get a login URL, then ask the user to open it in their browser."}
 
 def _require_user() -> str | None:
     uid = _current_user.get()
     return uid if uid and uid != "__guest__" else None
+from src import meta as _meta
+from src.journal.service import (
+    close_trade as _close_trade,
+)
+from src.journal.service import (
+    get_open_trades as _get_open_trades,
+)
+from src.journal.service import (
+    get_performance_analytics as _get_performance_analytics,
+)
+from src.journal.service import (
+    get_strike_attempts as _get_strike_attempts,
+)
+from src.journal.service import (
+    get_trade_history as _get_trade_history,
+)
 from src.journal.service import (
     log_trade as _log_trade,
-    close_trade as _close_trade,
-    get_open_trades as _get_open_trades,
-    get_trade_history as _get_trade_history,
-    get_performance_analytics as _get_performance_analytics,
-    get_strike_attempts as _get_strike_attempts,
+)
+from src.journal.service import (
     sync_zerodha_orders as _sync_zerodha_orders,
 )
-from src import meta as _meta
 
 _JOURNAL_WARNING = (
     "Internal paper journal only. "

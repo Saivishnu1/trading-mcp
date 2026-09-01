@@ -2,9 +2,9 @@
 import pytest
 
 from src.feedback.calibration_adjustment import (
-    get_calibrated_confidence,
-    calibration_size_factor,
     _MIN_CALIBRATION_SAMPLE,
+    calibration_size_factor,
+    get_calibrated_confidence,
 )
 
 

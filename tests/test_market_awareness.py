@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from src.market_awareness.engine import MarketAwarenessEngine
 
 
@@ -70,7 +72,7 @@ async def test_market_awareness_full_success():
 
     # 5. Mock Pattern detectors
     mock_fetch_candles = AsyncMock(return_value=([{"datetime": "2026-07-05T09:15:00", "open": 24200.0, "high": 24300.0, "low": 24100.0, "close": 24250.0, "volume": 100000}], "yfinance"))
-    
+
     mock_chart_pattern_detector = MagicMock()
     mock_chart_pattern_detector.detect_all = MagicMock(return_value=[
         {"pattern": "Double Bottom", "status": "complete", "direction": "bullish", "neckline": 24000.0, "end_date": "2026-07-05"}
@@ -107,7 +109,7 @@ async def test_market_awareness_full_success():
         assert res["data_sources"]["chart"] == "yfinance"
         assert res["data_sources"]["options"] == "NSE"
         assert len(res["missing_data"]) == 0
-        
+
         # Verify Narration Factual Observations
         assert "Price is in a strong uptrend" in res["observations"]
         assert "VIX 11.8 — complacency, historically precedes corrections" in res["observations"]

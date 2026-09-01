@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -860,8 +859,8 @@ class TestUnifiedTools:
 
     @pytest.mark.anyio
     async def test_get_unified_holdings_all_merges(self):
-        from src.tools.brokers import _unified
         from src.brokers.models import Holding
+        from src.tools.brokers import _unified
 
         z_holding = Holding("INFY", "NSE", 10, 1400.0, 1500.0, 1000.0, 7.14, "zerodha")
         i_holding = Holding("TCS", "NSE", 5, 3000.0, 3200.0, 1000.0, 6.67, "indmoney")
@@ -883,8 +882,8 @@ class TestUnifiedTools:
 
     @pytest.mark.anyio
     async def test_get_unified_holdings_zerodha_only(self):
-        from src.tools.brokers import _unified
         from src.brokers.models import Holding
+        from src.tools.brokers import _unified
 
         z_holding = Holding("INFY", "NSE", 10, 1400.0, 1500.0, 1000.0, 7.14, "zerodha")
 
@@ -900,8 +899,8 @@ class TestUnifiedTools:
 
     @pytest.mark.anyio
     async def test_unified_when_one_broker_fails_returns_other(self):
-        from src.tools.brokers import _unified
         from src.brokers.models import Holding
+        from src.tools.brokers import _unified
 
         z_holding = Holding("RELIANCE", "NSE", 2, 2500.0, 2600.0, 200.0, 4.0, "zerodha")
 
@@ -921,8 +920,8 @@ class TestUnifiedTools:
 
     @pytest.mark.anyio
     async def test_unified_funds_indmoney_only(self):
-        from src.tools.brokers import _unified
         from src.brokers.models import Fund
+        from src.tools.brokers import _unified
 
         fund = Fund(50000.0, 10000.0, 60000.0, "indmoney")
 
@@ -943,8 +942,9 @@ class TestUnifiedTools:
         # passed to Zerodha (whose margins() segment vocabulary is
         # unrelated — "equity"/"commodity", not INDmoney's balance keys).
         from mcp.server.fastmcp import FastMCP as _FastMCP
-        from src.tools import brokers as brokers_tools
+
         from src.brokers.models import Fund
+        from src.tools import brokers as brokers_tools
 
         mcp = _FastMCP("test")
         brokers_tools.register(mcp)
@@ -983,6 +983,7 @@ class TestGetAllOpenPositions:
 
     def _tools(self):
         from mcp.server.fastmcp import FastMCP as _FastMCP
+
         from src.tools import brokers as brokers_tools
         mcp = _FastMCP("test")
         brokers_tools.register(mcp)
@@ -990,7 +991,7 @@ class TestGetAllOpenPositions:
 
     @pytest.mark.anyio
     async def test_combines_positions_and_holdings_across_brokers(self):
-        from src.brokers.models import Position, Holding
+        from src.brokers.models import Holding, Position
 
         z_position = Position("NIFTY24200CE", "NSE", "NRML", 50, 100.0, 120.0, 1000.0, "zerodha")
         i_holding = Holding("TCS", "NSE", 5, 3000.0, 3200.0, 1000.0, 6.67, "indmoney")
