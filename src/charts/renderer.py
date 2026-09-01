@@ -9,7 +9,7 @@ import pandas as pd
 
 from src.charts.config import CHART_SPECS
 from src.charts.overlays import ChartOverlays
-from src.charts.styles import get_theme
+from src.charts.styles import apply_matplotlib_defaults, get_theme
 from src.charts.utils import fig_to_base64
 from src.options.analytics import calculate_max_pain
 from src.options_awareness.oi_analyzer import OIAnalyzer
@@ -31,6 +31,7 @@ class ChartRenderer:
         show_bb: bool = False,
     ) -> str:
         colors = get_theme(theme)
+        apply_matplotlib_defaults(colors)
         spec = CHART_SPECS["price"]
 
         if show_volume:
@@ -70,7 +71,7 @@ class ChartRenderer:
                 ChartOverlays.add_bollinger(ax1, df, colors["ema50"])
 
             ChartOverlays.add_support_resistance(ax1, levels, colors["candle_up"], colors["candle_down"])
-            ChartOverlays.add_pattern_zones(ax1, patterns, df)
+            ChartOverlays.add_pattern_zones(ax1, patterns, df, neckline_color=colors["ema200"])
 
             # Volume Panel
             if show_volume and ax2:
@@ -112,6 +113,7 @@ class ChartRenderer:
         theme: str = "dark",
     ) -> str:
         colors = get_theme(theme)
+        apply_matplotlib_defaults(colors)
         spec = CHART_SPECS["indicator"]
 
         fig, (ax1, ax2, ax3) = plt.subplots(
@@ -139,7 +141,7 @@ class ChartRenderer:
             ChartOverlays.add_macd(ax2, df, colors)
 
             # RSI on ax3
-            ChartOverlays.add_rsi(ax3, df, colors["rsi"], colors["grid"])
+            ChartOverlays.add_rsi(ax3, df, colors["rsi"], colors["grid"], overbought_color=colors["candle_down"], oversold_color=colors["candle_up"])
 
             # Set date tick labels on bottom plot
             step = max(1, len(df) // 10)
@@ -166,6 +168,7 @@ class ChartRenderer:
         theme: str = "dark",
     ) -> str:
         colors = get_theme(theme)
+        apply_matplotlib_defaults(colors)
         spec = CHART_SPECS["option"]
 
         from src.options.analytics import _strikes_for_expiry
@@ -228,9 +231,9 @@ class ChartRenderer:
             if max_pain:
                 ax.axvline(max_pain, color=colors["ema20"], linestyle="--", linewidth=1.2, label=f"Max Pain: {max_pain:,.1f}")
             if call_wall:
-                ax.axvline(call_wall, color="#ab47bc", linestyle="-.", linewidth=1.2, label=f"Call Wall: {call_wall:,.1f}")
+                ax.axvline(call_wall, color=colors["candle_down"], linestyle="-.", linewidth=1.2, label=f"Call Wall: {call_wall:,.1f}")
             if put_wall:
-                ax.axvline(put_wall, color="#ff6b6b", linestyle="-.", linewidth=1.2, label=f"Put Wall: {put_wall:,.1f}")
+                ax.axvline(put_wall, color=colors["candle_up"], linestyle="-.", linewidth=1.2, label=f"Put Wall: {put_wall:,.1f}")
 
             ax.set_title(f"{symbol} Options Open Interest by Strike", color=colors["text"], fontsize=12, fontweight="bold")
             ax.set_xlabel("Strike Price", color=colors["text"], fontsize=10)
@@ -252,6 +255,7 @@ class ChartRenderer:
         theme: str = "dark",
     ) -> str:
         colors = get_theme(theme)
+        apply_matplotlib_defaults(colors)
         spec = CHART_SPECS["combined"]
 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(
@@ -289,7 +293,7 @@ class ChartRenderer:
             ChartOverlays.add_macd(ax3, df, colors)
 
             # RSI on ax4
-            ChartOverlays.add_rsi(ax4, df, colors["rsi"], colors["grid"])
+            ChartOverlays.add_rsi(ax4, df, colors["rsi"], colors["grid"], overbought_color=colors["candle_down"], oversold_color=colors["candle_up"])
 
             # Set date tick labels on bottom plot
             step = max(1, len(df) // 10)

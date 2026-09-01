@@ -162,11 +162,13 @@ class ChartOverlays:
             ax.axhline(level, color=color_down, linestyle="--", alpha=0.4, linewidth=1.0)
 
     @staticmethod
-    def add_pattern_zones(ax: plt.Axes, patterns: list, df: pd.DataFrame) -> None:
+    def add_pattern_zones(
+        ax: plt.Axes, patterns: list, df: pd.DataFrame, neckline_color: str = "#8944ab"
+    ) -> None:
         for p in patterns:
             neckline = p.get("neckline")
             if neckline and neckline > 0:
-                ax.axhline(neckline, color="#ab47bc", linestyle=":", alpha=0.6, label=f"Neckline: {p.get('pattern')}")
+                ax.axhline(neckline, color=neckline_color, linestyle=":", alpha=0.6, label=f"Neckline: {p.get('pattern')}")
 
     @staticmethod
     def add_volume(ax: plt.Axes, df: pd.DataFrame, up_color: str, down_color: str) -> None:
@@ -201,14 +203,21 @@ class ChartOverlays:
         ax.legend(loc="upper left", frameon=False, fontsize=8)
 
     @staticmethod
-    def add_rsi(ax: plt.Axes, df: pd.DataFrame, color: str, grid_color: str) -> None:
+    def add_rsi(
+        ax: plt.Axes,
+        df: pd.DataFrame,
+        color: str,
+        grid_color: str,
+        overbought_color: str = "#d70015",
+        oversold_color: str = "#1a7f37",
+    ) -> None:
         closes = df["close"].tolist()
         rsi = clean_series(get_rsi_series(closes))
 
         ax.plot(df.index, rsi, color=color, label="RSI(14)", linewidth=1.2)
 
-        ax.axhline(70, color="#ef5350", linestyle="--", alpha=0.5, linewidth=0.8)
-        ax.axhline(30, color="#26a69a", linestyle="--", alpha=0.5, linewidth=0.8)
+        ax.axhline(70, color=overbought_color, linestyle="--", alpha=0.5, linewidth=0.8)
+        ax.axhline(30, color=oversold_color, linestyle="--", alpha=0.5, linewidth=0.8)
         ax.axhline(50, color=grid_color, linestyle=":", alpha=0.5, linewidth=0.8)
 
         ax.set_ylabel("RSI", fontsize=9)
