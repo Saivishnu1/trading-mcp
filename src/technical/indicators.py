@@ -123,7 +123,7 @@ def macd(
 # True Range helpers (shared by ATR and ADX)
 # ---------------------------------------------------------------------------
 
-def _true_ranges(highs, lows, closes) -> list[float]:
+def _true_ranges(highs: list[float], lows: list[float], closes: list[float]) -> list[float]:
     trs = []
     for i in range(1, len(closes)):
         h, l, pc = highs[i], lows[i], closes[i - 1]
@@ -188,13 +188,13 @@ def adx(
     for a, p, m in zip(atr_s, plus_s, minus_s):
         if a == 0:
             continue
-        plus_di = 100.0 * p / a
-        minus_di = 100.0 * m / a
-        denom = plus_di + minus_di
+        step_plus_di = 100.0 * p / a
+        step_minus_di = 100.0 * m / a
+        denom = step_plus_di + step_minus_di
         if denom == 0:
             dx_series.append(0.0)
         else:
-            dx_series.append(100.0 * abs(plus_di - minus_di) / denom)
+            dx_series.append(100.0 * abs(step_plus_di - step_minus_di) / denom)
 
     adx_s = _wilder_smooth(dx_series, period)
     if not adx_s:

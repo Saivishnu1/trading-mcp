@@ -191,6 +191,11 @@ def size_equity_trade(
         size_adjustments = [m for m in [heat_adj_msg, port_adj_msg] if m]
         size_factors = [f for f in [heat_factor, port_factor] if f < 1.0]
         quantity = _apply_size_factors(base_quantity, size_factors) if size_factors else base_quantity
+        # base_quantity is always a real int (math.floor(...) above never
+        # returns None) so apply_size_factors cannot return None here either
+        # -- its `int | None` return type exists for callers that may pass
+        # a None base_size, which this call site never does.
+        assert quantity is not None
 
         quantity, capital_ceiling_note = _apply_capital_ceiling(
             quantity, entry, capital, unit_multiplier=1,
@@ -281,6 +286,9 @@ def size_options_trade(
         size_adjustments = [m for m in [heat_adj_msg, port_adj_msg] if m]
         size_factors = [f for f in [heat_factor, port_factor] if f < 1.0]
         lots = _apply_size_factors(base_lots, size_factors) if size_factors else base_lots
+        # base_lots is always a real int (math.floor(...) above never
+        # returns None) so apply_size_factors cannot return None here.
+        assert lots is not None
 
         lots, capital_ceiling_note = _apply_capital_ceiling(
             lots, premium, capital, unit_multiplier=lot_size,
