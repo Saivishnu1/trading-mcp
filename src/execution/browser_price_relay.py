@@ -128,6 +128,29 @@ class BrowserPriceRelay:
         await self._updates.put({"action": "subscribe", "mode": "ltp", "instruments": sorted(instruments)})
 
     async def _consume(self, initial_instruments: list[str]) -> None:
+        """Run the upstream stream_prices() loop until it exits (which, per
+        that generator's own contract, should only happen on cancellation --
+        it reconnects forever on any connection drop internally). This
+        method's own `finally` still resets self._task/_updates to None
+        unconditionally, so that IF _consume ever does return/raise for a
+        reason stream_prices() didn't already retry internally (an
+        exception raised before the first `websockets.connect()` even
+        starts, e.g. a DNS failure or a synchronous auth-header error --
+        confirmed reproducible via a direct unit test), the relay can
+        restart on the NEXT subscriber instead of being silently, invisibly
+        dead in self._task for the rest of the process's uptime.
+
+        This exact bug was confirmed live: once _consume exited via its own
+        `except Exception` below (added originally so one bad message
+        wouldn't crash the fan-out loop), self._task stayed set to the now-
+        completed task forever, so _ensure_subscribed's `if self._task is
+        None` check never re-triggered for any later subscriber -- every
+        new browser tab, page reload, or symbol pick just pushed a
+        "subscribe" message into a self._updates queue that nothing was
+        reading anymore. The relay looked "connected" (the WS handshake to
+        the BROWSER always succeeds) but silently never delivered another
+        tick, matching the exact reported symptom: badge says Live, price
+        never updates, during actual market hours."""
         try:
             async for msg in stream_prices(initial_instruments, mode="ltp", subscription_updates=self._updates):
                 if not isinstance(msg, dict):
@@ -156,6 +179,15 @@ class BrowserPriceRelay:
             raise
         except Exception as exc:
             logger.warning("BrowserPriceRelay._consume stream error: %s", exc)
+        finally:
+            # Only clear if we're still the task of record -- a stale
+            # cancelled task from a previous, already-superseded _consume
+            # run must not clobber a newer one's state (defensive; current
+            # callers never overlap two live _consume tasks, but this keeps
+            # the invariant true even if that ever changes).
+            if self._task is asyncio.current_task():
+                self._task = None
+                self._updates = None
 
     async def _fan_out(self, instrument: str, ltp: float) -> None:
         tick = {"instrument": instrument, "ltp": ltp}

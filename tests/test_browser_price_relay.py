@@ -58,6 +58,66 @@ class TestRegisterUnregister:
         await relay.unregister(9999)  # must not raise
 
 
+class TestConsumeDeathRecovery:
+    """Regression coverage for the confirmed live bug: once _consume exits
+    for any reason not internally retried by stream_prices()'s own
+    reconnect loop, self._task stayed set to the now-completed task
+    forever, so _ensure_subscribed's `if self._task is None` check never
+    re-triggered for any later subscriber. The relay's browser-facing
+    WebSocket handshake always succeeds (it's a separate connection from
+    the upstream one), so this was invisible as a "connects fine, badge
+    says Live, price never updates again" symptom -- indistinguishable
+    from a quiet market unless reproduced directly like this."""
+
+    @pytest.mark.anyio
+    async def test_task_resets_to_none_after_consume_raises(self):
+        from src.execution.browser_price_relay import BrowserPriceRelay
+
+        relay = BrowserPriceRelay()
+
+        async def dying_stream(*a, **kw):
+            raise RuntimeError("simulated upstream failure")
+            yield  # pragma: no cover - makes this an async generator
+
+        with patch("src.execution.browser_price_relay.stream_prices", side_effect=dying_stream):
+            await relay.register(["NSE:2885"])
+            await asyncio.sleep(0.05)  # let the background task run to completion
+
+        assert relay._task is None, (
+            "self._task must reset to None once _consume exits, or every "
+            "future subscriber silently pushes into a dead queue forever"
+        )
+        assert relay._updates is None
+
+    @pytest.mark.anyio
+    async def test_second_subscriber_recovers_after_first_consume_dies(self):
+        """The actual end-to-end regression: subscriber #2 (e.g. a page
+        reload, or a second symbol picked on trade.html) must receive real
+        ticks even though subscriber #1's underlying stream already died."""
+        from src.execution.browser_price_relay import BrowserPriceRelay
+
+        relay = BrowserPriceRelay()
+
+        async def dying_stream(*a, **kw):
+            raise RuntimeError("simulated upstream failure")
+            yield  # pragma: no cover
+
+        with patch("src.execution.browser_price_relay.stream_prices", side_effect=dying_stream):
+            sub_id1, _ = await relay.register(["NSE:2885"])
+            await asyncio.sleep(0.05)
+            await relay.unregister(sub_id1)
+
+        with patch("src.execution.browser_price_relay.stream_prices", return_value=_fake_stream(
+            [{"instrument": "2885", "data": {"ltp": 1500.0}}]
+        )):
+            sub_id2, queue2 = await relay.register(["NSE:2885"])
+            await asyncio.sleep(0.05)
+
+        tick = queue2.get_nowait()
+        assert tick == {"instrument": "NSE:2885", "ltp": 1500.0}
+        await relay.unregister(sub_id2)
+
+
 class TestSnapshot:
 
     def test_returns_none_when_no_data(self):
