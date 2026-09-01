@@ -42,6 +42,10 @@ function invalidateAuthStatusCache() {
       stored = theme;
       try { localStorage.setItem(KEY, theme); } catch (e) {}
       apply(theme);
+      // Lets any page-specific code (e.g. trade.html's live chart, which
+      // caches colors read via getComputedStyle) react to an in-app theme
+      // change without polling. See trade.html's ztheme:change listener.
+      window.dispatchEvent(new CustomEvent("ztheme:change", { detail: { theme: theme } }));
     },
     toggle: function () {
       var current = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");

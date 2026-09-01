@@ -730,18 +730,20 @@ var chartInterval = (function(){
 
 function chartThemeOptions(){
   var s = getComputedStyle(document.documentElement);
+  // Fallbacks only fire if tokens.css failed to load -- match the light
+  // theme's default values (--content-secondary / --border-subtle).
   var v = function(name, fallback){ var val = s.getPropertyValue(name).trim(); return val || fallback; };
   return {
     layout: {
       background: { type: LightweightCharts.ColorType.Solid, color: "transparent" },
-      textColor: v("--content-secondary", "#6b7280"),
+      textColor: v("--content-secondary", "#6e6e73"),
     },
     grid: {
-      vertLines: { color: v("--border-subtle", "#e3e6eb") },
-      horzLines: { color: v("--border-subtle", "#e3e6eb") },
+      vertLines: { color: v("--border-subtle", "#d2d2d7") },
+      horzLines: { color: v("--border-subtle", "#d2d2d7") },
     },
-    rightPriceScale: { borderColor: v("--border-subtle", "#e3e6eb") },
-    timeScale: { borderColor: v("--border-subtle", "#e3e6eb"), timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderColor: v("--border-subtle", "#d2d2d7") },
+    timeScale: { borderColor: v("--border-subtle", "#d2d2d7"), timeVisible: true, secondsVisible: false },
   };
 }
 
@@ -749,8 +751,8 @@ function ensureChart(){
   if (chartApi) return;
   var container = document.getElementById("chartContainer");
   var s = getComputedStyle(document.documentElement);
-  var buy = s.getPropertyValue("--buy").trim() || "#0a8f4f";
-  var sell = s.getPropertyValue("--sell").trim() || "#d1392a";
+  var buy = s.getPropertyValue("--buy").trim() || "#1a7f37";
+  var sell = s.getPropertyValue("--sell").trim() || "#d70015";
   chartApi = LightweightCharts.createChart(container, Object.assign({ autoSize: true }, chartThemeOptions()));
   candleSeries = chartApi.addSeries(LightweightCharts.CandlestickSeries, {
     upColor: buy, downColor: sell, borderVisible: false,
@@ -764,9 +766,36 @@ function ensureChart(){
 
   chartApi.subscribeCrosshairMove(onChartCrosshairMove);
 
+  function reapplyChartTheme(){
+    if (!chartApi) return;
+    chartApi.applyOptions(chartThemeOptions());
+    var cs = getComputedStyle(document.documentElement);
+    var b = cs.getPropertyValue("--buy").trim() || "#1a7f37";
+    var sl = cs.getPropertyValue("--sell").trim() || "#d70015";
+    candleSeries.applyOptions({ upColor: b, downColor: sl, wickUpColor: b, wickDownColor: sl });
+    // Volume bars are colored per-candle at render time (renderCandles),
+    // not read live from the series options, so they need their own
+    // re-color pass here rather than picking up the new colors for free.
+    if (chartCandlesByTime){
+      var repainted = Object.keys(chartCandlesByTime).map(function(t){ return chartCandlesByTime[t]; });
+      if (repainted.length && volumeSeries){
+        volumeSeries.setData(repainted.map(function(c){
+          return { time: c.time, value: c.volume || 0, color: c.close >= c.open ? b : sl };
+        }));
+      }
+    }
+  }
+
+  // In-app theme toggle (ZTheme.set, see shared/app.js) — fires regardless
+  // of OS preference, since a user who explicitly picked a theme should
+  // see the chart follow it immediately.
+  window.addEventListener("ztheme:change", reapplyChartTheme);
+
+  // OS-level preference change — only act when no explicit in-app theme
+  // is stored, otherwise this would override the user's own choice.
   if (window.matchMedia){
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function(){
-      if (chartApi) chartApi.applyOptions(chartThemeOptions());
+      if (!window.ZTheme || !window.ZTheme.get()) reapplyChartTheme();
     });
   }
 }
@@ -868,8 +897,8 @@ function renderCandles(candles, preserveZoom){
     return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
   }));
   var s = getComputedStyle(document.documentElement);
-  var buy = s.getPropertyValue("--buy").trim() || "#0a8f4f";
-  var sell = s.getPropertyValue("--sell").trim() || "#d1392a";
+  var buy = s.getPropertyValue("--buy").trim() || "#1a7f37";
+  var sell = s.getPropertyValue("--sell").trim() || "#d70015";
   volumeSeries.setData(candles.map(function(c){
     return { time: c.time, value: c.volume || 0, color: c.close >= c.open ? buy : sell };
   }));

@@ -47,7 +47,10 @@
   }
   .nav-rail-item:hover { background: var(--surface-2); color: var(--content-primary); text-decoration: none; }
   .nav-rail-item.on { background: var(--accent-surface); color: var(--accent); font-weight: var(--weight-semibold); }
-  .nav-rail-icon { flex-shrink: 0; width: 20px; text-align: center; }
+  .nav-rail-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; width: 20px; height: 20px; stroke-width: 2;
+  }
   .nav-rail-label { display: none; }
   .nav-rail-session {
     margin: var(--space-3) var(--space-2) 0;
@@ -95,4 +98,7 @@
   font-weight: var(--weight-medium);
 }
 .tab-bar-item.on { color: var(--accent); font-weight: var(--weight-semibold); }
-.tab-bar-icon { font-size: 20px; line-height: 1; }
+.tab-bar-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; stroke-width: 2; margin: 0 auto;
+}

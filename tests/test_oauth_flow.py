@@ -133,6 +133,59 @@ async def test_oauth_login_post_success(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_oauth_login_post_rejects_non_https_redirect_uri(monkeypatch):
+    """A non-HTTPS, non-localhost redirect_uri must still be rejected with
+    400 -- the status code is the actual security control here. This is
+    the highest-consequence surface touched by the styled-error-page
+    change (src/server.py's _render_error()): a regression here would
+    let a malicious redirect_uri through, or (less severe but still a
+    real regression) break every real MCP client that misconfigures one."""
+    mock_broker = MagicMock()
+    mock_broker.login.return_value = None
+    mock_broker.get_enctoken.return_value = "fake_enctoken"
+    monkeypatch.setattr("src.server.get_broker", lambda: mock_broker)
+    monkeypatch.setattr("src.session_store.save", lambda uid, token: None)
+    monkeypatch.setattr("src.api_key_store.get_or_create", lambda uid: ("mocked_api_key", True))
+
+    query = b"client_id=claude&redirect_uri=http://evil.example.com&state=xyz&code_challenge=c&code_challenge_method=S256"
+    body = b"user_id=ZK1234&password=mypassword&totp_code=123456"
+
+    status, headers, response_body = await make_asgi_call(
+        "/login", method="POST", query_string=query, body=body
+    )
+
+    assert status == 400
+    assert headers[b"content-type"] == b"text/html; charset=utf-8"
+    html = response_body.decode()
+    assert "Invalid redirect_uri" in html
+    assert "<h1>" not in html  # the old bare, unstyled error page
+
+
+@pytest.mark.anyio
+async def test_oauth_login_post_allows_localhost_redirect_uri(monkeypatch):
+    """The localhost/127.0.0.1 exemption (for local MCP client development)
+    must survive the styled-error-page change -- a non-HTTPS localhost
+    redirect_uri should still succeed with a 302, not be rejected."""
+    mock_broker = MagicMock()
+    mock_broker.login.return_value = None
+    mock_broker.get_enctoken.return_value = "fake_enctoken"
+    monkeypatch.setattr("src.server.get_broker", lambda: mock_broker)
+    monkeypatch.setattr("src.session_store.save", lambda uid, token: None)
+    monkeypatch.setattr("src.api_key_store.get_or_create", lambda uid: ("mocked_api_key", True))
+
+    query = b"client_id=claude&redirect_uri=http://localhost:9000/callback&state=xyz&code_challenge=c&code_challenge_method=S256"
+    body = b"user_id=ZK1234&password=mypassword&totp_code=123456"
+
+    status, headers, response_body = await make_asgi_call(
+        "/login", method="POST", query_string=query, body=body
+    )
+
+    assert status == 302
+    location = headers[b"location"].decode()
+    assert location.startswith("http://localhost:9000/callback?code=auth_")
+
+
+@pytest.mark.anyio
 async def test_oauth_token_exchange_success_plain():
     _oauth_codes.clear()
     code = "auth_plain_code"

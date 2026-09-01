@@ -624,6 +624,27 @@ def _get_cookie(scope, name: str) -> str | None:
     return None
 
 
+def _render_error(title: str, detail: str) -> str:
+    """Minimal branded error page for raw-HTML error responses (currently
+    just the OAuth redirect_uri rejection below). Reuses the same shared
+    token/CSS bundle every other page loads via _with_shared() — before
+    this existed, this was a bare unstyled <h1>, the one unstyled surface
+    in the product and, worse, on the OAuth path: it's what a real MCP
+    client sees if it misconfigures a redirect_uri. No nav is rendered —
+    an unauthenticated error page shouldn't imply a session exists."""
+    html = (
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+        f"<title>{title}</title>{{shared_head}}</head>"
+        "<body><div class=\"page-shell\"><div class=\"page-content\" "
+        "style=\"max-width:480px;margin:64px auto;\">"
+        f"<div class=\"banner banner-error\"><div><strong>{title}</strong>"
+        f"<div style=\"margin-top:4px;\">{detail}</div></div></div>"
+        "</div></div></body></html>"
+    )
+    return html.replace("{shared_head}", _SHARED_HEAD_TAG)
+
+
 def _render_login(prefill_user_id: str, message: str, oauth_query: str = "") -> str:
     action = f"/login?{oauth_query}" if oauth_query else "/login"
     if oauth_query:
@@ -709,7 +730,10 @@ async def _handle_login_post(scope, receive, send) -> None:
         parsed_uri = urllib.parse.urlparse(redirect_uri)
         is_local = parsed_uri.hostname in ("localhost", "127.0.0.1")
         if not is_local and parsed_uri.scheme != "https":
-            await _send_html(send, 400, "<h1>Invalid redirect_uri — HTTPS required</h1>")
+            await _send_html(send, 400, _render_error(
+                "Invalid redirect_uri",
+                "HTTPS is required for this redirect_uri. localhost/127.0.0.1 are exempt for local development.",
+            ))
             return
 
         # Generate temporary auth code
