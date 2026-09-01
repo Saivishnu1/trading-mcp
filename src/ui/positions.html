@@ -558,13 +558,26 @@ async function saveModify(){
   }
 }
 
-if (window.ZPin) {
-  window.ZPin.bind("pin");
-  // If a PIN was already entered on another page this session, unlock
-  // immediately instead of leaving a filled-but-unsubmitted field sitting
-  // behind the "Unlock" button.
-  if (window.ZPin.get()) load();
-}
+// shared.js (defining window.ZPin) loads via <script defer>, which only
+// executes AFTER the document finishes parsing -- this inline script
+// block runs immediately as the parser reaches it, which is BEFORE that,
+// not after. A bare `if (window.ZPin)` here always evaluated false
+// (confirmed 2026-09-02) and silently skipped, so the PIN was never
+// actually bound/persisted despite the earlier fix's own tests passing
+// (those only exercised Python/server logic, never real browser script
+// load order). Same retry-until-ready shape renderIcons() below already
+// uses for the identical problem with Lucide.
+(function tryBindPin(tries) {
+  if (window.ZPin) {
+    window.ZPin.bind("pin");
+    // If a PIN was already entered on another page this session, unlock
+    // immediately instead of leaving a filled-but-unsubmitted field
+    // sitting behind the "Unlock" button.
+    if (window.ZPin.get()) load();
+    return;
+  }
+  if (tries < 40) setTimeout(function () { tryBindPin(tries + 1); }, 25);
+})(0);
 renderIcons();
 </script>
 </body>

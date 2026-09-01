@@ -17,6 +17,7 @@ function renderIcons() {
   if (renderIcons._tries++ < 40) setTimeout(renderIcons, 25);
 }
 
+
 /* ── Auth-status cache invalidation ──
    The nav's session indicator (nav.html) caches /auth/status in
    sessionStorage for 45s to avoid refetching on every navigation. Call
@@ -26,16 +27,27 @@ function invalidateAuthStatusCache() {
   try { sessionStorage.removeItem('zerodha_auth_status_cache'); } catch (e) {}
 }
 
-/* ── Theme ── */
+/* ── Theme ──
+   data-theme is already applied synchronously before first paint by the
+   inline script server.py injects at the very top of <head>
+   (_THEME_INIT_SCRIPT) -- this file loads via <script defer>, well after
+   that already ran, so re-reading localStorage and re-applying here would
+   be redundant at best. window.__ztheme is that script's own read of the
+   stored value, used as the single source of truth so this object and the
+   DOM attribute can never disagree. */
 (function () {
   var KEY = "zerodha_theme";
   function apply(theme) {
     if (theme) document.documentElement.setAttribute("data-theme", theme);
     else document.documentElement.removeAttribute("data-theme");
   }
-  var stored = null;
-  try { stored = localStorage.getItem(KEY); } catch (e) {}
-  apply(stored);
+  var stored = (typeof window.__ztheme !== "undefined") ? window.__ztheme : null;
+  if (stored === null) {
+    // Defensive fallback only -- should be unreachable in normal operation
+    // since every page loads _THEME_INIT_SCRIPT before this file runs.
+    try { stored = localStorage.getItem(KEY); } catch (e) {}
+    apply(stored);
+  }
   window.ZTheme = {
     get: function () { return stored; },
     set: function (theme) {

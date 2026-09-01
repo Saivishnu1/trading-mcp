@@ -8,6 +8,19 @@
 
 html { -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
 
+/* No global <button> reset existed before this -- every button-like
+   element (.btn, .side-btn, .seg-btn, .nav-theme-toggle, etc.) relied
+   entirely on its own class for layout, with nothing baseline
+   guaranteeing text-align/font inheritance if a class was missing one of
+   those or a browser's UA button stylesheet won a specificity fight.
+   text-align: center here is a safety net UNDER every button class, not
+   a replacement for them -- an element using display:flex +
+   align-items/justify-content:center for its actual centering (which
+   every existing button class already does) is unaffected either way,
+   since text-align only matters for a flex item that ISN'T itself
+   further centering its own text node. */
+button { text-align: center; font-family: inherit; }
+
 body {
   margin: 0;
   font-family: var(--font-ui);

@@ -1016,7 +1016,16 @@ function prefillFromQuery(){
 }
 
 document.addEventListener("DOMContentLoaded", function(){
-  if (window.ZPin) window.ZPin.bind("pin");
+  // Deferred scripts (shared.js, defining window.ZPin) are guaranteed by
+  // spec to execute before DOMContentLoaded fires, so window.ZPin should
+  // already exist here -- unlike home.html/positions.html's top-level
+  // inline scripts, which run during parsing, before that. Kept as a
+  // retry rather than a bare check anyway for defense in depth and
+  // consistency with those two pages' fix.
+  (function tryBindPin(tries) {
+    if (window.ZPin) { window.ZPin.bind("pin"); return; }
+    if (tries < 40) setTimeout(function () { tryBindPin(tries + 1); }, 25);
+  })(0);
   document.querySelectorAll("#chartIntervalControl .seg-btn").forEach(function(b){
     b.classList.toggle("on", b.dataset.chartInterval === chartInterval);
   });

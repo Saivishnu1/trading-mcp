@@ -620,13 +620,22 @@
       .catch(function() { status.textContent = 'Could not reach server'; });
   })();
 
-  if (window.ZPin) {
-    window.ZPin.bind("snapshotPin");
-    // If a PIN was already entered on another page this session, load the
-    // snapshot immediately instead of leaving it sitting on the PIN-entry
-    // state with a filled-but-unsubmitted field.
-    if (window.ZPin.get()) loadSnapshot();
-  }
+  // shared.js (defining window.ZPin) loads via <script defer>, which only
+  // executes AFTER the document finishes parsing -- this inline script
+  // block runs before that, not after, so a bare `if (window.ZPin)` here
+  // always evaluated false (confirmed 2026-09-02). Same retry-until-ready
+  // shape renderIcons() below already uses for the identical problem.
+  (function tryBindPin(tries) {
+    if (window.ZPin) {
+      window.ZPin.bind("snapshotPin");
+      // If a PIN was already entered on another page this session, load
+      // the snapshot immediately instead of leaving it sitting on the
+      // PIN-entry state with a filled-but-unsubmitted field.
+      if (window.ZPin.get()) loadSnapshot();
+      return;
+    }
+    if (tries < 40) setTimeout(function () { tryBindPin(tries + 1); }, 25);
+  })(0);
 
   renderIcons();
 </script>

@@ -115,14 +115,27 @@
     });
   })();
 
-  // Theme toggle — wires the two nav buttons (rail + tab-bar) to the
-  // ZTheme API already defined in shared/app.js. Shows a sun icon when
-  // the CURRENT theme is dark (i.e. tapping switches TO light) and a
-  // moon icon when it's light, matching the common convention of
+  // Theme toggle — wires the two nav buttons (rail + tab-bar).
+  //
+  // currentTheme() reads the document.documentElement data-theme
+  // ATTRIBUTE directly, not window.ZTheme.get() -- this inline script
+  // (server-injected, non-deferred, runs during parsing) can execute
+  // before shared.js's <script defer> has defined window.ZTheme at all,
+  // which made this icon read inconsistently per page (silently falling
+  // back to the OS's prefers-color-scheme instead of the actual stored
+  // choice whenever that race lost -- confirmed 2026-09-02). The DOM
+  // attribute itself is always correct by this point, because
+  // server.py's _THEME_INIT_SCRIPT applies it synchronously at the very
+  // top of <head>, before ANY other script -- so reading it directly
+  // here has no race to lose.
+  //
+  // Shows a sun icon when the CURRENT theme is dark (tapping switches TO
+  // light) and a moon icon when it's light -- the common convention of
   // depicting the theme you'll switch to, not the one you're on.
   (function () {
     function currentTheme() {
-      if (window.ZTheme && window.ZTheme.get()) return window.ZTheme.get();
+      var attr = document.documentElement.getAttribute('data-theme');
+      if (attr) return attr;
       if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
       return 'light';
     }

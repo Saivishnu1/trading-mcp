@@ -377,7 +377,33 @@ _SHARED_JS_V = _content_hash(_SHARED_JS)
 _LUCIDE_JS_V = _content_hash(_LUCIDE_JS)
 _LIGHTWEIGHT_CHARTS_JS_V = _content_hash(_LIGHTWEIGHT_CHARTS_JS)
 
+# Applies the stored/OS theme SYNCHRONOUSLY, before any CSS paints and
+# before shared.js (which is <script defer>, so it only runs after the
+# whole document parses -- well after first paint) gets a chance to.
+# Without this, two real bugs showed up together (confirmed 2026-09-02):
+# (1) a visible flash of the wrong theme on every page load, since the
+# CSS default (light, on bare :root) rendered first and only flipped to
+# the stored choice once the deferred script ran; (2) the nav's theme-
+# toggle icon reading inconsistently per page, because nav.html's own
+# inline <script> (non-deferred, runs during parsing) could execute its
+# sync() check BEFORE shared.js's deferred IIFE had defined window.ZTheme
+# at all, silently falling back to reading the OS's prefers-color-scheme
+# instead of the user's actual stored choice -- which only "looks right"
+# on pages where those two happen to agree.
+#
+# window.__ztheme (set here) is the single source of truth both this
+# script and shared.js's later ZTheme object read from, so there's never
+# a window where the DOM attribute and the JS-visible value disagree.
+_THEME_INIT_SCRIPT = (
+    "<script>(function(){try{"
+    "var t=localStorage.getItem('zerodha_theme');"
+    "if(t){document.documentElement.setAttribute('data-theme',t);}"
+    "window.__ztheme=t;"
+    "}catch(e){}})();</script>"
+)
+
 _SHARED_HEAD_TAG = (
+    f'{_THEME_INIT_SCRIPT}\n'
     f'<link rel="stylesheet" href="/ui/shared.css?v={_SHARED_CSS_V}">\n'
     '<link rel="preload" as="font" type="font/woff2" crossorigin '
     f'href="/ui/fonts/inter-var.woff2?v={_FONT_INTER_V}">\n'
