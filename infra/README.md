@@ -156,6 +156,47 @@ The application **never starts with a stale schema**. If migration fails, the pr
 
 ---
 
+## Public HTTPS access — two options
+
+Both proxy to the same `http://127.0.0.1:8000` the app listens on and can
+run at the same time (neither depends on the other) — pick whichever
+fits, or run both and use either URL.
+
+### Option A — Nginx + Let's Encrypt (stable IP-based URL)
+
+```bash
+sudo bash infra/10_setup_nginx.sh
+```
+
+Gives a stable `https://<your-ip-with-dashes>.sslip.io` URL backed by a
+real Let's Encrypt cert, auto-renewed via `certbot.timer`. Requires ports
+80/443 open and the VM's public IP exposed. See the script itself for
+what it does.
+
+### Option B — Cloudflare Quick Tunnel (no exposed IP, free, URL changes on restart)
+
+```bash
+sudo bash infra/11_setup_cloudflare_tunnel.sh
+```
+
+Gives a `https://<random-words>.trycloudflare.com` URL with a Cloudflare-issued
+cert, with the VM's public IP never exposed and no inbound ports opened at all
+— `cloudflared` makes an *outbound* connection to Cloudflare's edge and traffic
+routes back over that tunnel. No Cloudflare account or login needed for this
+Quick Tunnel path (that's only required for a *named* tunnel with your own
+stable domain — a separate, longer setup not covered here).
+
+**Trade-off:** the URL is reassigned on every `cloudflared` restart (VM
+reboot, service restart, a reconnect after a network blip) — it is not
+stable enough for a README link or a saved MCP client config the way
+Option A's is. Re-check the current URL anytime with:
+
+```bash
+bash infra/print_tunnel_url.sh
+```
+
+---
+
 ## Part 5 — Alembic Migration Workflow
 
 ### Check current state

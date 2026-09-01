@@ -1,0 +1,43 @@
+[Unit]
+Description=Cloudflare Quick Tunnel — public HTTPS URL for Zerodha MCP (free, no domain)
+Documentation=file:///home/ubuntu/trading-mcp/infra/README.md
+After=network-online.target zerodha-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+
+# Quick Tunnel — no login, no config file, no Cloudflare account. Makes an
+# OUTBOUND connection to Cloudflare's edge only; nothing needs to accept
+# inbound connections on this VM for this to work. Proxies straight to the
+# app (same port nginx already proxies to in 10_setup_nginx.sh) --
+# WebSocket upgrades (used by /ws/prices) are handled natively by
+# cloudflared for an http:// origin, no special flag needed.
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8000
+
+# The assigned *.trycloudflare.com URL is logged to stderr at startup --
+# journald captures it (see infra/print_tunnel_url.sh to read it back).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared-tunnel
+
+# A dropped/reconnected tunnel gets issued a NEW *.trycloudflare.com URL
+# (this is the fundamental trade-off of the free Quick Tunnel vs. a named
+# tunnel) -- restart on failure so the service self-heals, but this means
+# any URL you've shared can go stale on a reconnect. Re-run
+# infra/print_tunnel_url.sh after a restart to get the current one.
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=60s
+StartLimitBurst=5
+
+# Security hardening — matches the other units in this repo
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
