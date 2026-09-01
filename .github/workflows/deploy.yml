@@ -1,17 +1,37 @@
 name: Deploy to Oracle
 
+# Runs after CI (ci.yml) completes on main, instead of independently on
+# every push -- CI's own test job already covers what this workflow used
+# to re-run itself (a duplicate "Run tests" step, confirmed wasteful and
+# confusing in the Actions UI: two separate workflow runs on every push,
+# each running the full suite). This also closes a real gap the old
+# `on: push` trigger had: a push whose tests fail could still reach
+# deploy.yml's OWN quick pytest run and pass it independently, with no
+# guarantee that run agreed with CI's. Now deploy only proceeds when CI's
+# workflow_run reports conclusion == 'success', checked explicitly below
+# rather than assumed from the trigger firing at all (workflow_run fires
+# on ANY conclusion, success or failure, so that check is load-bearing,
+# not decorative).
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
 
 jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Pin to the exact commit CI actually ran against, not whatever
+          # main happens to point at when this workflow_run fires --
+          # those can differ if another push landed on main in the
+          # window between CI starting and this trigger firing.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -23,9 +43,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
-
-      - name: Run tests
-        run: uv run pytest
 
       - name: Deploy to Oracle
         uses: appleboy/ssh-action@v1.2.0
