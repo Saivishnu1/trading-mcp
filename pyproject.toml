@@ -92,6 +92,12 @@ exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
 ]
+# Measured at 73% (2026-09-01) with src/server.py excluded from coverage
+# (see the `omit` above -- server.py is a separate, tracked cleanup, not
+# this threshold's problem). Set a few points below the measured value so
+# normal variance doesn't fail CI on day one; ratchet upward over time
+# rather than resetting it down when it's inconvenient.
+fail_under = 70
 
 [tool.ruff]
 line-length = 100
