@@ -13,6 +13,9 @@ WorkingDirectory=/home/ubuntu/trading-mcp
 # Load secrets from /etc/zerodha-mcp/.env (owned root:ubuntu, mode 640)
 EnvironmentFile=/etc/zerodha-mcp/.env
 
+# Structured JSON logs in production (see src/logging_config.py).
+Environment=LOG_FORMAT=json
+
 # Start the application via uv
 ExecStart=/home/ubuntu/.local/bin/uv run telegram-admin
 

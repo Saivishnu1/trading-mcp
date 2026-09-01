@@ -15,6 +15,12 @@ WorkingDirectory=/home/ubuntu/trading-mcp
 # This file is NEVER committed to git.
 EnvironmentFile=/etc/zerodha-mcp/.env
 
+# Structured JSON logs in production (see src/logging_config.py) -- lets
+# journald/log shippers parse level/service/request_id instead of a plain
+# text line. Overridable per-unit here rather than requiring it in the
+# shared .env, since it's an operational default, not a secret.
+Environment=LOG_FORMAT=json
+
 # Start the application via uv (manages the venv automatically)
 ExecStart=/home/ubuntu/.local/bin/uv run zerodha-mcp
 

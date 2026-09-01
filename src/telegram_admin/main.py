@@ -92,7 +92,18 @@ async def _post_init(application: Application) -> None:
 
 
 def main() -> None:
-    """Initializes and runs the Telegram Admin bot."""
+    """Initializes and runs the Telegram Admin bot.
+
+    This IS the process entry point in production -- the `telegram-admin`
+    console script (pyproject.toml [project.scripts]) calls main() directly
+    via `uv run telegram-admin`, the exact command the systemd unit uses
+    (infra/systemd/telegram-admin.service). It never goes through this
+    module's `if __name__ == "__main__":` block, so logging must be
+    configured here, not there.
+    """
+    from src.logging_config import configure_logging
+    configure_logging(service="telegram-admin")
+
     if not BOT_TOKEN:
         logger.error(
             "TELEGRAM_ADMIN_BOT_TOKEN is not set in environment or in the .env file. "
@@ -140,13 +151,4 @@ def main() -> None:
     application.run_polling()
 
 if __name__ == "__main__":
-    # Configure logging if running this script directly
-    log_level_str = os.environ.get("LOG_LEVEL", "INFO").upper()
-    log_level = getattr(logging, log_level_str, logging.INFO)
-
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        level=log_level
-    )
-
     main()

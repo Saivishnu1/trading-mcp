@@ -45,7 +45,6 @@ from src.tools import (
 )
 
 load_dotenv()
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 
 logger = logging.getLogger(__name__)
 
@@ -876,6 +875,13 @@ async def app(scope, receive, send):
 
     # Resolve user from API key header before any route runs
     if scope["type"] == "http":
+        from src.logging_config import new_request_id, request_id_var
+
+        headers = dict(scope.get("headers", []))
+        incoming_request_id = headers.get(b"x-request-id")
+        req_id = incoming_request_id.decode("utf-8") if incoming_request_id else new_request_id()
+        request_id_token = request_id_var.set(req_id)
+
         uid = _resolve_user(scope)
         # DEV_BYPASS_AUTH=true skips OAuth entirely — never set in production
         if not uid and os.environ.get("DEV_BYPASS_AUTH", "").lower() == "true":
@@ -898,6 +904,7 @@ async def app(scope, receive, send):
                                     [b"content-length", str(len(body)).encode()]]})
             await send({"type": "http.response.body", "body": body})
             current_user.reset(token)
+            request_id_var.reset(request_id_token)
             return
 
         if path in ("/mcp", "/sse") and uid:
@@ -906,6 +913,7 @@ async def app(scope, receive, send):
             await _app(scope, receive, send)
         finally:
             current_user.reset(token)
+            request_id_var.reset(request_id_token)
     else:
         await _app(scope, receive, send)
 
@@ -1520,6 +1528,9 @@ async def _app(scope, receive, send):
 
 
 def main() -> None:
+    from src.logging_config import configure_logging
+    configure_logging(service="mcp")
+
     import uvicorn
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8000"))
@@ -1527,6 +1538,8 @@ def main() -> None:
 
 
 def main_stdio() -> None:
+    from src.logging_config import configure_logging
+    configure_logging(service="mcp")
     mcp.run("stdio")
 
 

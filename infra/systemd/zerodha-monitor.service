@@ -15,6 +15,9 @@ WorkingDirectory=/home/ubuntu/trading-mcp
 # This file is NEVER committed to git.
 EnvironmentFile=/etc/zerodha-mcp/.env
 
+# Structured JSON logs in production (see src/logging_config.py).
+Environment=LOG_FORMAT=json
+
 # Standalone process — separate from the FastAPI/MCP server (zerodha-mcp.service).
 ExecStart=/home/ubuntu/.local/bin/uv run python -m src.monitor.service
 

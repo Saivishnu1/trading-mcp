@@ -19,7 +19,6 @@ from src.execution.order_update_listener import run_order_update_listener
 from src.execution.trailing_sl import rehydrate_trailing_sl
 from src.monitor.scheduler import MarketMonitor
 
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 _LOCK_FILE = os.environ.get("MONITOR_LOCK_FILE", "/tmp/zerodha-monitor.lock")
@@ -71,6 +70,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    from src.logging_config import configure_logging
+    configure_logging(service="monitor")
+
     _lock_handle = _acquire_singleton_lock()
     try:
         asyncio.run(main())
