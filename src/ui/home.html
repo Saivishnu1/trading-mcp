@@ -637,7 +637,19 @@
     if (tries < 40) setTimeout(function () { tryBindPin(tries + 1); }, 25);
   })(0);
 
-  renderIcons();
+  // renderIcons() itself is defined in shared.js, which loads via
+  // <script defer> -- executing only AFTER the document finishes
+  // parsing. This top-level inline script runs immediately as the parser
+  // reaches it, BEFORE that, so a bare `renderIcons();` call here throws
+  // ReferenceError (renderIcons is not defined) rather than silently
+  // no-op'ing -- confirmed 2026-09-02: no icons rendered anywhere on this
+  // page, including the shared nav's Home/Positions/Trade/Session icons,
+  // because the call threw before ever reaching renderIcons' own retry
+  // loop (which only helps once the function itself exists to be called).
+  (function tryRenderIcons(tries) {
+    if (typeof renderIcons === "function") { renderIcons(); return; }
+    if (tries < 40) setTimeout(function () { tryRenderIcons(tries + 1); }, 25);
+  })(0);
 </script>
 </body>
 </html>
