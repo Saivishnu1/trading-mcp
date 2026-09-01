@@ -54,6 +54,51 @@ function invalidateAuthStatusCache() {
   };
 })();
 
+/* ── Trading PIN ──
+   The trading PIN (TRADE_PIN) is a single shared secret validated
+   server-side on every /trade, /positions, and /positions/summary
+   request -- it is NOT a rotating one-time code, so remembering it
+   client-side after first entry doesn't weaken anything the server-side
+   validation already does on every single call.
+
+   Before this existed, home.html, trade.html, and positions.html each
+   had their own <input id="pin"> read fresh with no persistence, so
+   navigating between them meant re-typing the PIN on every single page
+   load -- this is what a page's own PIN <input> should wire up to
+   instead of just reading its own DOM value.
+
+   sessionStorage, not localStorage: cleared when the tab/window closes,
+   so a PIN typed on a shared/public machine doesn't persist indefinitely
+   after the browser is closed. Each page still owns its own <input id="pin">
+   -- ZPin only adds prefill-on-load and save-on-input, it doesn't change
+   where the PIN is read from at the point of use (server calls still
+   read the input's live .value, same as before). */
+(function () {
+  var KEY = "zerodha_trade_pin";
+  window.ZPin = {
+    get: function () {
+      try { return sessionStorage.getItem(KEY) || ""; } catch (e) { return ""; }
+    },
+    set: function (pin) {
+      try {
+        if (pin) sessionStorage.setItem(KEY, pin);
+        else sessionStorage.removeItem(KEY);
+      } catch (e) {}
+    },
+    /* Call once per page, after the #pin input exists in the DOM.
+       Prefills it from the stored value and saves on every keystroke so
+       a PIN typed on any page is remembered by the next one. */
+    bind: function (inputId) {
+      inputId = inputId || "pin";
+      var el = document.getElementById(inputId);
+      if (!el) return;
+      var saved = window.ZPin.get();
+      if (saved && !el.value) el.value = saved;
+      el.addEventListener("input", function () { window.ZPin.set(el.value); });
+    },
+  };
+})();
+
 /* ── Banner show/hide — one implementation, used by trade.html and
    positions.html (was byte-identical duplicated code in both before this
    consolidation). Expects an element with class="banner ..." — see

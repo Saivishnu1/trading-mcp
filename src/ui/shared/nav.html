@@ -17,6 +17,11 @@
       <i data-lucide="key-round" class="nav-rail-icon" aria-hidden="true"></i><span class="nav-rail-label">Session</span>
     </a>
   </div>
+  <button class="nav-theme-toggle" id="navThemeToggle" type="button" aria-label="Toggle light/dark theme">
+    <i data-lucide="sun" class="nav-rail-icon nav-theme-icon-light" aria-hidden="true"></i>
+    <i data-lucide="moon" class="nav-rail-icon nav-theme-icon-dark" aria-hidden="true"></i>
+    <span class="nav-rail-label" id="navThemeLabel">Theme</span>
+  </button>
   <div class="nav-rail-session">
     <span class="status-dot" id="navSessionDot"></span>
     <span class="nav-rail-label" id="navSessionText">Checking…</span>
@@ -36,6 +41,11 @@
   <a class="tab-bar-item {active_login}" href="/login">
     <i data-lucide="key-round" class="tab-bar-icon" aria-hidden="true"></i>Session
   </a>
+  <button class="tab-bar-item nav-theme-toggle" id="tabBarThemeToggle" type="button" aria-label="Toggle light/dark theme">
+    <i data-lucide="sun" class="tab-bar-icon nav-theme-icon-light" aria-hidden="true"></i>
+    <i data-lucide="moon" class="tab-bar-icon nav-theme-icon-dark" aria-hidden="true"></i>
+    Theme
+  </button>
 </nav>
 
 <script>
@@ -103,5 +113,32 @@
       a.addEventListener('mouseenter', function () { prefetch(a.getAttribute('href')); });
       a.addEventListener('focus', function () { prefetch(a.getAttribute('href')); });
     });
+  })();
+
+  // Theme toggle — wires the two nav buttons (rail + tab-bar) to the
+  // ZTheme API already defined in shared/app.js. Shows a sun icon when
+  // the CURRENT theme is dark (i.e. tapping switches TO light) and a
+  // moon icon when it's light, matching the common convention of
+  // depicting the theme you'll switch to, not the one you're on.
+  (function () {
+    function currentTheme() {
+      if (window.ZTheme && window.ZTheme.get()) return window.ZTheme.get();
+      if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+      return 'light';
+    }
+    function sync() {
+      var isDark = currentTheme() === 'dark';
+      document.querySelectorAll('.nav-theme-toggle').forEach(function (btn) {
+        btn.classList.toggle('is-dark', isDark);
+      });
+    }
+    document.querySelectorAll('.nav-theme-toggle').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (window.ZTheme) window.ZTheme.toggle();
+        sync();
+      });
+    });
+    window.addEventListener('ztheme:change', sync);
+    sync();
   })();
 </script>

@@ -995,6 +995,7 @@ function prefillFromQuery(){
 }
 
 document.addEventListener("DOMContentLoaded", function(){
+  if (window.ZPin) window.ZPin.bind("pin");
   document.querySelectorAll("#chartIntervalControl .seg-btn").forEach(function(b){
     b.classList.toggle("on", b.dataset.chartInterval === chartInterval);
   });

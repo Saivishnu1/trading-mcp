@@ -538,6 +538,13 @@ async function saveModify(){
   }
 }
 
+if (window.ZPin) {
+  window.ZPin.bind("pin");
+  // If a PIN was already entered on another page this session, unlock
+  // immediately instead of leaving a filled-but-unsubmitted field sitting
+  // behind the "Unlock" button.
+  if (window.ZPin.get()) load();
+}
 renderIcons();
 </script>
 </body>

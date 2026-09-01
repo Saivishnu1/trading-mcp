@@ -59,7 +59,7 @@ flowchart LR
             O[OAuth guard\nRFC 7591 + PKCE]
             T[78 MCP tools]
             UI[Web UI\n/, /positions, /trade]
-            WS[/ws/prices]
+            WS["/ws/prices"]
         end
         MON[zerodha-monitor\nalerts · trailing SL]
         TG[telegram-admin]

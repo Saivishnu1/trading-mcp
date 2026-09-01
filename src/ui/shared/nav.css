@@ -72,6 +72,38 @@
   .nav-rail-session { margin: var(--space-4) var(--space-3) 0; padding: var(--space-3) var(--space-4); }
 }
 
+/* ── Theme toggle — one button, two renderings (rail + tab-bar), same
+   markup pattern as everything else in this file. Sun/moon icons are
+   both always in the DOM and CSS shows/hides via .is-dark (added by
+   nav.html's script) instead of swapping data-lucide names at runtime,
+   so there's no icon-repaint flash on toggle. ── */
+.nav-theme-toggle {
+  background: none; border: none; cursor: pointer; font: inherit;
+  color: var(--content-secondary);
+}
+.nav-theme-icon-dark { display: none; }
+.nav-theme-toggle.is-dark .nav-theme-icon-light { display: none; }
+.nav-theme-toggle.is-dark .nav-theme-icon-dark { display: inline-flex; }
+@media (min-width: 600px) {
+  .nav-theme-toggle {
+    display: flex; align-items: center; gap: var(--space-3);
+    min-height: var(--touch-target-min);
+    padding: var(--space-2) var(--space-3);
+    margin: 0 var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-body-m);
+    font-weight: var(--weight-medium);
+    width: calc(100% - var(--space-4));
+    transition: background var(--dur-micro) var(--ease-standard), color var(--dur-micro) var(--ease-standard);
+  }
+  .nav-theme-toggle:hover { background: var(--surface-2); color: var(--content-primary); }
+  .nav-theme-toggle .nav-rail-label { display: none; }
+}
+@media (min-width: 1024px) {
+  .nav-theme-toggle { gap: var(--space-3); padding: var(--space-3) var(--space-4); margin: 0 var(--space-3) var(--space-3); }
+  .nav-theme-toggle .nav-rail-label { display: inline; }
+}
+
 /* Bottom tab bar — Compact only */
 .tab-bar {
   position: fixed;

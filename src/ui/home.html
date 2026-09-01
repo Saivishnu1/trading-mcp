@@ -620,6 +620,14 @@
       .catch(function() { status.textContent = 'Could not reach server'; });
   })();
 
+  if (window.ZPin) {
+    window.ZPin.bind("snapshotPin");
+    // If a PIN was already entered on another page this session, load the
+    // snapshot immediately instead of leaving it sitting on the PIN-entry
+    // state with a filled-but-unsubmitted field.
+    if (window.ZPin.get()) loadSnapshot();
+  }
+
   renderIcons();
 </script>
 </body>
