@@ -388,6 +388,23 @@ function toggleExpand(i){
   if (detail) detail.classList.toggle("open", !wasOpen);
 }
 
+// IST is UTC+5:30 with no DST, so this offset math is exact and needs no
+// timezone library. Mirrors the server-side window (src/meta.py,
+// src/market/calendar.py: 09:15-15:30 IST, Mon-Fri) -- NOT a substitute
+// for the real holiday-aware calendar, just enough to label the live
+// connection badge honestly when the feed is idle because nothing is
+// happening, rather than implying a stuck connection. Same helper as
+// trade.html's connectQuote() -- duplicated rather than shared, since
+// there's no shared JS module boundary for page-specific WS handlers.
+function isNseSessionLikelyOpen(){
+  var utc = new Date();
+  var ist = new Date(utc.getTime() + (5.5 * 60 * 60 * 1000));
+  var day = ist.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  var minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return minutes >= (9 * 60 + 15) && minutes <= (15 * 60 + 30);
+}
+
 function connectWs(pin){
   if (ws){ ws.close(); ws = null; }
   var instruments = positions.map(instrumentKey).filter(Boolean);
@@ -405,7 +422,10 @@ function connectWs(pin){
     try { msg = JSON.parse(evt.data); } catch (e) { return; }
     if (msg.type === "error"){ setConn("down", msg.message || "Connection error"); return; }
     if (msg.type === "snapshot"){
-      setConn("live", "Live");
+      // A "snapshot" can be the last known price from before a closed
+      // market, with no new ticks coming -- only qualify THIS message
+      // type, since a real "tick" always means a fresh price just arrived.
+      setConn("live", isNseSessionLikelyOpen() ? "Live" : "Live · market closed");
       Object.entries(msg.prices || {}).forEach(function(entry){ applyTick(entry[0], entry[1]); });
       return;
     }

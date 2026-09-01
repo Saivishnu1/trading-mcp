@@ -659,6 +659,21 @@ async function runSearch(q){
 // positions.html already uses. Purely additive: connects only when a
 // symbol with a security_id is picked, disconnects on symbol change.
 // Never touches order placement.
+// IST is UTC+5:30 with no DST, so this offset math is exact and needs no
+// timezone library. Mirrors the server-side window (src/meta.py,
+// src/market/calendar.py: 09:15-15:30 IST, Mon-Fri) -- NOT a substitute
+// for the real holiday-aware calendar, just enough to label the live-quote
+// badge honestly when the feed is idle because nothing is happening,
+// rather than implying a stuck connection.
+function isNseSessionLikelyOpen(){
+  var utc = new Date();
+  var ist = new Date(utc.getTime() + (5.5 * 60 * 60 * 1000));
+  var day = ist.getUTCDay(); // getUTCDay on a shifted Date reads as IST wall-clock day
+  if (day === 0 || day === 6) return false; // Sun/Sat
+  var minutes = ist.getUTCHours() * 60 + ist.getUTCMinutes();
+  return minutes >= (9 * 60 + 15) && minutes <= (15 * 60 + 30);
+}
+
 function connectQuote(pick){
   disconnectQuote();
   if (!pick || !pick.security_id) return;
@@ -680,7 +695,13 @@ function connectQuote(pick){
     if (msg.type === "tick") { ltp = msg.ltp; }
     if (ltp == null) return;
     dot.classList.add("live");
-    badge.textContent = "Live";
+    // A "tick" message means a fresh price genuinely just arrived, so
+    // always show plain "Live" for that regardless of the clock check
+    // below -- only the initial "snapshot" (which can be the last price
+    // from before a closed market, with no new ticks coming) gets the
+    // closed-market qualifier, and only when the clock actually agrees.
+    badge.textContent = (msg.type === "snapshot" && !isNseSessionLikelyOpen())
+      ? "Live · market closed" : "Live";
     document.getElementById("liveQuoteEmpty").classList.add("hidden");
     document.getElementById("liveQuoteContent").classList.remove("hidden");
     var priceEl = document.getElementById("liveQuotePrice");
